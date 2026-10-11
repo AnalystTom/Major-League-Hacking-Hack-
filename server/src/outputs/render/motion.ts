@@ -82,7 +82,7 @@ const SFX = ["pop", "tick", "thud", "whoosh", "swipe", "chime", "coin"] as const
 
 // What a generated program must never reach for: nondeterminism, the network, code loading, or the raw memory and JIT
 // surfaces an exploit would need. Chromium also runs with the network blocked and V8's JIT off.
-const FORBIDDEN = /\b(?:Math\.random|Date|performance|setTimeout|setInterval|requestAnimationFrame|fetch|XMLHttpRequest|WebSocket|EventSource|import|eval|Function|Worker|SharedWorker|WebAssembly|ArrayBuffer|SharedArrayBuffer|DataView|(?:Ui|I)nt(?:8|16|32)Array|Uint8ClampedArray|Float(?:32|64)Array|Big(?:Ui|I)nt64Array|Atomics|document|navigator|location|localStorage|indexedDB|postMessage|opener|globalThis|constructor|__proto__)\b|https?:/;
+const FORBIDDEN = /\b(?:Math\.random|Date|performance|setTimeout|setInterval|requestAnimationFrame|fetch|XMLHttpRequest|WebSocket|EventSource|import|Worker|SharedWorker|WebAssembly|ArrayBuffer|SharedArrayBuffer|DataView|(?:Ui|I)nt(?:8|16|32)Array|Uint8ClampedArray|Float(?:32|64)Array|Big(?:Ui|I)nt64Array|Atomics|document|navigator|location|localStorage|indexedDB|postMessage|opener|globalThis|constructor|__proto__)\b|\b(?:eval|Function)\s*\(|\bnew\s+Function\b|https?:/;
 
 const Beat = z.object({
   narration_text: z.string().trim().min(1).max(400),

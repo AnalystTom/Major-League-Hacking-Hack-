@@ -45,6 +45,9 @@ test("validateMotion accepts a grounded FILM and rejects what it must not run", 
   assert.throws(() => checkFilm(`window.FILM = { draw: [() => fetch("https://evil.example")] };`), /forbidden construct/);
   assert.throws(() => checkFilm(`window.FILM = { x: ({}).constructor.constructor("return 1") };`), /forbidden construct: constructor/);
   assert.throws(() => checkFilm(`const film = 1;`), /doesn't assign window\.FILM/);
+  assert.throws(() => checkFilm(`window.FILM = { x: eval("1") };`), /forbidden construct: eval\(/);
+  assert.throws(() => checkFilm(`window.FILM = { x: Function ("return 1") };`), /forbidden construct/);
+  assert.doesNotThrow(() => checkFilm(`const evalRing = 1; const eval_ = 2; window.FILM = { label: "eval" };`), "a beat about evaluation can name things eval");
   const bad = motionReply(a); bad.beats[1].source_ids = ["not-a-source"];
   assert.throws(() => validateMotion(bad, a), /cites not-a-source/);
   const few = motionReply(a); few.beats = few.beats.slice(0, 3);
