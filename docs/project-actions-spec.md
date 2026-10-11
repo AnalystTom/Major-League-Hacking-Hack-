@@ -2,7 +2,7 @@
 
 This is the single canonical product spec. It supersedes the earlier v0 draft and HTML planning preview.
 
-Status: product scope agreed. The web Worker implements accounts, the project brief, imports and their progress, the feed, and media streaming, as described in [HTTP API](#http-api). The shared schema and accounts migrations are written but not confirmed as applied. The Node ingestion backend implements Gemini extraction and the Digestion Prompt. It is not connected to web imports; rendering, the end-to-end processor, and workstream 3 are not built yet. Contracts not marked as implemented remain proposals. Migration, provider runs, commits, and deployment require approval.
+Status (11 Oct 2026): product scope agreed and v0 built end to end in local dev. The web Worker implements accounts, imports and their progress, the full-screen reel, Skills and Tasks, the feed and media streaming ([HTTP API](#http-api)). The Node processor (`server/src`) extracts with Gemini, digests, writes skills with tasks, and renders basic narrated shorts to R2; one real provider run has passed on a local database. Production serves the waitlist; the processor's hosting (PR #5) and migration 005 on TigerData are pending. Where v0 falls short of a requirement below, an **Implementation (v0)** note says so. Migration, provider runs, commits and deployment still require approval.
 
 ## Goal
 
@@ -12,7 +12,7 @@ Combine related saves, match them to what an AI engineer is building, and turn t
 
 ## Agreed direction
 
-- V0 accepts individual public YouTube links through a simple import UI. X post links (the individual posts a user bookmarked) are accepted alongside YouTube links; no automatic Watch Later or X bookmark-list sync (X OAuth), and no other source formats yet.
+- V0 accepts individual public YouTube links through a simple import UI. No automatic Watch Later import, X ingestion, or other source formats yet.
 - Use one real project supplied beforehand. Visitors can supply video links; project onboarding remains outside v0.
 - Combine related tutorials when they address the same problem; do not force unrelated videos into one short.
 - Match ideas to the project's goal, stack, current work, and available resources.
@@ -188,7 +188,15 @@ One video result per `(artifact_id, artifact_version)` in v0. Retry updates that
 
 Processing `ready` requires valid script, prompt revision, nonempty code/media/asset references, music provenance, and positive measured duration. A storage reference alone is insufficient: the pipeline must verify the files exist and the final video plays with narration, music, and usable captions. Processing validates grounding, readability, pacing, audio balance, and duration. A failed step records `failed` and its actual error; it does not manufacture missing assets.
 
-**Proposed migration changes, not applied:** add `animation_code_ref`; enforce one result per artifact revision; strengthen readiness checks against empty strings and nonpositive duration; and update `artifact_feed` to check project-context versions and expose the fields below. The shared artifact table must support immutable `(id, version)` revisions before this contract is implemented. The current branch migration uses `id` alone as its primary key, so that dependency needs correction by workstream 1.
+**Implementation (v0):** migration 005 enforces one result per artifact revision, adds claim tokens, and rejects a `ready` video with empty references or a non-positive duration. Migration 004 keys artifacts on immutable `(id, version)` revisions. The basic renderer differs from the contract above in these ways:
+- The OpenAI model writes the script, not Opus.
+- Frames are ffmpeg title cards, so there's no animation code and no `animation_code_ref` column.
+- There's no music.
+- Length is bounded by the script's word count (40–160 words, roughly 15–65 s), not held to 30–45 s.
+- Scenes may carry no `source_ids`.
+- The result row is created `running`, not `pending`.
+- "Verified playable" is checked on the rendered file before upload; after upload, the size is compared.
+
 
 ### Feed read contract
 
@@ -207,9 +215,11 @@ Show one active video at a time. Use muted autoplay, tap for sound, scroll/next,
 
 Narration and music are required. Gemini TTS or Kokoro are proposed narration options; the team chooses after an audio test. Mix a licensed track with FFmpeg, lower it under speech, and align animation/captions to measured audio. Derive visual style prompts only after inspecting the supplied motion references.
 
+**Implementation (v0):** narration is Gemini TTS, one clip per scene, and scene times come from the measured speech. There's no music in v0 (owner decision); `music_ref` and `music_provenance` stay null until a licensed track is chosen.
+
 CTAs: **Skip**, **View sources**, **View skill/action items**, and **Use in Codex**. Missing or pending skill output shows its actual state. A click is not a delivery receipt; only workstream 3's real acknowledgement can show delivery, and only checked results can show completion. Skill generation/export remains usable without video.
 
-**Implemented** in `web/public/reel.js`: a vertical snap-scrolling reel with one playing clip, muted autoplay with a **Tap for sound** toggle (falling back to muted when the browser blocks sound), WebVTT captions drawn over the clip, keyboard navigation, reduced-motion scrolling, a playback-failure state with **Try again**, **Skip**, and **View sources** (only `http(s)` source links are rendered). A chip shows the skill's actual state (ready, awaiting review, or in progress). **View skill/action items**, **Use in Codex**, and category filtering are not built. Every API string is inserted as text, never as HTML.
+**Implemented** in `web/public/reel.js` and `/app`: the signed-in page is the reel, full screen at 9:16 below a top bar and edge to edge on phones. One clip plays at a time, with muted autoplay and a **Tap for sound** toggle (falling back to muted when the browser blocks sound), WebVTT captions drawn over the clip, keyboard and swipe navigation, reduced-motion scrolling, a playback-failure state with **Try again**, **Skip**, and **View sources** (only `http(s)` source links are rendered). A short with a ready skill gets **View skill & tasks**, which opens the Skills and Tasks sheet at that skill. The skill can be copied or downloaded for Claude Code, Codex, Cursor or Hermes; each task can be copied for the chosen agent. **Use in Codex** as direct delivery, and category filtering, are not built. Every API string is inserted as text, never as HTML.
 
 ## HTTP API
 
@@ -218,15 +228,16 @@ Two Cloudflare Workers exist. Request details, setup, and storage costs live in 
 ```
 Browser ──POST /api/auth/signup | login──▶ web Worker ──users, sessions──▶ TigerData   (httpOnly cookie)
         ──POST /api/imports──▶ web Worker ──ingested_units, user_imports──▶ TigerData
-                                  └──POST PROCESSOR_URL {unit_ids}──▶ Processor (server/src/ingest, Node)
-Processor ──PUT mp4 + vtt──▶ R2 resurface-media    ──units/artifacts/video_results──▶ TigerData
-Browser ──GET /api/imports, /api/feed?scope=mine (polled)──▶ web Worker ──▶ TigerData
+                                  └──POST PROCESSOR_URL {unit_ids}──▶ Processor (server/src, Node)
+Processor ──PUT mp4, vtt, m4a──▶ R2 resurface-media
+          ──units, artifacts, exclusions, video_results, skill_results, action_items──▶ TigerData
+Browser ──GET /api/imports, /api/feed?scope=mine, /api/skills (polled)──▶ web Worker ──▶ TigerData
         ──GET /media/videos/…/short.mp4 (Range)──▶ web Worker ──▶ R2
 ```
 
 ### Web Worker `resurface` (`web/`, same origin as the page)
 
-Static assets serve everything except `/api/*` and `/media/*`: the landing page, `/start` (sign-up or sign-in only), and `/app` (the signed-in home where the user pastes links, watches each link's stage, and plays the reel). There is no project or setup step. Every API response is JSON with `cache-control: no-store`. Every mutation must be `application/json`, which, with the `SameSite=Lax` session cookie, blocks cross-site form posts (`415` otherwise). A missing database connection or query error returns `503` with a safe message; details go to Worker logs only. The database comes from the `HYPERDRIVE` binding when present, otherwise `DATABASE_URL`.
+Static assets serve everything except `/api/*` and `/media/*`: the landing page, `/start` (sign-up or sign-in only), and `/app`: the full-screen reel. Until the first short is ready, its frame holds the paste box (new account) or each link's stage. After that, stages live in a top-bar status popover, **Add videos** opens a sheet, and Skills and Tasks open in a sheet over the reel. There is no project or setup step. Every API response is JSON with `cache-control: no-store`. Every mutation must be `application/json`, which, with the `SameSite=Lax` session cookie, blocks cross-site form posts (`415` otherwise). A missing database connection or query error returns `503` with a safe message; details go to Worker logs only. The database comes from the `HYPERDRIVE` binding when present, otherwise `DATABASE_URL`.
 
 | Route | Auth | Request → response |
 | --- | --- | --- |
@@ -237,14 +248,15 @@ Static assets serve everything except `/api/*` and `/media/*`: the landing page,
 | `POST /api/imports` | session | `{ links: string[] \| string, company?: honeypot }` → `201 { units, processor }`. |
 | `GET /api/imports` | session | `{ units }`: the user's 50 most recent imports, newest first. |
 | `GET /api/feed?scope=mine` | session | `{ items }`: ready shorts built from the user's links, as in the [feed read contract](#feed-read-contract). |
+| `GET /api/skills` | session | `{ skills }`: the newest skill per visible ready artifact, newest first, each `{ id, status, error, artifact, name, description, markdown, videos, action_items }`. `name` and `description` come from the SKILL.md front matter; tasks carry `task`, `prerequisites`, `steps`, `completion_check` and `evidence`. Artifacts with no `skill_results` row are absent. |
 | `GET /api/feed` | none | `{ items }`: the public curated feed (requires `feed_order`). |
 | `GET`/`HEAD /media/<key>` | none | `200` or `206` with `accept-ranges`, `content-range`, `etag`, and `cache-control: public, max-age=3600`; `416` past the end; `404` for an unknown or disallowed key; `503` without the R2 binding. |
 
 Signed-out requests to session routes get `401`. Rate limits: sign-up and sign-in at 10 per IP per minute (`AUTH_LIMITER`), imports at 5 per account per minute (`IMPORT_LIMITER`); both return `429`.
 
-**Import rules.** Each link must be a single YouTube video (`youtube.com/watch`, `youtu.be`, `/shorts/`, `/live/`, `/embed/` on `www`, `m`, or `music` hosts). It is stored as the canonical `https://www.youtube.com/watch?v=<id>` plus `start_seconds` parsed from `t` or `start` (`90`, `90s`, `1m30s`, `1h2m3s`). The submitted URL is kept in the database but never returned. The same video and start time within one request is one unit. Units are shared across users: the newest non-failed unit for that video and start time is reused, and `user_imports` records who imported it. Each unit is sent to the processor the first time a given user imports it; the processor skips work that's already done. Errors: `400` for invalid JSON, no links, more than 20 YouTube links or 100 X post links, a link over 2,048 characters, or any invalid link (with `invalid: [{ link, error }]` naming each); `413` for a body over 32 KB. A filled honeypot gets `200 { units: [], processor: "not_needed" }` and stores nothing. `processor` is `requested`, `not_needed`, `not_configured` (no `PROCESSOR_URL`), or `unavailable` (error, timeout, or non-2xx).
+**Import rules.** Each link must be a single YouTube video (`youtube.com/watch`, `youtu.be`, `/shorts/`, `/live/`, `/embed/` on `www`, `m`, or `music` hosts) or a single X post (`x.com` or `twitter.com` `/<user>/status/<id>`, stored as `https://x.com/i/status/<id>` with `content_type = 'x_post'`). It is stored as the canonical `https://www.youtube.com/watch?v=<id>` plus `start_seconds` parsed from `t` or `start` (`90`, `90s`, `1m30s`, `1h2m3s`). The submitted URL is kept in the database but never returned. The same video and start time within one request is one unit. Units are shared across users: the newest non-failed unit for that video and start time is reused, and `user_imports` records who imported it. Each unit is sent to the processor the first time a given user imports it; the processor skips work that's already done. Errors: `400` for invalid JSON, no links, more than 20 YouTube videos or 100 X posts, a link over 2,048 characters, or any invalid link (with `invalid: [{ link, error }]` naming each); `413` for a body over 32 KB. A filled honeypot gets `200 { units: [], processor: "not_needed" }` and stores nothing. `processor` is `requested`, `not_needed`, `not_configured` (no `PROCESSOR_URL`), or `unavailable` (error, timeout, or non-2xx).
 
-**Unit shape.** `{ id, source_url, start_seconds, title, stage, settled, error }`. Digests are shared, so everyone who imported a video sees the same artifacts for it. `stage` collapses the unit's records into one state. `settled` means nothing more happens without a person. When a unit feeds several artifacts, the one furthest along is reported.
+**Unit shape.** `{ id, source_url, start_seconds, title, stage, settled, error }`. A user counts an artifact only when they imported every video it was built from (`a.source_ids <@` their imports), so a digest never shows one person's videos to another. The feed and `/api/skills` apply the same rule. **Open decision:** this replaces the earlier rule that "everyone who imported a video sees the same artifacts for it". The processor now re-digests a shared video for anyone who can't see a digest of it, which can produce a second short covering the same video. `stage` collapses the unit's records into one state. `settled` means nothing more happens without a person. When a unit feeds several artifacts, the one furthest along is reported.
 
 | `stage` | Derived from | `settled` |
 | --- | --- | --- |
@@ -257,26 +269,24 @@ Signed-out requests to session routes get `401`. Rate limits: sign-up and sign-i
 | `render_failed` | video result `failed` (carries `error`) | yes |
 | `ready` | artifact and video both `ready`; it appears in the feed | yes |
 
-**Media references.** TigerData stores `r2:<key>` (resolved to `/media/<key>`) or an `https://` URL. Keys must match `videos|captions|posters/` followed by `[A-Za-z0-9._-]` path segments, with no `..`. Anything else is treated as unplayable, and its item is left out of the feed. The bucket stays private; no storage credentials reach the browser.
+**Media references.** TigerData stores `r2:<key>` (resolved to `/media/<key>`) or an `https://` URL. Keys must match `videos|captions|posters/` followed by `[A-Za-z0-9._-]` path segments, with no `..`. The processor also stores narration under `audio/`, which isn't served. Anything else is treated as unplayable, and its item is left out of the feed. The bucket stays private; no storage credentials reach the browser.
 
-**Schema.** `db/migrations/001_shared_schema.sql` defines the shared tables and `artifact_feed`; `db/migrations/002_accounts.sql` adds `users`, `sessions`, and `user_imports` without changing existing tables. `db/migrations/003_ready_feed.sql` updates existing feed views to use processing readiness alone. Live migration application is unverified. The Worker writes `users`, `sessions`, `project_contexts`, `ingested_units`, and `user_imports`. Units, artifacts, exclusions, and video results are written by the processor, skill results by workstream 3, without a teammate approval step.
+**Schema.** `001_shared_schema.sql` defines the shared tables and `artifact_feed`. `002_accounts.sql` adds `users`, `sessions` and `user_imports`. `003_ready_feed.sql` makes the feed view use processing readiness alone. `004_artifact_revisions.sql` keys artifacts on `(id, version)` and freezes a ready revision. `005_outputs.sql` adds `claimed_at`, one video and one skill result per artifact revision, `claim_token`, and a stricter ready check for videos. 001–004 are applied to TigerData; 005 isn't yet. The Worker writes `users`, `sessions`, `ingested_units` and `user_imports`. The processor writes units, artifacts, exclusions, video results, skill results and action items, with no teammate approval step.
 
-### Processor contract (proposed; not built)
+### Processor (`server/src`, implemented)
 
-The web Worker sends `POST PROCESSOR_URL` with `authorization: Bearer PROCESSOR_TOKEN` and `{ "unit_ids": [...], "project": { "id", "version", "name", "goal", "tools", "agents" } }`, waiting at most 8 seconds. Larger imports are sent in batches of 10 ids. The processor must:
+The web Worker sends `POST PROCESSOR_URL` with `authorization: Bearer PROCESSOR_TOKEN` and `{ "unit_ids": [...] }` in batches of at most 10 ids, waiting at most 8 seconds per batch. The Node processor serves it at `/api/ingest/process` (bearer `INGEST_TOKEN`), replies `202` and works in the background:
 
-1. Reply `202` quickly and work asynchronously. The same id can arrive twice, so claim units atomically (`UPDATE … SET status = 'running' WHERE status = 'pending'`).
-2. Sweep `ingested_units WHERE status = 'pending'` on a timer, taking the project from the newest `user_imports` row, because resubmitted links are not resent and a failed request leaves units pending.
-3. Treat extraction as shared and digestion as per project. A unit may already be `ready` from another user's import: skip extraction and digest it for the requested project, unless an artifact for that unit and project already exists.
-4. Run extraction → Digestion Prompt → Opus timed script → narration, music, and render, writing each record and its actual error. Artifacts carry `project_context_id` and `project_context_version` from the request.
-5. Upload to R2 at `videos/<artifact_id>/<version>/short.mp4` (H.264 + AAC, 1080×1920, `-movflags +faststart`), `captions/<artifact_id>/<version>/short.vtt` (WebVTT), and optionally `posters/<artifact_id>/<version>/poster.jpg`.
-6. Store `media_ref = 'r2:videos/…'` and `caption_ref = 'r2:captions/…'`, and set `status = ready` only after verifying playback. The reel includes ready artifacts and videos immediately.
+1. Claims pending units atomically and extracts them with Gemini. A unit that's already `ready` isn't read again. A claim older than 60 minutes (`server/src/claims.ts`) can be taken over.
+2. Runs the Digestion Prompt for units an importer can't see a digest of yet. It writes artifacts and exclusions, and records a failed digest per unit with its error, retrying up to 3 times.
+3. For each ready artifact, writes a skill with up to three tasks, and a short: script, Gemini TTS narration per scene, measured timeline, WebVTT captions, ffmpeg render, then upload to `videos/`, `captions/` and `audio/` under `<artifact_id>/<version>/` in R2. Each video and skill result is claimed with a token, so a worker whose claim was taken over can't overwrite the one that took over.
+4. Timed sweeps pick up pending units, missing digests, and missing outputs.
 
-`web/scripts/dev-processor.mjs` simulates this flow for local development only. It refuses non-local databases, labels its records `[Simulated]`, points every short at one test clip, without a manual review step. It is not demo or production evidence.
+Details, configuration and hosting (PR #5: a Cloudflare Container that sleeps when idle) are in [proceed-and-media.md](proceed-and-media.md). `web/scripts/dev-processor.mjs` simulates the flow for local development only: it refuses non-local databases, labels its records `[Simulated]`, points every short at one test clip, and writes no skills. It is not demo or production evidence.
 
 ### Page behaviour
 
-`/start` resumes at the first unfinished onboarding step from `/api/me`. During processing, and on `/app`, the page polls `/api/imports` and `/api/feed?scope=mine` every 4 seconds while any unit is unsettled. Each unit shows its title or URL, its stage, and its actual error, or "Reason unknown." Ready clips go to the reel. During the waitlist launch, the landing page shows **Join the waitlist** for all visitors. Product onboarding remains available in the development configuration.
+`/start` sends a signed-in visitor straight to `/app`. On `/app` the page polls `/api/imports`, `/api/feed?scope=mine` and `/api/skills` every 4 seconds while a unit is unsettled or a skill is being written. When a short is ready but its skill hasn't started, it checks every 20 seconds, at most 15 times. A failing `/api/skills` doesn't stop links and shorts from updating. Each link shows its title or URL, its stage, and its actual error, or "Reason unknown." Ready clips go straight to the reel. Errors show where the user is looking: the loading line, the reel's frame for a new account, or the status list. During the waitlist launch, the landing page shows **Join the waitlist** for all visitors. Product onboarding remains available in the development configuration.
 
 ### API Worker `resurface-api` (`server/`, Hono; runs on Node or Workers)
 
@@ -307,9 +317,9 @@ reports skipped). `GEMINI_MODEL` and `OPENAI_MODEL` select the configured models
 Jobs are process-local and are lost on restart. From `server/`, the CLI uses
 `npm run ingest -- "<request>" <youtube-url>...` with the same provider and project configuration.
 
-This backend does not implement the web Worker's `PROCESSOR_URL` contract: it
-accepts URLs, rather than existing `unit_ids` and a per-user project, and does not
-render video. Web imports still need that integration and a real render processor.
+These dev routes stay alongside `POST /api/ingest/process`, which implements the
+web Worker's `PROCESSOR_URL` contract and, with `src/outputs/`, the skill and render steps
+(see [Processor](#processor-serversrc-implemented)).
 
 
 ## Workflow 3: processed skill and Codex use
@@ -320,12 +330,14 @@ The handoff includes the project and goal, selected action, project-fit evidence
 
 Choose one concrete transport before building the **Use in Codex** CTA. Copy/download is an export; installation requires confirmed file delivery, invocation requires an actual selected task, and completion requires checking the result. Preserve the reviewed payload on failure and retry without duplicating received work.
 
+**Implementation (v0):** `server/src/outputs/skills.ts` turns one ready artifact into a `SKILL.md` and up to three tasks. The skill has `name` and `description` front matter, a review warning, the procedure, and `## Sources` with the real video links. Each task has prerequisites, steps and a `completion_check`. It uses only that artifact's text and evidence and doesn't wait for the video. Delivery is copy or download only (owner decision for v0): the Skills sheet shows the path each agent reads, and each task can be copied for the chosen agent. Gaps: tasks may carry no evidence (`applicability_evidence` and `source_refs` default to empty), and the project-fit evidence this section asks for doesn't exist, because v0 has no project brief.
+
 ## Partner roles
 
 - **Nimble:** authenticated v0 watch-page retrieval passed for both supplied videos; the tested caption route failed. Do not treat metadata as a spoken transcript. V1 adds supporting-source research.
 - **TigerData:** PostgreSQL storage for raw evidence, processed text, context, topics, video metadata, processed skills, action items, and handoffs. Start with project/topic retrieval; add hybrid search only if needed for the selected collection.
-- **Opus 5.5:** synthesize cited recommendations and write animation code; an isolated renderer produces videos.
-- **Gemini:** explicit-window video-content extraction returned model observations for both YouTube inputs; source review is pending. TTS narration remains proposed and untested.
+- **Opus 5.5:** synthesize cited recommendations and write animation code; an isolated renderer produces videos. Not used in v0: the OpenAI model writes the digest, skills and scripts.
+- **Gemini:** explicit-window video-content extraction (`gemini-3.5-flash-lite` in the first real run) and TTS narration (`gemini-3.8-flash-tts`).
 - **Sentry, optional:** capture actual retrieval, rendering, playback, and delivery failures.
 
 TigerData is based on PostgreSQL. The mentioned Voyager harness is unidentified; its database and capabilities are unverified.
@@ -365,11 +377,11 @@ These replace the answered 20-question backlog. Recommended answers remain propo
 
 Run each step past the owner before proceeding. Preparing this spec does not authorize a database write, implementation run, commit/push, or deployment.
 
-1. **Database preflight:** read-only service, connectivity, and existing-schema checks for Tiger Cloud `mlh-aie-hackathon` (`kc5lnts1vn`). The [branch migration](https://github.com/AnalystTom/Major-League-Hacking-Hack-/blob/claude/loving-gates-0xec5o/db/migrations/001_shared_schema.sql) defines nine tables and `artifact_feed`; Its live application is unverified. The repository now carries it as `db/migrations/001_shared_schema.sql`, plus `002_accounts.sql`.
+1. **Database:** done for 001–004 on Tiger Cloud `mlh-aie-hackathon` (`kc5lnts1vn`). Apply `005_outputs.sql` after the duplicate checks in its header, when the owner says so.
 2. **Schema review:** prepare the migration corrections, the workstream 2 additions above, and the columns the web Worker reads (see [HTTP API](#http-api)); show the diff before applying anything.
 3. **Ingestion and digestion:** review the five candidate observations, refine extraction/few-shot examples, approve the project brief and Digestion Prompt, then validate and store real artifacts.
-4. **Workstream 2:** approve the Opus prompt, narration provider, and music track; build the processor against the contract above. Produce one real clip in R2, review it, and confirm it reaches the implemented feed and reel. Close the feed-contract gaps listed under the feed read contract.
-5. **Workstream 3:** agree one export/delivery route; generate reviewed skills and actions independently from the same artifact revision.
+4. **Workstream 2:** the basic renderer is built, and one real run produced two narrated shorts on a local database. Still open: hosting (PR #5), the Opus/animation-code renderer, a music track, and the length and citation checks listed under the video output.
+5. **Workstream 3:** skills and tasks are built, with copy and download as the v0 export. Still open: required task evidence and any direct delivery route.
 6. **Verification and delivery:** follow this repository's `AGENTS.md`: run the relevant package tests and verify frontend changes with local headless Playwright, clean up owned test processes, and run ponytail-review before any approved commit/push. Ask separately before deployment.
 
 ## Acceptance and verification
@@ -392,9 +404,15 @@ Run each step past the owner before proceeding. Preparing this spec does not aut
 
 ## Last observed deployment and verification limits
 
-On 2026-10-11, the Cloudflare Worker `resurface` served [resurface.thomasmann2001.workers.dev](https://resurface.thomasmann2001.workers.dev/) with static assets and a separate D1 waitlist. Served scripts used sample shorts and browser-only Send state; `/api/feed` returned 404. That observation does not establish a real TigerData-backed feed or Codex delivery, and has not been refreshed for this spec edit. The code now implements accounts, onboarding, `/api/imports`, `/api/feed`, and `/media/`. Its unit tests cover link parsing, import validation, stage derivation, media references, range parsing, feed serialization, and processor requests. Whether that code is deployed, and whether TigerData, R2, and the rate limiters are configured, has not been checked.
+On 11 Oct 2026 production (`resurface.thomasmann2001.workers.dev`) serves the waitlist build: the landing page with **Join the waitlist**, `/start` and `/app` redirected to the form, and no product APIs. The product build was briefly live earlier that day and verified with a test account. The `resurface-media` R2 bucket and the `DATABASE_URL` secret exist. `PROCESSOR_URL` and `PROCESSOR_TOKEN` aren't set.
 
-Remote SSH timed out during the prior verification attempts. No Playwright or independent video review ran, and no local app/browser was launched. Live TigerData schema and migration application remain unchecked. This document contains proposed contracts, not proof of implemented behavior.
+Verified on local dev, at PR #4's head and on a fresh database with migrations 001–005:
+- Server tests: 72, including Postgres integration and a real ffmpeg render.
+- Web tests: 31.
+- Headless Playwright as a new user: sign-up, paste links, progress, full-screen reel, the Skills sheet (using one temporary skill row), and the error states.
+- One real provider run (Gemini extraction, OpenAI digest, skills and scripts, Gemini TTS, ffmpeg) on an isolated local database: two digests, two skills with three tasks each, and two shorts of 44.2 s and 40.3 s.
+
+The real outputs haven't been shown in the full-screen layout, and nothing has run against TigerData or production R2.
 
 ## References
 

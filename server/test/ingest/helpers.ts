@@ -34,10 +34,10 @@ export function mockFetch(opts: { failVideo?: string; digestStatus?: () => numbe
       if (status !== 200) return new Response("boom", { status });
       const sent = JSON.parse(JSON.parse(init!.body!).messages[1].content);
       calls.lastDigestRequest = sent;
-      const units = sent.units as { id: string; evidence_items: { start_seconds: number; end_seconds: number }[] }[];
+      const units = sent.units as { ref: string; evidence_items: { start_seconds: number; end_seconds: number }[] }[];
       return Response.json({ choices: [{ message: { content: JSON.stringify({
-        artifacts: [{ name: "topic", source_ids: units.map((x) => x.id), category: "c", processed_text: "t", selection_reason: "r",
-          evidence: [{ source_id: units[0].id, ...units[0].evidence_items[0], passage: "p" }] }],
+        artifacts: [{ name: "topic", source_ids: units.map((x) => x.ref), category: "c", processed_text: "t", selection_reason: "r",
+          evidence: [{ source_id: units[0].ref, ...units[0].evidence_items[0], passage: "p" }] }],
         exclusions: [] }) } }] });
     }
     throw new Error(`unexpected fetch ${u}`);

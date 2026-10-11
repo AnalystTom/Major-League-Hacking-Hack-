@@ -25,7 +25,8 @@ export async function readFeed(sql, unitIds = null) {
         ORDER BY s.created_at DESC, s.id DESC LIMIT 1
       ) s ON true
       WHERE a.ingestion_status = 'ready'
-        AND (${list}::text IS NULL OR a.source_ids && string_to_array(${list}::text, ',')::uuid[])
+        -- A user's feed has only digests built entirely from their own imports, never someone else's videos.
+        AND (${list}::text IS NULL OR a.source_ids <@ string_to_array(${list}::text, ',')::uuid[])
         AND (${list}::text IS NOT NULL OR v.feed_order IS NOT NULL)
       ORDER BY a.id, a.version, v.created_at DESC, v.id DESC
     ) eligible

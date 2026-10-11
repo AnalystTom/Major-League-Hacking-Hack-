@@ -18,6 +18,7 @@ Every route needs `Authorization: Bearer $INGEST_TOKEN`. The web Worker sends it
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | Extraction. Model defaults to `gemini-3.5-flash-lite`. |
 | `WINDOW_SECONDS` | Seconds extracted from each unit's start time (30-3600, default 3600, i.e. 1 hour). |
 | `OPENAI_API_KEY`, `OPENAI_MODEL` | Digestion. Without a key units are extracted but not digested. |
+| `OPENAI_MAX_OUTPUT_TOKENS` | Digest output cap including reasoning tokens (default 20000). Raise it if digests report hitting the cap. |
 | `DIGESTION_REQUEST` | Categorization request stored with each Digestion Prompt revision. |
 | `DATABASE_URL` | Postgres/TigerData. Enables the sweep; without it records stay in memory. |
 | `SWEEP_INTERVAL_MS` | Pending-unit sweep interval (default 60000). |

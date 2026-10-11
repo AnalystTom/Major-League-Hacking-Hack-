@@ -41,7 +41,8 @@ export interface IngestedUnit {
   rejectedItems?: { item: EvidenceItem; reason: string }[];
 }
 
-const Uuid = z.string().uuid();
+// Membership in the supplied units is checked by validateDigest, so any non-empty string is accepted here.
+const Uuid = z.string().min(1);
 
 export const DigestArtifact = z.object({
   name: z.string().min(1),

@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { AGENTS, exportShort, isAgentId } from "./agents.js";
 import { SAMPLE_SHORTS, type Short } from "./shorts.js";
+import { busyCount } from "./activity.js";
 
 export type AppConfig = {
   /** Browser origins allowed to call the API, e.g. the landing site. */
@@ -16,7 +17,8 @@ export function createApp({ webOrigins, shorts = SAMPLE_SHORTS }: AppConfig) {
 
   app.use("/api/*", cors({ origin: webOrigins }));
 
-  app.get("/health", (c) => c.json({ ok: true }));
+  // busy: imports being processed plus skills and shorts running or queued; 0 means the process may sleep.
+  app.get("/health", (c) => c.json({ ok: true, busy: busyCount() }));
 
   app.get("/api/agents", (c) =>
     c.json(Object.entries(AGENTS).map(([id, a]) => ({ id, name: a.name })))

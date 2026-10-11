@@ -3,17 +3,21 @@
 
 import { digestAndStore, extractUnit, type IngestOptions } from "./pipeline.js";
 import { DEFAULT_CATEGORIZATION_REQUEST, promptRevisionText } from "./digest/prompt.js";
-import type { IngestedUnit } from "./types.js";
+import type { IngestedUnit, StoredArtifact } from "./types.js";
+import { tracked } from "../activity.js";
 
 export interface ProcessorOptions extends IngestOptions {
   openaiKey?: string;
   openaiModel?: string;
+  openaiMaxOutputTokens?: number;
   /** The categorization request for digests; DIGESTION_REQUEST or a built-in default. */
   categorizationRequest?: string;
   /** How long to wait for units another worker is extracting, and how often to check. */
   waitTimeoutMs?: number;
   pollMs?: number;
   log?: (msg: string) => void;
+  /** Called with each new ready artifact set, without waiting: the skill and short are made from these. */
+  onArtifacts?: (artifacts: StoredArtifact[]) => Promise<void>;
 }
 
 export interface ProcessSummary {
@@ -43,7 +47,11 @@ async function waitForSettled(ids: string[], o: ProcessorOptions): Promise<Inges
  * Processes units. Safe to call twice with the same ids: pending units are claimed atomically, ready units are
  * not re-extracted, and a unit that already has a digest (or was excluded) is skipped.
  */
-export async function processUnits(unitIds: string[], o: ProcessorOptions): Promise<ProcessSummary> {
+export function processUnits(unitIds: string[], o: ProcessorOptions): Promise<ProcessSummary> {
+  return tracked(() => processNow(unitIds, o));
+}
+
+async function processNow(unitIds: string[], o: ProcessorOptions): Promise<ProcessSummary> {
   const summary: ProcessSummary = { extracted: { ready: 0, failed: 0 }, waitedFor: 0, digested: 0, skipped: null };
 
   const claimed = await o.store.claimPendingUnits(unitIds);
@@ -67,9 +75,17 @@ export async function processUnits(unitIds: string[], o: ProcessorOptions): Prom
     const request = o.categorizationRequest ?? DEFAULT_CATEGORIZATION_REQUEST;
     const toDigest = units.filter((u) => needing.includes(u.id));
     try {
-      const d = await digestAndStore({ apiKey: o.openaiKey, model: o.openaiModel, units: toDigest, request, fetchImpl: o.fetchImpl, store: o.store });
+      const d = await digestAndStore({ apiKey: o.openaiKey, model: o.openaiModel, maxOutputTokens: o.openaiMaxOutputTokens, units: toDigest, request, fetchImpl: o.fetchImpl, store: o.store });
       if (d.storeError) throw new Error(`could not store digest: ${d.storeError}`);
       summary.digested = d.stored?.length ?? 0;
+      // A video the digest neither used nor excluded would otherwise be retried forever; record that plainly.
+      const used = new Set([...d.result.artifacts.flatMap((a) => a.source_ids), ...d.result.exclusions.map((e) => e.unit_id)]);
+      const unaccounted = needing.filter((id) => !used.has(id));
+      if (unaccounted.length && d.promptId) {
+        await o.store.saveArtifacts([], unaccounted.map((unit_id) => ({ unit_id, reason: "The Digestion Prompt didn't use this video and gave no reason." })), d.promptId);
+      }
+      const ready = (d.stored ?? []).filter((a) => a.ingestion_status === "ready");
+      if (ready.length && o.onArtifacts) o.onArtifacts(ready).catch((e: Error) => o.log?.(`outputs failed: ${e.message}`));
     } catch (e) {
       const promptId = await o.store.registerPrompt(promptRevisionText(request), []).catch(() => null);
       await o.store.saveFailedArtifacts(needing, (e as Error).message, promptId);
@@ -81,17 +97,31 @@ export async function processUnits(unitIds: string[], o: ProcessorOptions): Prom
   return summary;
 }
 
-/** One sweep: pending units that someone imported and no request has picked up yet. */
+/**
+ * One sweep: pending units that someone imported and no request picked up (or whose processor died), and ready
+ * units someone imported but can't see a digest of yet (never digested, failed up to MAX_DIGEST_ATTEMPTS, or only
+ * digested together with videos they didn't import).
+ */
 export async function sweepOnce(o: ProcessorOptions, limit = 20): Promise<number> {
-  const ids = await o.store.listPendingUnitIds(limit);
-  if (ids.length) await processUnits(ids, o);
-  return ids.length;
+  // One batch per person: a digest can combine videos, and it must only combine one person's.
+  const groups = new Map<string, Set<string>>();
+  const add = (user: string | null | undefined, id: string) => (groups.get(user ?? "") ?? groups.set(user ?? "", new Set()).get(user ?? "")!).add(id);
+  const pending = await o.store.listPendingUnitIds(limit);
+  const owners = await o.store.newestImporters(pending);
+  for (const id of pending) add(owners.get(id), id);
+  if (o.openaiKey) for (const { unitId, userId } of await o.store.listUnitsNeedingDigest(limit)) add(userId, unitId);
+  let n = 0;
+  for (const ids of groups.values()) {
+    n += ids.size;
+    await processUnits([...ids], o);
+  }
+  return n;
 }
 
 /** Runs sweepOnce on a timer (skipping a tick while one is still running). Returns a stop function. */
 export function startSweep(o: ProcessorOptions, intervalMs = 60_000): () => void {
   let running = false;
-  const timer = setInterval(async () => {
+  const tick = async () => {
     if (running) return;
     running = true;
     try {
@@ -102,7 +132,11 @@ export function startSweep(o: ProcessorOptions, intervalMs = 60_000): () => void
     } finally {
       running = false;
     }
-  }, intervalMs);
+  };
+  // A host that wakes this process on a schedule gets a sweep right away, not one interval later.
+  const first = setTimeout(tick, 1000);
+  const timer = setInterval(tick, intervalMs);
+  first.unref();
   timer.unref();
-  return () => clearInterval(timer);
+  return () => { clearTimeout(first); clearInterval(timer); };
 }

@@ -1,3 +1,4 @@
+import { httpError } from "../../httpError.js";
 import type { EvidenceItem, IngestedUnit } from "../types.js";
 
 export const X_POST_METHOD = "twitterapi.io:tweets";
@@ -28,7 +29,7 @@ export async function extractXPost(o: XPostOptions): Promise<{ title: string; tr
     signal: AbortSignal.timeout(o.timeoutMs ?? 15_000),
   });
   const text = await res.text();
-  if (!res.ok) throw new Error(`twitterapi.io HTTP ${res.status}: ${text.slice(0, 300)}`);
+  if (!res.ok) throw new Error(httpError("twitterapi.io", res.status, text));
   let body: { status?: string; message?: string; msg?: string; tweets?: TwitterApiTweet[] };
   try {
     body = JSON.parse(text);
