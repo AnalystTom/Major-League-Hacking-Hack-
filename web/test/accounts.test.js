@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { hashPassword, parseLogin, parseSignup, readCookie, sessionCookie, verifyPassword } from "../src/auth.js";
+import { cookieSecure, hashPassword, parseLogin, parseSignup, readCookie, sessionCookie, verifyPassword } from "../src/auth.js";
 import { fromRow, parseProject, toFacts } from "../src/project.js";
 
 test("passwords hash with a fresh salt and verify only the right password", async () => {
@@ -28,6 +28,10 @@ test("session cookie is httpOnly, Secure, SameSite=Lax and readable back", () =>
   for (const part of ["rs_session=tok_123", "HttpOnly", "Secure", "SameSite=Lax", "Path=/"]) assert.ok(c.includes(part), part);
   assert.ok(sessionCookie("", 0).includes("Max-Age=0"));
   assert.ok(!sessionCookie("t", 60, false).includes("Secure"));
+  assert.equal(cookieSecure("https://resurface.example.dev/api/auth/login"), true);
+  assert.equal(cookieSecure("http://resurface.example.dev/api/auth/login"), true);
+  assert.equal(cookieSecure("http://localhost:8787/api/auth/login"), false);
+  assert.equal(cookieSecure("http://127.0.0.1:8787/api/auth/login"), false);
   assert.equal(readCookie("a=1; rs_session=tok_123; b=2", "rs_session"), "tok_123");
   assert.equal(readCookie("a=1", "rs_session"), null);
   assert.equal(readCookie(null, "rs_session"), null);

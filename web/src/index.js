@@ -1,5 +1,5 @@
 import {
-  createSession, createUser, currentUser, endSession, login, parseLogin, parseSignup, sessionCookie,
+  cookieSecure, createSession, createUser, currentUser, endSession, login, parseLogin, parseSignup, sessionCookie,
 } from "./auth.js";
 import { connect } from "./db.js";
 import { readFeed } from "./feed.js";
@@ -33,7 +33,6 @@ async function limited(limiter, key) {
   return !success;
 }
 
-const isHttps = (request) => new URL(request.url).protocol === "https:";
 const ip = (request) => request.headers.get("cf-connecting-ip") ?? "local";
 
 /** Where onboarding resumes: the brief first, then sources, then the user's home. */
@@ -57,7 +56,7 @@ async function signup(request, env, sql) {
   const user = await createUser(sql, parsed.value);
   if (!user) return json({ error: "There's already an account with that email. Sign in instead." }, 409);
   const token = await createSession(sql, user.id);
-  return json(await onboardingState(sql, user), 201, { "set-cookie": sessionCookie(token, undefined, isHttps(request)) });
+  return json(await onboardingState(sql, user), 201, { "set-cookie": sessionCookie(token, undefined, cookieSecure(request.url)) });
 }
 
 async function signin(request, env, sql) {
@@ -69,7 +68,7 @@ async function signin(request, env, sql) {
   const user = await login(sql, parsed.value);
   if (!user) return json({ error: "That email and password don't match an account." }, 401);
   const token = await createSession(sql, user.id);
-  return json(await onboardingState(sql, user), 200, { "set-cookie": sessionCookie(token, undefined, isHttps(request)) });
+  return json(await onboardingState(sql, user), 200, { "set-cookie": sessionCookie(token, undefined, cookieSecure(request.url)) });
 }
 
 // POST /api/imports: store the links as the user's units, then hand the ones new to this user to the
@@ -106,7 +105,7 @@ async function api(request, env, url, sql) {
   if (pathname === "/api/auth/login" && method === "POST") return signin(request, env, sql);
   if (pathname === "/api/auth/logout" && method === "POST") {
     await endSession(sql, request);
-    return json({ signedOut: true }, 200, { "set-cookie": sessionCookie("", 0, isHttps(request)) });
+    return json({ signedOut: true }, 200, { "set-cookie": sessionCookie("", 0, cookieSecure(request.url)) });
   }
 
   // The public demo feed needs no account.

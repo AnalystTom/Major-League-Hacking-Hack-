@@ -61,8 +61,11 @@ export function readCookie(header, name) {
   return null;
 }
 
-// Secure is set whenever the request came over HTTPS (always, in production); plain-http localhost
-// needs it off or Safari drops the cookie.
+// Secure unless the request is to this machine: fails closed, so a deployment reached over plain
+// http still never sends the token unencrypted. Local dev needs it off or Safari drops the cookie.
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+export const cookieSecure = (url) => !LOCAL_HOSTS.has(new URL(url).hostname);
+
 export const sessionCookie = (token, maxAge = SESSION_DAYS * 86400, secure = true) =>
   `${COOKIE}=${token}; Path=/; HttpOnly;${secure ? " Secure;" : ""} SameSite=Lax; Max-Age=${maxAge}`;
 
