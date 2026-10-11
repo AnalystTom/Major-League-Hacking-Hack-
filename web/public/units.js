@@ -1,8 +1,12 @@
 // The user's imported links and their real stages, kept up to date by polling on the home page.
 
 import { api } from "./api.js";
+import { skillWriting } from "./agents.js";
 
 const POLL_MS = 4000;
+
+/** Stages where a link stopped without a short: each shows its reason. */
+export const FAILED_STAGES = new Set(["failed", "render_failed", "not_selected"]);
 
 export const STAGE = {
   queued: "Queued",
@@ -38,7 +42,7 @@ export function renderUnits(list, units) {
       stage.className = "unit-stage";
       stage.textContent = STAGE[u.stage] ?? u.stage;
       li.append(name, stage);
-      if (u.error || ["failed", "render_failed", "not_selected"].includes(u.stage)) {
+      if (u.error || FAILED_STAGES.has(u.stage)) {
         const why = document.createElement("p");
         why.className = "unit-error";
         why.textContent = u.error || "Reason unknown.";
@@ -49,7 +53,6 @@ export function renderUnits(list, units) {
   );
 }
 
-const writing = (s) => s.status === "pending" || s.status === "running";
 
 // A ready short whose skill hasn't been started yet (the processor's sweep picks it up) gets slower checks for
 // a few minutes, so that skill still appears without polling forever for one that never comes.
@@ -69,11 +72,25 @@ export function followImports({ onUnits, onItems, onSkills, onError }) {
       // Read the feed after progress so a final ready update cannot stop polling before its clip arrives.
       const { units } = await api("/api/imports");
       const { items } = await api("/api/feed?scope=mine");
-      const { skills } = onSkills ? await api("/api/skills") : { skills: [] };
+      // Skills are read separately: if /api/skills fails, links and shorts still update, the last skills stay, and
+      // the next check retries them.
+      let skills = [];
+      let skillsError = null;
+      if (onSkills) {
+        try {
+          ({ skills } = await api("/api/skills"));
+        } catch (err) {
+          if (err.status === 401) throw err;
+          skillsError = err;
+        }
+      }
+      const skillsFailed = skillsError !== null;
       onUnits(units);
       onItems(items);
-      onSkills?.(skills);
-      const waiting = units.some((u) => !u.settled) || skills.some(writing);
+      if (onSkills && !skillsFailed) onSkills(skills);
+      // Reported after the shorts, so a page that clears its error note on fresh shorts still shows this one.
+      if (skillsFailed) onError?.(skillsError);
+      const waiting = units.some((u) => !u.settled) || skills.some(skillWriting) || skillsFailed;
       const skillDue = onSkills && items.some((i) => !i.skill) && skillChecks < SKILL_WAIT_CHECKS;
       if (waiting) skillChecks = 0;
       else if (skillDue) skillChecks++;

@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { chatJson } from "../openai.js";
-import type { ReadyArtifact } from "../types.js";
+import type { OpenAIOptions, ReadyArtifact } from "../types.js";
 
 export const SCRIPT_PROMPT_REVISION = "script-v1";
 
@@ -38,9 +38,9 @@ export function validateScript(raw: unknown, a: ReadyArtifact): DraftScene[] {
   return scenes;
 }
 
-export async function writeScript(a: ReadyArtifact, o: { apiKey: string; model?: string; fetchImpl?: typeof fetch }): Promise<DraftScene[]> {
+export async function writeScript(a: ReadyArtifact, o: OpenAIOptions): Promise<DraftScene[]> {
   const raw = await chatJson({
-    apiKey: o.apiKey, model: o.model, fetchImpl: o.fetchImpl, system: SCRIPT_SYSTEM_PROMPT, step: "script", ref: a.id,
+    ...o, system: SCRIPT_SYSTEM_PROMPT, step: "script", ref: a.id,
     user: JSON.stringify({
       artifact: { name: a.name, category: a.category, processed_text: a.processed_text, source_ids: a.source_ids, evidence: a.evidence },
     }),

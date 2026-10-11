@@ -1,25 +1,21 @@
 import { httpError } from "../httpError.js";
 import { openaiUsage, recordUsage, type Usage } from "../usage.js";
 import { DEFAULT_DIGEST_MODEL, DEFAULT_MAX_OUTPUT_TOKENS } from "../ingest/digest/run.js";
+import type { OpenAIOptions } from "./types.js";
 
-export interface ChatJsonOptions {
-  apiKey: string;
-  /** OPENAI_MODEL; the digest default otherwise. */
-  model?: string;
+/** model is OPENAI_MODEL, else the digest default. The output cap is the digest's, counting hidden reasoning. */
+export interface ChatJsonOptions extends OpenAIOptions {
   /** Which output this call is for, recorded with its token usage. */
   step: Extract<Usage["step"], "skill" | "script">;
   /** The artifact it's for. */
   ref?: string;
   system: string;
   user: string;
-  /** Output cap, counting a reasoning model's hidden thinking tokens; defaults to the digest's cap. */
-  maxTokens?: number;
-  fetchImpl?: typeof fetch;
 }
 
 /** One JSON-mode chat completion. Throws with the actual HTTP or parse failure. */
 export async function chatJson(o: ChatJsonOptions): Promise<unknown> {
-  const cap = o.maxTokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
+  const cap = DEFAULT_MAX_OUTPUT_TOKENS;
   const res = await (o.fetchImpl ?? fetch)("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${o.apiKey}` },

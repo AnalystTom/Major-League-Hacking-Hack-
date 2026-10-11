@@ -2,7 +2,7 @@
 
 import { z } from "zod";
 import { chatJson } from "./openai.js";
-import type { ActionItem, GeneratedSkill, ReadyArtifact } from "./types.js";
+import type { ActionItem, GeneratedSkill, OpenAIOptions, ReadyArtifact } from "./types.js";
 
 export const SKILL_SYSTEM_PROMPT = `You turn one source-grounded artifact into (a) a reusable coding-agent skill and (b) up to three tasks a coding
 agent can do in the user's repository.
@@ -92,11 +92,10 @@ export function skillMarkdown(s: { name: string; description: string; body: stri
   return `---\nname: ${s.name}\ndescription: ${JSON.stringify(s.description)}\n---\n\n${PROVENANCE}\n\n${s.body.trim()}\n${sources ? `\n## Sources\n\n${sources}\n` : ""}`;
 }
 
-export interface SkillOptions { apiKey: string; model?: string; fetchImpl?: typeof fetch }
 
-export async function generateSkill(a: ReadyArtifact, o: SkillOptions): Promise<GeneratedSkill> {
+export async function generateSkill(a: ReadyArtifact, o: OpenAIOptions): Promise<GeneratedSkill> {
   const raw = await chatJson({
-    apiKey: o.apiKey, model: o.model, fetchImpl: o.fetchImpl, system: SKILL_SYSTEM_PROMPT, step: "skill", ref: a.id,
+    ...o, system: SKILL_SYSTEM_PROMPT, step: "skill", ref: a.id,
     user: JSON.stringify({
       artifact: {
         name: a.name, category: a.category, processed_text: a.processed_text, selection_reason: a.selection_reason,

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { pcmToWav } from "../../src/outputs/render/tts.js";
 import type { ReadyArtifact } from "../../src/outputs/types.js";
+import type { Kind, MemoryOutputStore } from "../../src/outputs/store.js";
 
 export function artifact(over: Partial<ReadyArtifact> = {}): ReadyArtifact {
   const unit = randomUUID();
@@ -64,4 +65,9 @@ export function outputsFetch(a: ReadyArtifact, opts: { skill?: unknown; ttsStatu
     throw new Error(`unexpected fetch ${u}`);
   }) as unknown as typeof fetch;
   return { impl, calls };
+}
+
+/** What a newer worker's claim does to a stale row: the old worker's token stops matching. */
+export function takeOver(store: MemoryOutputStore, kind: Kind, id: string) {
+  for (const row of store.rows[kind].values()) if (row.id === id) row.token = randomUUID();
 }

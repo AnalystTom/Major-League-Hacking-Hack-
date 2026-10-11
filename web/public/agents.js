@@ -10,6 +10,15 @@ export const AGENTS = {
 
 export const agentOrDefault = (id) => (Object.hasOwn(AGENTS, id) ? id : "claude-code");
 
+/** A SKILL.md's leading `---` front-matter block; group 1 is its body. The Worker parses it with the same pattern. */
+export const FRONTMATTER = /^---\n([\s\S]*?)\n---\n/;
+
+/** A skill the processor hasn't finished: queued or being written. */
+export const skillWriting = (s) => s.status === "pending" || s.status === "running";
+
+/** The id of a skill's card in the Skills sheet; a short's "View skill & tasks" link points at it. */
+export const skillAnchor = (artifactId, version) => `skill-${artifactId}-${version}`;
+
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const skillSlug = (skill) => (SLUG.test(skill.name ?? "") ? skill.name : `resurface-skill-${String(skill.id).slice(0, 8)}`);
 
@@ -19,7 +28,7 @@ export function skillFile(skill, agentId) {
   const slug = skillSlug(skill);
   let content = skill.markdown;
   if (agentId === "cursor") {
-    const body = content.replace(/^---\n[\s\S]*?\n---\n/, "");
+    const body = content.replace(FRONTMATTER, "");
     content = `---\ndescription: ${JSON.stringify(skill.description ?? skill.artifact.name)}\nalwaysApply: false\n---\n${body}`;
   }
   return { path: agent.path(slug), content };
