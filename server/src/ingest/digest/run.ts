@@ -11,15 +11,44 @@ export interface DigestOptions {
   model?: string;
   /** Output cap, including a reasoning model's hidden thinking tokens. Override with OPENAI_MAX_OUTPUT_TOKENS. */
   maxOutputTokens?: number;
+  /** Tries before giving up on a reply that fails validation; each retry tells the model what was wrong (default 2). */
+  maxAttempts?: number;
   units: IngestedUnit[];
   request: string;
   fewShot?: unknown[];
   fetchImpl?: typeof fetch;
 }
 
+type Message = { role: "system" | "user" | "assistant"; content: string };
+
 export async function runDigestion(o: DigestOptions): Promise<DigestOutput> {
   if (o.units.length === 0) return { artifacts: [], exclusions: [] };
   const cap = o.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
+  const attempts = Math.max(1, o.maxAttempts ?? 2);
+  const messages: Message[] = [
+    { role: "system", content: SYSTEM_PROMPT },
+    { role: "user", content: buildUserMessage(o.units, o.request, o.fewShot) },
+  ];
+
+  let failure = "";
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const content = await complete(o, messages, cap);
+    try {
+      return validateDigest(JSON.parse(content), o.units);
+    } catch (e) {
+      failure = (e as Error).message;
+      // Malformed JSON or a citation of a unit that was not supplied: show the model its mistake and ask again.
+      messages.push(
+        { role: "assistant", content },
+        { role: "user", content: `Your previous output was rejected: ${failure}. Return the complete corrected JSON in the same format, citing only the supplied unit refs.` },
+      );
+    }
+  }
+  throw new Error(attempts > 1 ? `${failure} (after ${attempts} attempts)` : failure);
+}
+
+/** One OpenAI call. Transport, refusal, truncation and empty-reply problems throw with their details and are not retried. */
+async function complete(o: DigestOptions, messages: Message[], cap: number): Promise<string> {
   const res = await (o.fetchImpl ?? fetch)("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${o.apiKey}` },
@@ -27,10 +56,7 @@ export async function runDigestion(o: DigestOptions): Promise<DigestOutput> {
       model: o.model ?? DEFAULT_DIGEST_MODEL,
       max_completion_tokens: cap,
       response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: buildUserMessage(o.units, o.request, o.fewShot) },
-      ],
+      messages,
     }),
   });
   const text = await res.text();
@@ -47,5 +73,5 @@ export async function runDigestion(o: DigestOptions): Promise<DigestOutput> {
     throw new Error(`Digestion hit the ${cap}-token output cap before finishing (${detail}); raise OPENAI_MAX_OUTPUT_TOKENS or digest fewer videos at once`);
   }
   if (!content) throw new Error(`Digestion returned no content (${detail})`);
-  return validateDigest(JSON.parse(content), o.units);
+  return content;
 }
