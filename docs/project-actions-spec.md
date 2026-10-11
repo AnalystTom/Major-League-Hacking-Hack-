@@ -351,7 +351,7 @@ Run each step past the owner before proceeding. Preparing this spec does not aut
 3. **Ingestion and digestion:** review the five candidate observations, refine extraction/few-shot examples, approve the project brief and Digestion Prompt, then validate and store real artifacts.
 4. **Workstream 2:** approve the Opus prompt, narration provider, and music track; build the processor against the contract above. Produce one real clip in R2, review it, and confirm it reaches the implemented feed and reel. Close the feed-contract gaps listed under the feed read contract.
 5. **Workstream 3:** agree one export/delivery route; generate reviewed skills and actions independently from the same artifact revision.
-6. **Verification and delivery:** test the approved user journey on big-machine-1, clean up owned test processes, and run ponytail-review before any approved commit/push. Ask separately before deployment.
+6. **Verification and delivery:** follow this repository's `AGENTS.md`: run the relevant package tests and verify frontend changes with local headless Playwright, clean up owned test processes, and run ponytail-review before any approved commit/push. Ask separately before deployment.
 
 ## Acceptance and verification
 
@@ -367,7 +367,7 @@ Run each step past the owner before proceeding. Preparing this spec does not aut
 - Workflow 3 can generate and export a real skill/action list without workflow 2 or any rendered video.
 - Separate output writes and artifact/context versions prevent stale results or one workflow overwriting another.
 - Delivery acknowledgement is distinct from completion and result verification.
-- Run Playwright on big-machine-1 in an isolated session; return the tested URL and evidence. If unavailable, report the limit without launching local test windows.
+- Run local headless Playwright in an isolated browser context for frontend changes; return the tested URL and evidence. This project has no remote-host verification requirement.
 - Clean up only sessions/servers created by the run and verify exit; preserve pre-existing sessions.
 - Run ponytail-review before commits/pushes; preserve hooks and unrelated changes.
 
