@@ -167,17 +167,29 @@ $("[data-signout]").addEventListener("click", async () => {
   }
   if (!me.user) return location.assign("/start");
 
-  render([], []);
-  $("[data-loading]").hidden = true;
-  $("[data-home-body]").hidden = false;
-  if (me.imports === 0) form.querySelector("textarea").focus({ preventScroll: true });
+  // A new account sees the paste box straight away. Anyone with imports keeps the loading line until their
+  // links and shorts arrive, so a slow or failed first load never looks like an empty account.
+  let shown = false;
+  const reveal = () => {
+    if (shown) return;
+    shown = true;
+    $("[data-loading]").hidden = true;
+    $("[data-home-body]").hidden = false;
+  };
+  if (me.imports === 0) {
+    render([], []);
+    reveal();
+    form.querySelector("textarea").focus({ preventScroll: true });
+  }
   follower = followImports({
     onUnits: (u) => { units = u; },
-    onItems: (i) => { items = i; render(units, items); },
+    onItems: (i) => { items = i; render(units, items); reveal(); },
     onSkills: showSkills,
     onError: (err) => {
-      if (err.status === 401) location.assign("/start");
-      else $("[data-run-note]").textContent = `${err.message} Retrying…`;
+      if (err.status === 401) return location.assign("/start");
+      const message = `${err.message} Retrying…`;
+      if (shown) $("[data-run-note]").textContent = message;
+      else $("[data-loading]").textContent = `Couldn't load your shorts. ${message}`;
     },
   });
 })();

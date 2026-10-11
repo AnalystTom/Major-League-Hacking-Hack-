@@ -619,9 +619,12 @@ a.reel-btn { text-decoration: none; }
 .frame-card {
   --h: calc(100svh - var(--bar) - 24px - 30px);
   width: calc(var(--h) * 9 / 16); max-width: 100%; height: var(--h); overflow-y: auto;
-  display: grid; align-content: center; gap: 14px; padding: 28px 24px;
+  display: flex; flex-direction: column; gap: 14px; padding: 28px 24px;
   background: var(--night-2); border-radius: 24px;
 }
+/* Centred while it fits; once ten links overflow the card, the spacers shrink to nothing and the
+   content starts at the top of the scroll area instead of being cut off above it. */
+.frame-card::before, .frame-card::after { content: ""; flex: 1 1 0; min-height: 0; }
 .frame-card h2 { font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 800; letter-spacing: -.025em; }
 .frame-lede { color: var(--on-night-soft); line-height: 1.5; }
 
@@ -703,6 +706,9 @@ a.reel-btn { text-decoration: none; }
   .app-bar .add-label { display: none; }
   .add-open span[aria-hidden] { font-size: 1.25rem; line-height: .8; }
   .status > summary { max-width: 34vw; overflow: hidden; text-overflow: ellipsis; }
+  /* Anchored to the bar's edges, not the small chip, so the list stays on screen. The bar's backdrop
+     filter makes it the containing block for this fixed panel. */
+  .status-panel { position: fixed; left: 12px; right: 12px; top: calc(var(--bar) + 6px); width: auto; }
   .app-bar .wordmark { display: none; }
   .app-bar .topbar-inner { justify-content: flex-end; }
   .topbar-tasks { display: none; }
