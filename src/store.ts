@@ -1,23 +1,33 @@
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
-import type { DigestArtifact, IngestedUnit } from "./types.ts";
+import type { DigestArtifact, IngestedUnit, StoredArtifact } from "./types.ts";
+
+type Exclusion = { unit_id: string; reason: string };
 
 export interface Store {
   saveUnit(unit: IngestedUnit): Promise<void>;
   listReadyUnits(): Promise<IngestedUnit[]>;
-  saveArtifacts(artifacts: DigestArtifact[], exclusions: { source_id: string; reason: string }[], promptId: string | null): Promise<string[]>;
+  saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null): Promise<StoredArtifact[]>;
 }
 
 export class MemoryStore implements Store {
   units = new Map<string, IngestedUnit>();
-  artifacts: (DigestArtifact & { id: string; promptId: string | null })[] = [];
-  exclusions: { source_id: string; reason: string; promptId: string | null }[] = [];
+  artifacts: StoredArtifact[] = [];
+  exclusions: (Exclusion & { promptId: string | null })[] = [];
   async saveUnit(unit: IngestedUnit) { this.units.set(unit.id, unit); }
   async listReadyUnits() { return [...this.units.values()].filter((u) => u.status === "ready"); }
-  async saveArtifacts(artifacts: DigestArtifact[], exclusions: { source_id: string; reason: string }[], promptId: string | null) {
-    const ids = artifacts.map((a) => { const id = randomUUID(); this.artifacts.push({ ...a, id, promptId }); return id; });
+  async saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null) {
+    const stored = artifacts.map((a): StoredArtifact => {
+      const src = a.source_ids.map((id) => this.units.get(id)).filter((u): u is IngestedUnit => !!u);
+      return {
+        ...a, id: randomUUID(), version: 1, source_url: src[0]?.sourceUrl ?? "",
+        sources: src.map((u) => ({ url: u.sourceUrl, title: u.title, content_type: "youtube_video", retrieved_at: u.extractedAt })),
+        ingestion_status: "ready", review_status: "pending", digestion_prompt_id: promptId,
+      };
+    });
+    this.artifacts.push(...stored);
     for (const e of exclusions) this.exclusions.push({ ...e, promptId });
-    return ids;
+    return stored;
   }
 }
 
@@ -43,26 +53,27 @@ export class PgStore implements Store {
     }));
   }
 
-  async saveArtifacts(artifacts: DigestArtifact[], exclusions: { source_id: string; reason: string }[], promptId: string | null) {
+  async saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null) {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const ids: string[] = [];
+      const stored: StoredArtifact[] = [];
       for (const a of artifacts) {
         const { rows: src } = await client.query(
           `SELECT id, source_url, title, content_type, extracted_at FROM ingested_units WHERE id = ANY($1::uuid[])`, [a.source_ids]);
         const sources = src.map((s) => ({ url: s.source_url, title: s.title, content_type: s.content_type, retrieved_at: s.extracted_at }));
         const { rows } = await client.query(
           `INSERT INTO artifacts (name, source_url, source_ids, sources, processed_text, category, selection_reason, evidence, digestion_prompt_id, ingestion_status, processed_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'ready',now()) RETURNING id`,
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'ready',now()) RETURNING id, version, source_url, sources, ingestion_status, review_status, digestion_prompt_id`,
           [a.name, src[0]?.source_url ?? "", a.source_ids, JSON.stringify(sources), a.processed_text, a.category, a.selection_reason, JSON.stringify(a.evidence), promptId]);
-        ids.push(rows[0].id);
+        const r = rows[0];
+        stored.push({ ...a, id: r.id, version: r.version, source_url: r.source_url, sources: r.sources, ingestion_status: r.ingestion_status, review_status: r.review_status, digestion_prompt_id: r.digestion_prompt_id });
       }
       if (promptId) for (const e of exclusions) {
-        await client.query(`INSERT INTO artifact_exclusions (unit_id, digestion_prompt_id, reason) VALUES ($1,$2,$3)`, [e.source_id, promptId, e.reason]);
+        await client.query(`INSERT INTO artifact_exclusions (unit_id, digestion_prompt_id, reason) VALUES ($1,$2,$3)`, [e.unit_id, promptId, e.reason]);
       }
       await client.query("COMMIT");
-      return ids;
+      return stored;
     } catch (e) {
       await client.query("ROLLBACK");
       throw e;

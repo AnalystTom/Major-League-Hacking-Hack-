@@ -49,8 +49,19 @@ export const DigestArtifact = z.object({
 });
 export type DigestArtifact = z.infer<typeof DigestArtifact>;
 
+/** An artifact as stored (mirrors the artifacts table). */
+export interface StoredArtifact extends DigestArtifact {
+  id: string;
+  version: number;
+  source_url: string;
+  sources: { url: string; title: string | null; content_type: string; retrieved_at: Date | string | null }[];
+  ingestion_status: ProcessingStatus;
+  review_status: "pending" | "approved" | "rejected";
+  digestion_prompt_id: string | null;
+}
+
 export const DigestOutput = z.object({
   artifacts: z.array(DigestArtifact),
-  exclusions: z.array(z.object({ source_id: Uuid, reason: z.string().min(1) })),
+  exclusions: z.array(z.object({ unit_id: Uuid, reason: z.string().min(1) })),
 });
 export type DigestOutput = z.infer<typeof DigestOutput>;

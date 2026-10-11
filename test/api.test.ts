@@ -55,9 +55,18 @@ test("API returns extracted evidence and stores digested artifacts", async () =>
     await new Promise((r) => setTimeout(r, 20));
   }
   assert.equal(body.links[0].extraction.evidence_items[0].observed_spoken_content, "x");
-  assert.equal(body.links[0].review_status, "pending");
+  assert.equal("review_status" in body.links[0], false);
+  assert.match(body.links[0].extraction_method, /^gemini:/);
+  assert.ok(body.links[0].extracted_at);
   assert.equal(body.digest.status, "ready", body.digest.error);
-  assert.equal(body.digest.stored_artifact_ids.length, 1);
+  const row = body.digest.stored_artifacts[0];
+  assert.equal(body.digest.stored_artifacts.length, 1);
+  assert.equal(row.id, store.artifacts[0].id);
+  assert.equal(row.ingestion_status, "ready");
+  assert.equal(row.review_status, "pending");
+  assert.equal(row.version, 1);
+  assert.equal(row.sources[0].url, "https://www.youtube.com/watch?v=VQy50fuxI34");
+  assert.equal(row.source_url, "https://www.youtube.com/watch?v=VQy50fuxI34");
   assert.equal(store.artifacts.length, 1);
   } finally { server.close(); }
 });

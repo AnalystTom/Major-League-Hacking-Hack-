@@ -4,7 +4,7 @@ import { MAX_WINDOW_SECONDS, MIN_WINDOW_SECONDS } from "./extract/gemini.ts";
 import { ingestLink, type IngestOptions } from "./pipeline.ts";
 import { runDigestion } from "./digest/run.ts";
 import type { ProjectContext } from "./digest/prompt.ts";
-import type { DigestOutput, IngestedUnit } from "./types.ts";
+import type { DigestOutput, IngestedUnit, StoredArtifact } from "./types.ts";
 
 interface ImportJob {
   id: string;
@@ -14,8 +14,8 @@ interface ImportJob {
     status: "skipped" | "pending" | "running" | "ready" | "failed";
     error: string | null;
     result: DigestOutput | null;
-    /** ids of artifacts written to the store; null until saved */
-    stored_artifact_ids: string[] | null;
+    /** artifact rows as written to the store; null until saved */
+    stored_artifacts: StoredArtifact[] | null;
     store_error: string | null;
   };
 }
@@ -27,14 +27,14 @@ export interface ApiOptions extends IngestOptions {
 }
 
 const MAX_LINKS = 20;
-const EMPTY_DIGEST = { error: null, result: null, stored_artifact_ids: null, store_error: null } as const;
+const EMPTY_DIGEST = { error: null, result: null, stored_artifacts: null, store_error: null } as const;
 
 function view(job: ImportJob) {
   return {
     id: job.id,
     links: job.units.map((u) => ({ id: u.id, submitted_url: u.submittedUrl, source_url: u.sourceUrl, start_seconds: u.startSeconds, status: u.status, error: u.error,
-      // Unreviewed model extraction: check against the video before treating as approved.
-      review_status: "pending",
+      title: u.title, extraction_method: u.extractionMethod, extracted_at: u.extractedAt,
+      // API-only: the unreviewed model extraction (ingested_units.transcript) and items validation dropped.
       extraction: u.transcript,
       rejected_items: (u.rejectedItems ?? []).map((r) => ({ ...r.item, reason: r.reason })),
     })),
@@ -66,7 +66,7 @@ export function createApi(o: ApiOptions): Server {
       const result = await runDigestion({ apiKey: o.openaiKey, model: o.openaiModel, units: ready, request: job.request, context: o.context, fetchImpl: o.fetchImpl });
       job.digest = { ...EMPTY_DIGEST, status: "ready", result };
       try {
-        job.digest.stored_artifact_ids = await o.store.saveArtifacts(result.artifacts, result.exclusions, null);
+        job.digest.stored_artifacts = await o.store.saveArtifacts(result.artifacts, result.exclusions, null);
       } catch (e) {
         job.digest.store_error = (e as Error).message;
       }

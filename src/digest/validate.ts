@@ -20,8 +20,8 @@ export function validateDigest(raw: unknown, units: IngestedUnit[]): DigestOutpu
     }
   }
   for (const e of out.exclusions) {
-    need(e.source_id, "exclusion");
-    if (used.has(e.source_id)) throw new Error(`unit ${e.source_id} is both used and excluded`);
+    need(e.unit_id, "exclusion");
+    if (used.has(e.unit_id)) throw new Error(`unit ${e.unit_id} is both used and excluded`);
   }
   return out;
 }

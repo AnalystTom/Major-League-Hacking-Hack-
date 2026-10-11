@@ -36,9 +36,13 @@ test("PgStore writes match the shared schema", { skip: !url && "TEST_DATABASE_UR
     const digest = validateDigest({
       artifacts: [{ name: "a", source_ids: [good.id], category: "c", processed_text: "t", selection_reason: "r",
         evidence: [{ source_id: good.id, start_seconds: 5, end_seconds: 20, passage: "p" }] }],
-      exclusions: [{ source_id: unused.id, reason: "unrelated" }],
+      exclusions: [{ unit_id: unused.id, reason: "unrelated" }],
     }, [good, unused]);
-    ids.artifact = await store.saveArtifacts(digest.artifacts, digest.exclusions, ids.prompt!);
+    const stored = await store.saveArtifacts(digest.artifacts, digest.exclusions, ids.prompt!);
+    ids.artifact = stored.map((s) => s.id);
+    assert.equal(stored[0].review_status, "pending");
+    assert.equal(stored[0].version, 1);
+    assert.equal(stored[0].sources[0].url, "https://www.youtube.com/watch?v=VQy50fuxI34");
     const a = await pool.query("select ingestion_status, review_status, source_ids, sources, source_url from artifacts where id = $1", [ids.artifact[0]]);
     assert.equal(a.rows[0].ingestion_status, "ready");
     assert.equal(a.rows[0].review_status, "pending");
