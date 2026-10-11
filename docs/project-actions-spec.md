@@ -197,7 +197,7 @@ Processing `ready` requires valid script, prompt revision, nonempty code/media/a
 - `video`: `id`, `url`, `captions_url`, `duration_seconds`, `feed_order`. `url` and `captions_url` are playable URLs resolved from `media_ref` and `caption_ref` at the Worker, never the stored references.
 - `skill`: null when no matching result exists; otherwise `id`, `status`. Workstream 3 serves the skill content and actions separately.
 
-Resolve storage references to authorized playable URLs at the backend boundary; never expose credentials or internal filesystem paths. Include an item only when the artifact and video are both ready, the video matches the artifact revision and project context, and its video resolves to a servable URL. The public curated feed also requires `feed_order`; a signed-in user's feed (`?scope=mine`) shows their ready clips for their current project without one. Exclude superseded artifact revisions and artifacts whose project context is no longer current. Order by `feed_order` (nulls last), then `created_at`, then artifact `id`. Return at most one item per artifact revision; select the newest matching skill result by `created_at`, then `id` for ties, so the join cannot multiply feed rows. Exclude stale skill results, and enable skill/action CTAs only for matching ready skills. Category counts come from this eligible set.
+Resolve storage references to authorized playable URLs at the backend boundary; never expose credentials or internal filesystem paths. Include an item only when the artifact and video are both ready, the video matches the artifact revision, and its video resolves to a servable URL. The public curated feed also requires `feed_order`; a signed-in user's feed (`?scope=mine`) shows ready clips built from their links without one. Order by `feed_order` (nulls last), then `created_at`, then artifact `id`. Return at most one item per artifact revision; select the newest matching skill result by `created_at`, then `id` for ties, so the join cannot multiply feed rows. Exclude stale skill results, and enable skill/action CTAs only for matching ready skills. Category counts come from this eligible set.
 
 **Implemented** in `web/src/feed.js`, with these gaps against the contract: it filters by `project_context_id` but not by version, superseded revisions are not excluded, stale skill results are not excluded, and the query reads the tables directly instead of the `artifact_feed` view. Workstream 1 owns the view's migration; workstream 2 owns the API serialization and player.
 
@@ -217,9 +217,8 @@ Two Cloudflare Workers exist. Request details, setup, and storage costs live in 
 
 ```
 Browser ──POST /api/auth/signup | login──▶ web Worker ──users, sessions──▶ TigerData   (httpOnly cookie)
-        ──PUT /api/project──▶ web Worker ──project_contexts (next version)──▶ TigerData
         ──POST /api/imports──▶ web Worker ──ingested_units, user_imports──▶ TigerData
-                                  └──POST PROCESSOR_URL {unit_ids, project}──▶ Processor (not built)
+                                  └──POST PROCESSOR_URL {unit_ids}──▶ Processor (server/src/ingest, Node)
 Processor ──PUT mp4 + vtt──▶ R2 resurface-media    ──units/artifacts/video_results──▶ TigerData
 Browser ──GET /api/imports, /api/feed?scope=mine (polled)──▶ web Worker ──▶ TigerData
         ──GET /media/videos/…/short.mp4 (Range)──▶ web Worker ──▶ R2
@@ -227,26 +226,25 @@ Browser ──GET /api/imports, /api/feed?scope=mine (polled)──▶ web Worke
 
 ### Web Worker `resurface` (`web/`, same origin as the page)
 
-Static assets serve everything except `/api/*` and `/media/*`: the landing page, `/start` (onboarding: account → saved links → processing), and `/app` (the signed-in home with links and the reel). Project briefs are optional API input and have no onboarding screen. Every API response is JSON with `cache-control: no-store`. Every mutation must be `application/json`, which, with the `SameSite=Lax` session cookie, blocks cross-site form posts (`415` otherwise). A missing database connection or query error returns `503` with a safe message; details go to Worker logs only. The database comes from the `HYPERDRIVE` binding when present, otherwise `DATABASE_URL`.
+Static assets serve everything except `/api/*` and `/media/*`: the landing page, `/start` (sign-up or sign-in only), and `/app` (the signed-in home where the user pastes links, watches each link's stage, and plays the reel). There is no project or setup step. Every API response is JSON with `cache-control: no-store`. Every mutation must be `application/json`, which, with the `SameSite=Lax` session cookie, blocks cross-site form posts (`415` otherwise). A missing database connection or query error returns `503` with a safe message; details go to Worker logs only. The database comes from the `HYPERDRIVE` binding when present, otherwise `DATABASE_URL`.
 
 | Route | Auth | Request → response |
 | --- | --- | --- |
-| `POST /api/auth/signup` | none | `{ email, password, name? }` → `201` onboarding state and session cookie. Password ≥ 10 characters, PBKDF2-SHA256. `409` if the email exists. |
-| `POST /api/auth/login` | none | `{ email, password }` → `200` onboarding state and session cookie. Unknown email and wrong password both get `401`. |
+| `POST /api/auth/signup` | none | `{ email, password, name? }` → `201 { user, imports }` and session cookie. Password ≥ 10 characters, PBKDF2-SHA256. `409` if the email exists. |
+| `POST /api/auth/login` | none | `{ email, password }` → `200 { user, imports }` and session cookie. Unknown email and wrong password both get `401`. |
 | `POST /api/auth/logout` | none | Ends the session and clears the cookie. |
-| `GET /api/me` | optional session | Signed in: `{ user, project, imports, step }`, where `step` is `sources` or `done`; signed out: `{ user: null, step: "account" }`. |
-| `PUT /api/project` | session | `{ name, goal?, tools, agents }` → `{ project }`, saved as the next `project_contexts` version. |
-| `POST /api/imports` | session | `{ links: string[] \| string, company?: honeypot }` → `201 { units, processor }`. The project brief is optional. |
+| `GET /api/me` | optional session | Signed in: `{ user, imports }`; signed out: `{ user: null }`. |
+| `POST /api/imports` | session | `{ links: string[] \| string, company?: honeypot }` → `201 { units, processor }`. |
 | `GET /api/imports` | session | `{ units }`: the user's 50 most recent imports, newest first. |
-| `GET /api/feed?scope=mine` | session | `{ items }`: the user's ready shorts for their current project, or generic shorts without a project, as in the [feed read contract](#feed-read-contract). |
+| `GET /api/feed?scope=mine` | session | `{ items }`: ready shorts built from the user's links, as in the [feed read contract](#feed-read-contract). |
 | `GET /api/feed` | none | `{ items }`: the public curated feed (requires `feed_order`). |
 | `GET`/`HEAD /media/<key>` | none | `200` or `206` with `accept-ranges`, `content-range`, `etag`, and `cache-control: public, max-age=3600`; `416` past the end; `404` for an unknown or disallowed key; `503` without the R2 binding. |
 
 Signed-out requests to session routes get `401`. Rate limits: sign-up and sign-in at 10 per IP per minute (`AUTH_LIMITER`), imports at 5 per account per minute (`IMPORT_LIMITER`); both return `429`.
 
-**Import rules.** Each link must be a single YouTube video (`youtube.com/watch`, `youtu.be`, `/shorts/`, `/live/`, `/embed/` on `www`, `m`, or `music` hosts). It is stored as the canonical `https://www.youtube.com/watch?v=<id>` plus `start_seconds` parsed from `t` or `start` (`90`, `90s`, `1m30s`, `1h2m3s`). The submitted URL is kept in the database but never returned. The same video and start time within one request is one unit. Units are shared across users: the newest non-failed unit for that video and start time is reused, and `user_imports` records who imported it with which project version. Each unit is sent to the processor the first time a given user imports it, even when extraction is reused. Errors: `400` for invalid JSON, no links, more than 10 links, a link over 2,048 characters, or any invalid link (with `invalid: [{ link, error }]` naming each); `413` for a body over 32 KB. A filled honeypot gets `200 { units: [], processor: "not_needed" }` and stores nothing. `processor` is `requested`, `not_needed`, `not_configured` (no `PROCESSOR_URL`), or `unavailable` (error, timeout, or non-2xx).
+**Import rules.** Each link must be a single YouTube video (`youtube.com/watch`, `youtu.be`, `/shorts/`, `/live/`, `/embed/` on `www`, `m`, or `music` hosts). It is stored as the canonical `https://www.youtube.com/watch?v=<id>` plus `start_seconds` parsed from `t` or `start` (`90`, `90s`, `1m30s`, `1h2m3s`). The submitted URL is kept in the database but never returned. The same video and start time within one request is one unit. Units are shared across users: the newest non-failed unit for that video and start time is reused, and `user_imports` records who imported it. Each unit is sent to the processor the first time a given user imports it; the processor skips work that's already done. Errors: `400` for invalid JSON, no links, more than 10 links, a link over 2,048 characters, or any invalid link (with `invalid: [{ link, error }]` naming each); `413` for a body over 32 KB. A filled honeypot gets `200 { units: [], processor: "not_needed" }` and stores nothing. `processor` is `requested`, `not_needed`, `not_configured` (no `PROCESSOR_URL`), or `unavailable` (error, timeout, or non-2xx).
 
-**Unit shape.** `{ id, source_url, start_seconds, title, stage, settled, error }`. Only artifacts digested for the user's project count; users without a project see generic artifacts only. `stage` collapses the unit's records into one state. `settled` means nothing more happens without a person. When a unit feeds several artifacts, the one furthest along is reported.
+**Unit shape.** `{ id, source_url, start_seconds, title, stage, settled, error }`. Digests are shared, so everyone who imported a video sees the same artifacts for it. `stage` collapses the unit's records into one state. `settled` means nothing more happens without a person. When a unit feeds several artifacts, the one furthest along is reported.
 
 | `stage` | Derived from | `settled` |
 | --- | --- | --- |
@@ -297,9 +295,9 @@ This is a candidate shape for workstream 3's export, not a delivery route. It wr
 
 The Node server mounts `POST /api/ingest/imports` and `GET /api/ingest/imports/:id`
 when `GEMINI_API_KEY` is configured. Both require `Authorization: Bearer <INGEST_TOKEN>`.
-Set `PROJECT_CONTEXT` to a real project brief JSON file with `name`, nullable `goal`,
-and `facts: [{ fact, source? }]`; startup fails when the token or brief is missing.
-No placeholder project is selected automatically.
+Startup fails when the token is missing. There is no project brief: digests are generic
+and shared by everyone who imports the same video. `POST /api/ingest/process` is the
+processor the web Worker calls with `{ unit_ids }`.
 
 The POST body is `{ links, request, window_seconds? }`, where `request` is the
 categorization instruction. It accepts 1–20 links and a 30–3,600 second window.

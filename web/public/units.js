@@ -1,5 +1,4 @@
-// The user's imported links and their real stages, kept up to date by polling. Used by the last
-// onboarding step and by the home page.
+// The user's imported links and their real stages, kept up to date by polling on the home page.
 
 import { api } from "./api.js";
 
@@ -13,7 +12,7 @@ export const STAGE = {
   ready: "Ready to watch",
   failed: "Couldn't read this video",
   render_failed: "Rendering failed",
-  not_selected: "Nothing in it fit your project",
+  not_selected: "Nothing in it was worth a short",
 };
 
 export const PROCESSOR = {

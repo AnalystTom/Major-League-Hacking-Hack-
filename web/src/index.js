@@ -6,7 +6,6 @@ import { readFeed } from "./feed.js";
 import { createUnits, parseImport, readUnits, userUnitIds } from "./imports.js";
 import { serveMedia } from "./media.js";
 import { requestProcessing } from "./processor.js";
-import { parseProject, readProject, saveProject } from "./project.js";
 
 const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), {
@@ -35,16 +34,10 @@ async function limited(limiter, key) {
 
 const ip = (request) => request.headers.get("cf-connecting-ip") ?? "local";
 
-/** Where onboarding resumes: videos until the first import, then the user's home. */
-async function onboardingState(sql, user) {
-  const project = await readProject(sql, user);
+/** The signed-in user and how many links they've imported (0 means the home page shows its first-run state). */
+async function accountState(sql, user) {
   const [{ count }] = await sql`SELECT count(*)::int AS count FROM user_imports WHERE user_id = ${user.id}`;
-  return {
-    user: { id: user.id, email: user.email, name: user.name },
-    project,
-    imports: count,
-    step: count === 0 ? "sources" : "done",
-  };
+  return { user: { id: user.id, email: user.email, name: user.name }, imports: count };
 }
 
 async function signup(request, env, sql) {
@@ -56,7 +49,7 @@ async function signup(request, env, sql) {
   const user = await createUser(sql, parsed.value);
   if (!user) return json({ error: "There's already an account with that email. Sign in instead." }, 409);
   const token = await createSession(sql, user.id);
-  return json(await onboardingState(sql, user), 201, { "set-cookie": sessionCookie(token, undefined, cookieSecure(request.url)) });
+  return json(await accountState(sql, user), 201, { "set-cookie": sessionCookie(token, undefined, cookieSecure(request.url)) });
 }
 
 async function signin(request, env, sql) {
@@ -68,11 +61,10 @@ async function signin(request, env, sql) {
   const user = await login(sql, parsed.value);
   if (!user) return json({ error: "That email and password don't match an account." }, 401);
   const token = await createSession(sql, user.id);
-  return json(await onboardingState(sql, user), 200, { "set-cookie": sessionCookie(token, undefined, cookieSecure(request.url)) });
+  return json(await accountState(sql, user), 200, { "set-cookie": sessionCookie(token, undefined, cookieSecure(request.url)) });
 }
 
-// POST /api/imports: store the links as the user's units, then hand the ones new to this user to the
-// processor, with their project brief when they've given one (it's optional).
+// POST /api/imports: store the links as the user's units, then hand the ones new to this user to the processor.
 async function startImport(request, env, sql, user) {
   if (await limited(env.IMPORT_LIMITER, user.id)) {
     return json({ error: "That's a lot of imports at once. Wait a minute and try again." }, 429);
@@ -84,10 +76,9 @@ async function startImport(request, env, sql, user) {
     if (parsed.status === 202) return json({ units: [], processor: "not_needed" }, 200);
     return json({ error: parsed.error, invalid: parsed.invalid }, parsed.status);
   }
-  const project = await readProject(sql, user);
-  const units = await createUnits(sql, parsed.value.links, { userId: user.id, project });
-  const processor = await requestProcessing(env, units.filter((u) => u.linked).map((u) => u.id), fetch, project);
-  return json({ units: await readUnits(sql, units.map((u) => u.id), project?.id ?? null), processor }, 201);
+  const units = await createUnits(sql, parsed.value.links, { userId: user.id });
+  const processor = await requestProcessing(env, units.filter((u) => u.linked).map((u) => u.id));
+  return json({ units: await readUnits(sql, units.map((u) => u.id)), processor }, 201);
 }
 
 async function api(request, env, url, sql) {
@@ -114,30 +105,20 @@ async function api(request, env, url, sql) {
   const user = await currentUser(sql, request);
   // "Am I signed in?" is a normal question for every visitor, so a signed-out answer isn't an error.
   if (pathname === "/api/me" && method === "GET") {
-    return json(user ? await onboardingState(sql, user) : { user: null, step: "account" });
+    return json(user ? await accountState(sql, user) : { user: null });
   }
   if (!user) return json(SIGNED_OUT, 401);
-
-  if (pathname === "/api/project" && method === "PUT") {
-    const { body, error } = await readJson(request);
-    if (error) return error;
-    const parsed = parseProject(body);
-    if (!parsed.ok) return json({ error: parsed.error }, 400);
-    return json({ project: await saveProject(sql, user, parsed.value) });
-  }
 
   if (pathname === "/api/imports") {
     if (method === "POST") return startImport(request, env, sql, user);
     if (method === "GET") {
-      const project = await readProject(sql, user);
-      return json({ units: await readUnits(sql, await userUnitIds(sql, user.id), project?.id ?? null) });
+      return json({ units: await readUnits(sql, await userUnitIds(sql, user.id)) });
     }
   }
 
   if (pathname === "/api/feed" && method === "GET") {
-    const project = await readProject(sql, user);
     const ids = await userUnitIds(sql, user.id);
-    return json({ items: await readFeed(sql, ids, project?.id ?? null) });
+    return json({ items: await readFeed(sql, ids) });
   }
 
   return json({ error: "Not found." }, 404);

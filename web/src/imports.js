@@ -50,7 +50,7 @@ export function parseUnitIds(value) {
  * Only ids and status come back: a reused unit's submitted_url is another visitor's original link,
  * which can carry their share or playlist parameters, so it never leaves the database.
  */
-export async function createUnits(sql, links, { userId = null, project = null } = {}) {
+export async function createUnits(sql, links, { userId = null } = {}) {
   const units = [];
   for (const link of links) {
     const [existing] = await sql`
@@ -66,11 +66,10 @@ export async function createUnits(sql, links, { userId = null, project = null } 
           VALUES (${link.submitted_url}, ${link.source_url}, ${link.start_seconds}::integer)
           RETURNING id, status`).map((u) => ({ ...u, reused: false }));
     if (userId) {
-      // A first link for this user means the unit needs digesting against their project, even when
-      // its extraction is reused from someone else's import.
+      // `linked` is true the first time this user imports the unit, which is when the processor is asked.
       const linked = await sql`
-        INSERT INTO user_imports (user_id, unit_id, project_context_id, project_context_version)
-        VALUES (${userId}, ${unit.id}, ${project?.id ?? null}, ${project?.version ?? null})
+        INSERT INTO user_imports (user_id, unit_id)
+        VALUES (${userId}, ${unit.id})
         ON CONFLICT (user_id, unit_id) DO NOTHING
         RETURNING unit_id`;
       unit.linked = linked.length > 0;
@@ -88,11 +87,10 @@ export async function userUnitIds(sql, userId, limit = 50) {
 }
 
 /**
- * Each unit with the artifacts it fed, their newest video result, and any exclusion reasons. Only
- * artifacts digested for this project count (no project: generic digests), so one user never sees a
- * digest made for someone else's project.
+ * Each unit with the artifacts it fed, their newest video result, and any exclusion reasons. Digests are
+ * shared, so everyone who imported a video sees the same artifacts for it.
  */
-export async function readUnits(sql, ids, projectId = null) {
+export async function readUnits(sql, ids) {
   if (ids.length === 0) return [];
   const list = ids.join(",");
   const rows = await sql`
@@ -109,8 +107,7 @@ export async function readUnits(sql, ids, projectId = null) {
             ORDER BY v.created_at DESC, v.id DESC LIMIT 1)
         ) ORDER BY a.created_at)
         FROM artifacts a
-        WHERE u.id = ANY (a.source_ids)
-          AND a.project_context_id IS NOT DISTINCT FROM ${projectId}::uuid), '[]') AS artifacts
+        WHERE u.id = ANY (a.source_ids)), '[]') AS artifacts
     FROM ingested_units u
     WHERE u.id = ANY (string_to_array(${list}, ',')::uuid[])
     ORDER BY array_position(string_to_array(${list}, ',')::uuid[], u.id)`;

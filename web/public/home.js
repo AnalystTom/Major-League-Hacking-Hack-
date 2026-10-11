@@ -1,4 +1,5 @@
-// The signed-in home: the user's links with live stages, and their shorts.
+// The signed-in home and the whole workflow: paste links, watch each one's stage, play the shorts.
+// A new account lands here straight from sign-up, with the paste box first.
 
 import { api } from "./api.js";
 import { createReel } from "./reel.js";
@@ -7,6 +8,18 @@ import { followImports, PROCESSOR, renderUnits } from "./units.js";
 const $ = (sel) => document.querySelector(sel);
 const reel = createReel($("[data-reel]"));
 let follower = null;
+
+// First run (no links yet) leads with the paste box; afterwards it's "add more" above the list.
+function setFirstRun(first) {
+  $("[data-links]").hidden = first;
+  $("[data-home-title]").textContent = first ? "Paste your first videos" : "Your shorts";
+  $("[data-add-label]").textContent = first ? "Paste YouTube links, one per line (up to 10)" : "Add more YouTube links";
+}
+
+function showLinks(units) {
+  renderUnits($("[data-units]"), units);
+  setFirstRun(units.length === 0);
+}
 
 const addForm = $("[data-add]");
 addForm.addEventListener("submit", async (e) => {
@@ -49,14 +62,14 @@ $("[data-signout]").addEventListener("click", async () => {
     return;
   }
   if (!me.user) return location.assign("/start");
-  // Onboarding isn't finished: go back to the first open step.
-  if (me.step !== "done") return location.assign(`/start#${me.step}`);
 
   $("[data-who]").textContent = me.user.name || me.user.email;
+  setFirstRun(me.imports === 0);
   $("[data-loading]").hidden = true;
   $("[data-home-body]").hidden = false;
+  if (me.imports === 0) $("#add-links").focus({ preventScroll: true });
   follower = followImports({
-    onUnits: (units) => renderUnits($("[data-units]"), units),
+    onUnits: showLinks,
     onItems: (items) => {
       reel.render(items);
       $("[data-reel-empty]").hidden = reel.count > 0;

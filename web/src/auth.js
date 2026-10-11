@@ -82,7 +82,7 @@ export async function currentUser(sql, request) {
   const token = readCookie(request.headers.get("cookie"), COOKIE);
   if (!token) return null;
   const [user] = await sql`
-    SELECT u.id, u.email, u.name, u.project_context_id
+    SELECT u.id, u.email, u.name
     FROM sessions s JOIN users u ON u.id = s.user_id
     WHERE s.token_hash = ${await sha256(token)} AND s.expires_at > now()`;
   return user ?? null;
@@ -99,7 +99,7 @@ export async function createUser(sql, { email, password, name }) {
     INSERT INTO users (email, name, password_hash)
     VALUES (${email}, ${name}, ${await hashPassword(password)})
     ON CONFLICT (email) DO NOTHING
-    RETURNING id, email, name, project_context_id`;
+    RETURNING id, email, name`;
   return user ?? null;
 }
 
@@ -107,7 +107,7 @@ export async function createUser(sql, { email, password, name }) {
 const DUMMY = "pbkdf2-sha256$100000$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 
 export async function login(sql, { email, password }) {
-  const [row] = await sql`SELECT id, email, name, project_context_id, password_hash FROM users WHERE email = ${email}`;
+  const [row] = await sql`SELECT id, email, name, password_hash FROM users WHERE email = ${email}`;
   const ok = await verifyPassword(password, row?.password_hash ?? DUMMY);
   if (!row || !ok) return null;
   const { password_hash, ...user } = row;

@@ -29,18 +29,12 @@
   </header>
 
   <main class="onboard" data-onboard>
-    <ol class="onboard-steps" aria-label="Setup progress">
-      <li data-step-dot="account">Account</li>
-      <li data-step-dot="sources">Your videos</li>
-      <li data-step-dot="processing">Processing</li>
-    </ol>
-
     <p class="onboard-loading" data-loading>Loading…</p>
 
-    <!-- 1. Account -->
+    <!-- Account: the only step. Signing up or in goes straight to /app. -->
     <section class="onboard-card" data-step="account" hidden aria-labelledby="account-title">
       <h1 id="account-title" data-account-title>Create your account</h1>
-      <p class="onboard-lede" data-account-lede>Resurface turns the videos you saved into 30-second shorts. Sign up, paste your links, and watch.</p>
+      <p class="onboard-lede" data-account-lede>Resurface turns the videos you saved into 30-second shorts. Sign up, then paste your links.</p>
       <form class="onboard-form" data-form="signup" novalidate>
         <label for="su-name">Name <span class="opt">(optional)</span></label>
         <input id="su-name" name="name" autocomplete="name" maxlength="80">
@@ -66,34 +60,6 @@
       </p>
     </section>
 
-    <!-- 2. Videos -->
-    <section class="onboard-card" data-step="sources" hidden aria-labelledby="sources-title">
-      <h1 id="sources-title">Bring in what you saved</h1>
-      <p class="onboard-lede">Paste the YouTube videos you've been meaning to watch: tutorials, talks, Watch Later. Up to 10 for now.</p>
-      <form class="onboard-form" data-form="sources" novalidate>
-        <label for="src-links">YouTube links, one per line</label>
-        <textarea id="src-links" name="links" rows="5" spellcheck="false" autocomplete="off"
-          placeholder="https://www.youtube.com/watch?v=VQy50fuxI34&#10;https://youtu.be/V-EDrhIhHzQ?t=306"></textarea>
-        <input class="visually-hidden" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
-        <div class="soon" aria-label="Coming soon">
-          <span>Coming soon</span>
-          <i>X bookmarks</i><i>GitHub stars</i><i>Newsletters</i><i>Read later</i>
-        </div>
-        <button class="btn" type="submit">Start processing</button>
-        <p class="form-status" role="status" aria-live="polite"></p>
-      </form>
-    </section>
-
-    <!-- 3. Processing -->
-    <section class="onboard-card onboard-wide" data-step="processing" hidden aria-labelledby="processing-title">
-      <h1 id="processing-title">Making your shorts</h1>
-      <p class="onboard-lede" data-processing-note>Each video is read, boiled down to what's worth keeping, then rendered as a short.</p>
-      <ol class="units" data-units></ol>
-      <div class="onboard-actions">
-        <a class="btn" href="/app" data-to-feed>Open your feed</a>
-        <p class="hint" data-feed-hint>Your feed fills in as shorts are rendered. You can leave this page; processing carries on.</p>
-      </div>
-    </section>
   </main>
 
   <script src="/start.js" type="module"></script>

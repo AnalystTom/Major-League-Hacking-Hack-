@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cookieSecure, hashPassword, parseLogin, parseSignup, readCookie, sessionCookie, verifyPassword } from "../src/auth.js";
-import { fromRow, parseProject, toFacts } from "../src/project.js";
 
 test("passwords hash with a fresh salt and verify only the right password", async () => {
   const a = await hashPassword("correct horse battery");
@@ -35,22 +34,4 @@ test("session cookie is httpOnly, Secure, SameSite=Lax and readable back", () =>
   assert.equal(readCookie("a=1; rs_session=tok_123; b=2", "rs_session"), "tok_123");
   assert.equal(readCookie("a=1", "rs_session"), null);
   assert.equal(readCookie(null, "rs_session"), null);
-});
-
-test("parseProject cleans the brief and keeps only known agents", () => {
-  const p = parseProject({ name: "  Resurface ", goal: "Ship  the\\nfeed", tools: "TypeScript, Postgres, TypeScript,  ", agents: ["codex", "skynet", "codex"] });
-  assert.equal(p.ok, true);
-  assert.deepEqual(p.value, { name: "Resurface", goal: "Ship the\\nfeed", tools: ["TypeScript", "Postgres"], agents: ["codex"] });
-  assert.equal(parseProject({ name: " " }).ok, false);
-  assert.equal(parseProject({ name: "x", tools: Array(40).fill(0).map((_, i) => `t${i}`) }).value.tools.length, 20);
-});
-
-test("project facts round-trip through project_contexts rows", () => {
-  const facts = toFacts({ tools: ["Postgres"], agents: ["claude-code"] });
-  assert.deepEqual(facts, [
-    { kind: "tool", fact: "Postgres", source: "onboarding" },
-    { kind: "agent", fact: "Claude Code", id: "claude-code", source: "onboarding" },
-  ]);
-  const back = fromRow({ id: "p", version: 2, name: "R", goal: null, facts });
-  assert.deepEqual(back, { id: "p", version: 2, name: "R", goal: null, tools: ["Postgres"], agents: ["claude-code"] });
 });

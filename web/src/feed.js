@@ -4,10 +4,9 @@ import { resolveMediaRef } from "./media.js";
 
 /**
  * One row per artifact revision whose processing is ready and whose video is rendered. With unit ids, only artifacts built from those units; without, the curated demo feed,
- * which also needs a team-assigned feed_order. A user's feed only has artifacts digested for their project,
- * or generic ones when they haven't given a project.
+ * which also needs a team-assigned feed_order.
  */
-export async function readFeed(sql, unitIds = null, projectId = null) {
+export async function readFeed(sql, unitIds = null) {
   if (unitIds && unitIds.length === 0) return [];
   const list = unitIds ? unitIds.join(",") : null;
   const rows = await sql`
@@ -28,7 +27,6 @@ export async function readFeed(sql, unitIds = null, projectId = null) {
       WHERE a.ingestion_status = 'ready'
         AND (${list}::text IS NULL OR a.source_ids && string_to_array(${list}::text, ',')::uuid[])
         AND (${list}::text IS NOT NULL OR v.feed_order IS NOT NULL)
-        AND (${list}::text IS NULL OR a.project_context_id IS NOT DISTINCT FROM ${projectId}::uuid)
       ORDER BY a.id, a.version, v.created_at DESC, v.id DESC
     ) eligible
     ORDER BY feed_order NULLS LAST, created_at, id`;

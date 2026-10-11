@@ -1,74 +1,38 @@
-// Onboarding: account -> saved links -> processing, then the reel. Each step saves to TigerData
-// through the API, so leaving and coming back resumes at the first unfinished step.
+// Sign up or sign in, then straight to /app, where the user pastes links and watches their reel.
 
 import { api } from "./api.js";
-import { followImports, PROCESSOR, renderUnits } from "./units.js";
 
-const ORDER = ["account", "sources", "processing"];
 const root = document.querySelector("[data-onboard]");
 const $ = (sel) => root.querySelector(sel);
-let state = null;
 
-function show(step) {
+function show() {
   $("[data-loading]").hidden = true;
-  root.querySelectorAll("[data-step]").forEach((s) => (s.hidden = s.dataset.step !== step));
-  const at = ORDER.indexOf(step);
-  root.querySelectorAll("[data-step-dot]").forEach((d) => {
-    const i = ORDER.indexOf(d.dataset.stepDot);
-    d.dataset.state = i < at ? "done" : i === at ? "current" : "todo";
-    if (i === at) d.setAttribute("aria-current", "step");
-    else d.removeAttribute("aria-current");
-  });
-  history.replaceState(null, "", `#${step}`);
-  const first = $(`[data-step="${step}"] input:not([type=hidden]):not(.visually-hidden), [data-step="${step}"] textarea`);
-  first?.focus({ preventScroll: true });
-  if (step === "processing") startFollowing();
-}
-
-function say(form, text, tone = "error") {
-  const status = form.querySelector(".form-status");
-  status.textContent = text;
-  status.dataset.tone = tone;
+  $('[data-step="account"]').hidden = false;
+  $('[data-form="signup"] input').focus({ preventScroll: true });
 }
 
 /** Wires a form: disables its button while the request runs and shows the server's error in place. */
-function onSubmit(name, handler) {
+function onSubmit(name, path, body) {
   const form = $(`[data-form="${name}"]`);
   const button = form.querySelector('button[type="submit"]');
+  const status = form.querySelector(".form-status");
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     button.disabled = true;
-    say(form, "", "pending");
+    status.textContent = "";
     try {
-      await handler(new FormData(form), form);
+      await api(path, { method: "POST", body: body(new FormData(form)) });
+      location.assign("/app");
     } catch (err) {
-      const detail = err.invalid?.map((i) => `${i.link}: ${i.error}`).join(" ");
-      say(form, detail ? `${err.message} ${detail}` : err.message);
-    } finally {
+      status.textContent = err.message;
+      status.dataset.tone = "error";
       button.disabled = false;
     }
   });
-  return form;
 }
 
-function next(fromState) {
-  state = fromState;
-  if (state.step === "done") return location.assign("/app");
-  show(state.step);
-}
-
-// ---------- 1. Account ----------
-
-onSubmit("signup", async (data) => {
-  next(await api("/api/auth/signup", {
-    method: "POST",
-    body: { name: data.get("name"), email: data.get("email"), password: data.get("password") },
-  }));
-});
-
-onSubmit("login", async (data) => {
-  next(await api("/api/auth/login", { method: "POST", body: { email: data.get("email"), password: data.get("password") } }));
-});
+onSubmit("signup", "/api/auth/signup", (d) => ({ name: d.get("name"), email: d.get("email"), password: d.get("password") }));
+onSubmit("login", "/api/auth/login", (d) => ({ email: d.get("email"), password: d.get("password") }));
 
 $("[data-switch]").addEventListener("click", () => {
   const signup = $('[data-form="signup"]');
@@ -81,43 +45,15 @@ $("[data-switch]").addEventListener("click", () => {
   $(`[data-form="${toLogin ? "login" : "signup"}"] input[type=email]`).focus();
 });
 
-// ---------- 2. Videos ----------
-
-onSubmit("sources", async (data, form) => {
-  const links = String(data.get("links") || "").split(/\s+/).filter(Boolean);
-  if (links.length === 0) throw new Error("Paste at least one YouTube link.");
-  const body = await api("/api/imports", { method: "POST", body: { links, company: data.get("company") } });
-  say(form, "", "ok");
-  state = { ...state, imports: state.imports + body.units.length };
-  $("[data-processing-note]").textContent = PROCESSOR[body.processor] ?? "";
-  renderUnits($("[data-units]"), body.units);
-  show("processing");
-});
-
-// ---------- 3. Processing ----------
-
-let following = false;
-function startFollowing() {
-  if (following) return;
-  following = true;
-  followImports({
-    onUnits: (units) => renderUnits($("[data-units]"), units),
-    onItems: (items) => {
-      if (items.length) $("[data-feed-hint]").textContent = `${items.length} ${items.length === 1 ? "short is" : "shorts are"} ready to watch.`;
-    },
-  });
-}
-
-// ---------- Resume ----------
-
+// Already signed in: nothing to do here. #account (the landing page's Sign in link) opens the sign-in form.
 (async () => {
   try {
-    state = await api("/api/me");
+    const me = await api("/api/me");
+    if (me.user) return location.assign("/app");
   } catch (err) {
     $("[data-loading]").textContent = err.message;
     return;
   }
-  if (!state.user) return show("account");
-  if (state.step === "done") return location.assign("/app");
-  show(state.step);
+  show();
+  if (location.hash === "#signin") $("[data-switch]").click();
 })();

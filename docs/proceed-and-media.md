@@ -1,21 +1,22 @@
 # Onboarding, processing, and where shorts live
 
-The landing page's **Get started** button opens `/start`, a three-step onboarding with no setup:
+The landing page's **Get started** button opens `/start`: email and password, nothing else (`users`, `sessions`;
+`db/migrations/002_accounts.sql`). Signing up or in goes straight to `/app`, where the whole workflow lives:
 
-1. **Account**: email and password, stored in TigerData (`users`, `sessions`; `db/migrations/002_accounts.sql`).
-2. **Your videos**: up to 10 YouTube links, straight after sign-up. Stored as `ingested_units` and linked to
-   the user in `user_imports`.
-3. **Processing**: each link's real stage, then `/app`, the signed-in home with the user's links and reel.
+1. **Paste links**: up to 10 YouTube links, the first thing on the page for a new account. Stored as
+   `ingested_units` and linked to the user in `user_imports`.
+2. **Watch progress**: each link's real stage, updated every 4 seconds while anything is moving.
+3. **Watch shorts**: the reel beside the list fills in as shorts are rendered.
 
-Leaving part-way resumes at the first unfinished step. Signed-in visitors see "Open your feed" on the landing page.
-A project brief (`PUT /api/project`) is optional and has no screen yet. Without one, digests are generic
-(`project_context_id` null) and shared by everyone who imports the same video.
+There is no project or setup. Extraction and digests are shared: a video imported by several users is read and
+digested once (`project_context_id` stays null), and everyone who imported it sees the same short.
+Signed-in visitors see "Open your feed" on the landing page.
 
 ```
 Browser ──POST /api/auth/signup──▶ Worker ──INSERT users, sessions──▶ TigerData   (httpOnly cookie back)
         ──POST /api/imports──▶ Worker ──INSERT ingested_units, user_imports──▶ TigerData
-                                  └──POST PROCESSOR_URL {unit_ids, project}──▶ Processor
-Processor: Gemini extraction → Digestion Prompt against the project → artifacts → Opus script → render
+                                  └──POST PROCESSOR_URL {unit_ids}──▶ Processor
+Processor: Gemini extraction → Digestion Prompt → artifacts → Opus script → render
            ──PUT mp4 + vtt──▶ R2 (resurface-media)   ──UPDATE/INSERT──▶ TigerData
 Browser ──GET /api/imports, /api/feed?scope=mine (every 4 s while processing)──▶ Worker ──▶ TigerData
         ──GET /media/videos/…mp4 (Range)──▶ Worker ──▶ R2
@@ -30,11 +31,10 @@ Every mutation must be `application/json`; with the `SameSite=Lax` session cooki
 | `POST /api/auth/signup` `{ email, password, name? }` | Creates the account (password ≥ 10 chars, PBKDF2-SHA256, 100k iterations) and signs in. `409` if the email is taken. |
 | `POST /api/auth/login` `{ email, password }` | Signs in. Wrong password and unknown email get the same `401`. |
 | `POST /api/auth/logout` | Ends the session. |
-| `GET /api/me` | `{ user, project, imports, step }`, where `step` is `sources` or `done`; `{ user: null, step: "account" }` when signed out. |
-| `PUT /api/project` `{ name, goal?, tools, agents }` | Optional, no screen yet: saves the next version of the user's brief. |
-| `POST /api/imports` `{ links }` | Canonicalises links, reuses a non-failed unit for the same video and start time, links each to the user, and sends units new to this user to the processor (with the brief, or `project: null`). Returns `{ units, processor }`. |
+| `GET /api/me` | `{ user, imports }`; `{ user: null }` when signed out. |
+| `POST /api/imports` `{ links }` | Canonicalises links, reuses a non-failed unit for the same video and start time, links each to the user, and sends units new to this user to the processor. Returns `{ units, processor }`. |
 | `GET /api/imports` | The user's links with their stage: `queued`, `fetching`, `digesting`, `rendering`, `ready`, `failed`, `render_failed`, `not_selected`, plus the actual error. |
-| `GET /api/feed?scope=mine` | The user's shorts: artifacts for their project (or generic ones without a project) whose artifact and video are both `ready`. |
+| `GET /api/feed?scope=mine` | The user's shorts: artifacts built from their links whose artifact and video are both `ready`. |
 | `GET /api/feed` | The public curated feed (needs `feed_order`); no account. |
 | `GET /media/<key>` | Streams `videos/`, `captions/` or `posters/` objects from R2 with byte ranges (Safari and seeking need them). |
 
@@ -42,23 +42,17 @@ Rate limits: sign-up and sign-in 10 per IP per minute (`AUTH_LIMITER`), imports 
 
 ## What the processor must do
 
-It receives `POST PROCESSOR_URL` with `Authorization: Bearer PROCESSOR_TOKEN` and
-`{ "unit_ids": [...], "project": { "id", "version", "name", "goal", "tools", "agents" } }`. `project` is null
-for users who haven't given a brief: digest generically and leave `project_context_id` null.
+It receives `POST PROCESSOR_URL` with `Authorization: Bearer PROCESSOR_TOKEN` and `{ "unit_ids": [...] }`.
 Reply `202` quickly and work asynchronously. The same id can arrive twice, so be idempotent.
-A unit is sent the first time a user imports it; resubmitting doesn't resend it. Also sweep
-`ingested_units WHERE status = 'pending'` on a timer (take the project from the newest `user_imports` row),
-which picks up anything a failed request missed.
-
-Extraction is shared, digestion is per project. A unit may arrive already `ready` because someone else
-imported the same video: skip extraction and digest it for the project in the request, unless an
-artifact for that unit and project already exists.
+A unit is sent the first time a user imports it; resubmitting doesn't resend it. Also sweep imported
+`ingested_units WHERE status = 'pending'` on a timer, which picks up anything a failed request missed.
+The Node processor in `server/src/ingest/` does all of this; set `PROCESSOR_URL` to `https://<host>/api/ingest/process`
+and `PROCESSOR_TOKEN` to its `INGEST_TOKEN`.
 
 1. Set the unit to `running`, extract, then `ready` with `transcript` or `raw_artifact_ref`, or
-   `failed` with the actual `error`.
-2. Write `artifacts` with `source_ids` containing the unit ids and `project_context_id` /
-   `project_context_version` from the request (users only see artifacts for their own project),
-   or `artifact_exclusions` with a reason.
+   `failed` with the actual `error`. A unit that's already `ready` (someone else imported the video) isn't re-extracted.
+2. Digest ready units that have no non-failed artifact and no exclusion yet: write `artifacts` with `source_ids`
+   containing the unit ids and `project_context_id` null, or `artifact_exclusions` with a reason.
 3. Render, then upload to R2 under:
    - `videos/<artifact_id>/<version>/short.mp4`: H.264 + AAC, 1080×1920, `-movflags +faststart`
    - `captions/<artifact_id>/<version>/short.vtt`: WebVTT (the browser `<track>` only reads VTT)

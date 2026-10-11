@@ -49,10 +49,9 @@ fetch("/api/me", { credentials: "same-origin" })
   .then((res) => (res.ok ? res.json() : null))
   .then((me) => {
     if (!me?.user) return;
-    const to = me.step === "done" ? "/app" : `/start#${me.step}`;
     document.querySelectorAll("[data-cta]").forEach((a) => {
-      a.href = to;
-      a.textContent = me.step === "done" ? "Open your feed" : "Finish setting up";
+      a.href = "/app";
+      a.textContent = "Open your feed";
     });
     document.querySelector("[data-signin-link]")?.remove();
   })

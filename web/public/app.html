@@ -36,21 +36,20 @@
     <div class="home-grid" data-home-body hidden>
       <div class="home-side">
         <section class="home-head" aria-labelledby="home-title">
-          <h1 id="home-title">Your shorts</h1>
-          <p class="hint">Paste more YouTube links any time. Each becomes a short in your reel.</p>
+          <h1 id="home-title" data-home-title>Your shorts</h1>
+          <form class="add-links" data-add novalidate>
+            <label for="add-links" data-add-label>Paste YouTube links, one per line (up to 10)</label>
+            <textarea id="add-links" name="links" rows="3" spellcheck="false" autocomplete="off"
+              placeholder="https://www.youtube.com/watch?v=VQy50fuxI34&#10;https://youtu.be/V-EDrhIhHzQ?t=306"></textarea>
+            <button class="btn btn-small" type="submit">Make shorts</button>
+            <p class="form-status" role="status" aria-live="polite"></p>
+          </form>
         </section>
 
-
-        <section class="run-progress" aria-labelledby="links-title">
+        <section class="run-progress" aria-labelledby="links-title" data-links hidden>
           <h2 id="links-title">Your links</h2>
           <p class="hint" data-run-note></p>
           <ol class="units" data-units></ol>
-          <form class="add-links" data-add novalidate>
-            <label for="add-links">Add more YouTube links</label>
-            <textarea id="add-links" name="links" rows="2" spellcheck="false" autocomplete="off" placeholder="https://youtu.be/…"></textarea>
-            <button class="btn btn-small" type="submit">Add</button>
-            <p class="form-status" role="status" aria-live="polite"></p>
-          </form>
         </section>
       </div>
 
