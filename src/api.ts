@@ -9,7 +9,14 @@ interface ImportJob {
   id: string;
   request: string;
   units: IngestedUnit[];
-  digest: { status: "skipped" | "pending" | "running" | "ready" | "failed"; error: string | null; result: DigestOutput | null };
+  digest: {
+    status: "skipped" | "pending" | "running" | "ready" | "failed";
+    error: string | null;
+    result: DigestOutput | null;
+    /** ids of artifacts written to the store; null until saved */
+    stored_artifact_ids: string[] | null;
+    store_error: string | null;
+  };
 }
 
 export interface ApiOptions extends IngestOptions {
@@ -18,11 +25,17 @@ export interface ApiOptions extends IngestOptions {
 }
 
 const MAX_LINKS = 20;
+const EMPTY_DIGEST = { error: null, result: null, stored_artifact_ids: null, store_error: null } as const;
 
 function view(job: ImportJob) {
   return {
     id: job.id,
-    links: job.units.map((u) => ({ id: u.id, submitted_url: u.submittedUrl, source_url: u.sourceUrl, start_seconds: u.startSeconds, status: u.status, error: u.error })),
+    links: job.units.map((u) => ({ id: u.id, submitted_url: u.submittedUrl, source_url: u.sourceUrl, start_seconds: u.startSeconds, status: u.status, error: u.error,
+      // Unreviewed model extraction: check against the video before treating as approved.
+      review_status: "pending",
+      extraction: u.transcript,
+      rejected_items: (u.rejectedItems ?? []).map((r) => ({ ...r.item, reason: r.reason })),
+    })),
     digest: job.digest,
   };
 }
@@ -44,13 +57,19 @@ export function createApi(o: ApiOptions): Server {
   async function run(job: ImportJob, links: string[]) {
     await Promise.all(links.map(async (l, i) => { job.units[i] = await ingestLink(l, o, (u) => { job.units[i] = u; }); }));
     const ready = job.units.filter((u) => u.status === "ready");
-    if (!o.anthropicKey) { job.digest = { status: "skipped", error: "ANTHROPIC_API_KEY not configured", result: null }; return; }
-    if (ready.length === 0) { job.digest = { status: "skipped", error: "no successfully extracted sources", result: null }; return; }
+    if (!o.anthropicKey) { job.digest = { ...EMPTY_DIGEST, status: "skipped", error: "ANTHROPIC_API_KEY not configured" }; return; }
+    if (ready.length === 0) { job.digest = { ...EMPTY_DIGEST, status: "skipped", error: "no successfully extracted sources" }; return; }
     job.digest.status = "running";
     try {
-      job.digest = { status: "ready", error: null, result: await runDigestion({ apiKey: o.anthropicKey, units: ready, request: job.request, context: o.context }) };
+      const result = await runDigestion({ apiKey: o.anthropicKey, units: ready, request: job.request, context: o.context, fetchImpl: o.fetchImpl });
+      job.digest = { ...EMPTY_DIGEST, status: "ready", result };
+      try {
+        job.digest.stored_artifact_ids = await o.store.saveArtifacts(result.artifacts, result.exclusions, null);
+      } catch (e) {
+        job.digest.store_error = (e as Error).message;
+      }
     } catch (e) {
-      job.digest = { status: "failed", error: (e as Error).message, result: null };
+      job.digest = { ...EMPTY_DIGEST, status: "failed", error: (e as Error).message };
     }
   }
 
@@ -67,7 +86,7 @@ export function createApi(o: ApiOptions): Server {
         const job: ImportJob = {
           id: randomUUID(), request: body.request,
           units: links.map((l) => ({ id: randomUUID(), submittedUrl: l, sourceUrl: l, startSeconds: null, title: null, transcript: null, extractionMethod: null, extractedAt: null, status: "pending", error: null })),
-          digest: { status: "pending", error: null, result: null },
+          digest: { ...EMPTY_DIGEST, status: "pending" },
         };
         jobs.set(job.id, job);
         void run(job, links);
