@@ -28,6 +28,16 @@ function skillChip(skill) {
   return label ? el("span", { class: "reel-chip", "data-ready": ready ? "true" : null, text: label }) : null;
 }
 
+// Source URLs come from processor and model output; anything but http(s) (javascript:, data:) is dropped.
+const safeHref = (u) => {
+  try {
+    const url = new URL(u, location.href);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
+  } catch {
+    return null;
+  }
+};
+
 const hostOf = (u) => {
   try {
     return new URL(u).hostname.replace(/^www\./, "");
@@ -75,7 +85,9 @@ export function createReel(root) {
       if (video.duration) progress.style.transform = `scaleX(${video.currentTime / video.duration})`;
     });
 
-    const sources = (item.sources?.length ? item.sources : [{ url: item.source_url }]).filter((s) => s.url);
+    const sources = (item.sources?.length ? item.sources : [{ url: item.source_url }])
+      .map((s) => ({ ...s, url: safeHref(s?.url) }))
+      .filter((s) => s.url);
     const sheet = el("div", { class: "reel-sources", hidden: true },
       el("p", { class: "reel-sources-head", text: "Sources" }),
       el("ul", {}, ...sources.map((s) =>

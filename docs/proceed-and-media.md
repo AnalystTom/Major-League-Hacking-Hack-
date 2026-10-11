@@ -27,6 +27,8 @@ Browser ──GET /api/imports?units=…  (every 4 s until settled)──▶ Wor
 
 It receives `POST PROCESSOR_URL` with `Authorization: Bearer PROCESSOR_TOKEN` and `{ "unit_ids": [...] }`.
 Reply `202` quickly and work asynchronously. The same id can arrive twice, so be idempotent.
+Only newly created units are sent; resubmitting a queued link doesn't resend it. So also sweep
+`ingested_units WHERE status = 'pending'` on a timer, which picks up anything a failed request missed.
 
 1. Set the unit to `running`, extract, then `ready` with `transcript` or `raw_artifact_ref`, or
    `failed` with the actual `error`.
@@ -69,6 +71,8 @@ bound as `HYPERDRIVE` is preferred over `DATABASE_URL` (pooled connections); `sr
 ## Known gaps
 
 - No processor exists yet: links queue in TigerData and show `Queued` until one is connected.
-- `POST /api/imports` is public. Add a rate limit or Turnstile before announcing the URL, since every
-  import can trigger paid extraction and rendering.
+- `POST /api/imports` is public. It's rate limited to 5 imports per IP per minute (`IMPORT_LIMITER`),
+  bodies are capped at 32 KB and links at 2,048 characters. Consider Turnstile too before announcing the URL.
+- The API never returns `submitted_url`: a reused unit's original link belongs to whoever pasted it first.
+- Source links in the reel are only rendered when they're `http(s)`; they come from model output.
 - The D1 waitlist binding is kept so existing signups stay reachable; nothing writes to it.

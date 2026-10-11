@@ -58,7 +58,7 @@ export function createProceed({ form, run, reel }) {
         const li = document.createElement("li");
         li.dataset.stage = u.stage;
         const name = document.createElement("a");
-        name.href = u.source_url;
+        if (/^https:\/\/www\.youtube\.com\/watch\?v=[\w-]{11}$/.test(u.source_url)) name.href = u.source_url;
         name.target = "_blank";
         name.rel = "noopener noreferrer";
         name.textContent = u.title || u.source_url.replace(/^https:\/\/www\./, "");

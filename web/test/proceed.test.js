@@ -43,6 +43,8 @@ test("parseImport validates, reports every bad line, and de-duplicates", () => {
   assert.equal(parseImport({ links: [] }).status, 400);
   assert.equal(parseImport({ links: Array(11).fill("https://youtu.be/VQy50fuxI34") }).status, 400);
   assert.equal(parseImport({ links: "https://youtu.be/VQy50fuxI34", company: "bot" }).status, 202);
+  assert.equal(parseImport({ links: [`https://youtu.be/VQy50fuxI34?x=${"a".repeat(3000)}`] }).status, 400);
+  assert.equal(parseImport({ links: Array(1000).fill("") }).status, 400);
 });
 
 test("parseUnitIds accepts only uuid lists", () => {

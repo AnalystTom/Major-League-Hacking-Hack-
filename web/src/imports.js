@@ -4,6 +4,7 @@
 import { parseYouTubeLink } from "./youtube.js";
 
 export const MAX_LINKS = 10;
+export const MAX_LINK_LENGTH = 2048;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Validates a Proceed submission: { links: string[] | string, company?: honeypot }. */
@@ -12,9 +13,11 @@ export function parseImport(body) {
   if (typeof body.company === "string" && body.company.trim() !== "") return { ok: false, status: 202, error: "ignored" };
 
   const raw = Array.isArray(body.links) ? body.links : typeof body.links === "string" ? body.links.split(/\s+/) : [];
+  if (raw.length > MAX_LINKS * 4) return { ok: false, status: 400, error: `Paste at most ${MAX_LINKS} links at a time.` };
   const lines = raw.filter((l) => typeof l === "string" && l.trim() !== "");
   if (lines.length === 0) return { ok: false, status: 400, error: "Paste at least one YouTube link." };
   if (lines.length > MAX_LINKS) return { ok: false, status: 400, error: `Paste at most ${MAX_LINKS} links at a time.` };
+  if (lines.some((l) => l.length > MAX_LINK_LENGTH)) return { ok: false, status: 400, error: "One of those links is too long." };
 
   const links = [];
   const invalid = [];
@@ -44,12 +47,14 @@ export function parseUnitIds(value) {
 /**
  * Reuses the newest unit for the same video and start time unless it failed, otherwise inserts a
  * pending one. Reuse means an already processed video shows its results instead of paying for a rerun.
+ * Only ids and status come back: a reused unit's submitted_url is another visitor's original link,
+ * which can carry their share or playlist parameters, so it never leaves the database.
  */
 export async function createUnits(sql, links) {
   const units = [];
   for (const link of links) {
     const [existing] = await sql`
-      SELECT id, submitted_url, source_url, start_seconds, status FROM ingested_units
+      SELECT id, status FROM ingested_units
       WHERE source_url = ${link.source_url}
         AND start_seconds IS NOT DISTINCT FROM ${link.start_seconds}::integer
         AND status <> 'failed'
@@ -61,7 +66,7 @@ export async function createUnits(sql, links) {
     const [created] = await sql`
       INSERT INTO ingested_units (submitted_url, source_url, start_seconds)
       VALUES (${link.submitted_url}, ${link.source_url}, ${link.start_seconds}::integer)
-      RETURNING id, submitted_url, source_url, start_seconds, status`;
+      RETURNING id, status`;
     units.push({ ...created, reused: false });
   }
   return units;
@@ -71,7 +76,7 @@ export async function createUnits(sql, links) {
 export async function readUnits(sql, ids) {
   const list = ids.join(",");
   const rows = await sql`
-    SELECT u.id, u.submitted_url, u.source_url, u.start_seconds, u.title, u.status, u.error,
+    SELECT u.id, u.source_url, u.start_seconds, u.title, u.status, u.error,
       COALESCE((SELECT json_agg(e.reason ORDER BY e.created_at) FROM artifact_exclusions e WHERE e.unit_id = u.id), '[]') AS exclusions,
       COALESCE((
         SELECT json_agg(json_build_object(
@@ -97,7 +102,6 @@ export async function readUnits(sql, ids) {
 export function describeUnit(row) {
   const base = {
     id: row.id,
-    submitted_url: row.submitted_url,
     source_url: row.source_url,
     start_seconds: row.start_seconds,
     title: row.title ?? null,

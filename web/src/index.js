@@ -14,9 +14,18 @@ const UNAVAILABLE = "Processing isn't connected right now. Try again in a minute
 
 // POST /api/imports: store the links as units, then ask the processor to start on the new ones.
 async function startImport(request, env, sql) {
+  // Every import can trigger paid extraction and rendering, so cap each client's rate.
+  if (env.IMPORT_LIMITER) {
+    const key = request.headers.get("cf-connecting-ip") ?? "local";
+    const { success } = await env.IMPORT_LIMITER.limit({ key });
+    if (!success) return json({ error: "That's a lot of imports at once. Wait a minute and try again." }, 429);
+  }
+
+  const text = await request.text();
+  if (text.length > 32_000) return json({ error: "That request is too large." }, 413);
   let body;
   try {
-    body = await request.json();
+    body = JSON.parse(text);
   } catch {
     return json({ error: "Send a JSON body with a links field." }, 400);
   }
@@ -28,9 +37,11 @@ async function startImport(request, env, sql) {
   }
 
   const units = await createUnits(sql, parsed.value.links);
+  // Only units this request created; resubmitting a link must not re-trigger work already queued.
+  // The processor is expected to sweep units left pending (see docs/proceed-and-media.md).
   const processor = await requestProcessing(
     env,
-    units.filter((u) => u.status === "pending").map((u) => u.id)
+    units.filter((u) => !u.reused).map((u) => u.id)
   );
   return json({ units: await readUnits(sql, units.map((u) => u.id)), processor }, 201);
 }
