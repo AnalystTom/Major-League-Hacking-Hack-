@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en" data-palette="hn">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Get started · Resurface</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <script>
+    (function () {
+      var ok = ["hn", "highlighter", "cobalt", "violet"], p = null;
+      try { p = localStorage.getItem("resurface-palette"); } catch (e) {}
+      if (ok.indexOf(p) >= 0) document.documentElement.dataset.palette = p;
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Funnel+Display:wght@400..800&family=Funnel+Sans:wght@400..700&family=Martian+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="onboard-page">
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="/" aria-label="Resurface home">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10 9.5l4.5 2.5-4.5 2.5z"/></svg>
+        Resurface
+      </a>
+    </div>
+  </header>
+
+  <main class="onboard" data-onboard>
+    <ol class="onboard-steps" aria-label="Setup progress">
+      <li data-step-dot="account">Account</li>
+      <li data-step-dot="project">Your project</li>
+      <li data-step-dot="sources">Your saves</li>
+      <li data-step-dot="processing">Processing</li>
+    </ol>
+
+    <p class="onboard-loading" data-loading>Loading…</p>
+
+    <!-- 1. Account -->
+    <section class="onboard-card" data-step="account" hidden aria-labelledby="account-title">
+      <h1 id="account-title" data-account-title>Create your account</h1>
+      <p class="onboard-lede" data-account-lede>Resurface turns the videos you saved into shorts matched to what you're building. It takes about two minutes.</p>
+      <form class="onboard-form" data-form="signup" novalidate>
+        <label for="su-name">Name <span class="opt">(optional)</span></label>
+        <input id="su-name" name="name" autocomplete="name" maxlength="80">
+        <label for="su-email">Email</label>
+        <input id="su-email" name="email" type="email" autocomplete="email" required>
+        <label for="su-password">Password</label>
+        <input id="su-password" name="password" type="password" autocomplete="new-password" minlength="10" required aria-describedby="su-password-hint">
+        <p class="hint" id="su-password-hint">At least 10 characters.</p>
+        <button class="btn" type="submit">Create account</button>
+        <p class="form-status" role="status" aria-live="polite"></p>
+      </form>
+      <form class="onboard-form" data-form="login" novalidate hidden>
+        <label for="li-email">Email</label>
+        <input id="li-email" name="email" type="email" autocomplete="email" required>
+        <label for="li-password">Password</label>
+        <input id="li-password" name="password" type="password" autocomplete="current-password" required>
+        <button class="btn" type="submit">Sign in</button>
+        <p class="form-status" role="status" aria-live="polite"></p>
+      </form>
+      <p class="onboard-switch">
+        <span data-switch-text>Already have an account?</span>
+        <button type="button" class="linkish" data-switch>Sign in</button>
+      </p>
+    </section>
+
+    <!-- 2. Project and tools -->
+    <section class="onboard-card" data-step="project" hidden aria-labelledby="project-title">
+      <h1 id="project-title">What are you building?</h1>
+      <p class="onboard-lede">Every short is matched against this, so a tip that doesn't fit your stack never reaches your feed.</p>
+      <form class="onboard-form" data-form="project" novalidate>
+        <label for="pj-name">Project name</label>
+        <input id="pj-name" name="name" maxlength="80" required placeholder="Resurface">
+        <label for="pj-goal">What you're working on right now</label>
+        <textarea id="pj-goal" name="goal" rows="3" maxlength="500" placeholder="Shipping a TikTok-style feed of video takeaways on Cloudflare Workers"></textarea>
+        <label for="pj-tools">Stack and tools <span class="opt">(comma separated)</span></label>
+        <input id="pj-tools" name="tools" placeholder="TypeScript, Cloudflare Workers, Postgres">
+        <div class="tool-suggest" data-tool-suggest aria-label="Add a common tool">
+          <button type="button">TypeScript</button><button type="button">Python</button><button type="button">React</button>
+          <button type="button">Next.js</button><button type="button">Postgres</button><button type="button">Cloudflare Workers</button>
+          <button type="button">Supabase</button><button type="button">Tailwind</button><button type="button">FastAPI</button>
+        </div>
+        <fieldset class="agent-pick">
+          <legend>Coding agents you use</legend>
+          <label><input type="checkbox" name="agents" value="claude-code"><span class="logo logo-claude-code" aria-hidden="true"></span>Claude Code</label>
+          <label><input type="checkbox" name="agents" value="codex"><span class="logo logo-codex" aria-hidden="true"></span>Codex</label>
+          <label><input type="checkbox" name="agents" value="cursor"><span class="logo logo-cursor" aria-hidden="true"></span>Cursor</label>
+          <label><input type="checkbox" name="agents" value="hermes"><span class="logo logo-hermes" aria-hidden="true"></span>Hermes</label>
+        </fieldset>
+        <button class="btn" type="submit">Continue</button>
+        <p class="form-status" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <!-- 3. Sources -->
+    <section class="onboard-card" data-step="sources" hidden aria-labelledby="sources-title">
+      <h1 id="sources-title">Bring in what you saved</h1>
+      <p class="onboard-lede">Paste the YouTube videos you've been meaning to watch: tutorials, talks, Watch Later. Up to 10 for now.</p>
+      <form class="onboard-form" data-form="sources" novalidate>
+        <label for="src-links">YouTube links, one per line</label>
+        <textarea id="src-links" name="links" rows="5" spellcheck="false" autocomplete="off"
+          placeholder="https://www.youtube.com/watch?v=VQy50fuxI34&#10;https://youtu.be/V-EDrhIhHzQ?t=306"></textarea>
+        <input class="visually-hidden" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
+        <div class="soon" aria-label="Coming soon">
+          <span>Coming soon</span>
+          <i>X bookmarks</i><i>GitHub stars</i><i>Newsletters</i><i>Read later</i>
+        </div>
+        <button class="btn" type="submit">Start processing</button>
+        <p class="form-status" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <!-- 4. Processing -->
+    <section class="onboard-card onboard-wide" data-step="processing" hidden aria-labelledby="processing-title">
+      <h1 id="processing-title">Making your shorts</h1>
+      <p class="onboard-lede" data-processing-note>Each video is read, matched to your project, then rendered as a short.</p>
+      <ol class="units" data-units></ol>
+      <div class="onboard-actions">
+        <a class="btn" href="/app" data-to-feed>Open your feed</a>
+        <p class="hint" data-feed-hint>Your feed fills in as shorts are approved. You can leave this page; processing carries on.</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="/start.js" type="module"></script>
+</body>
+</html>

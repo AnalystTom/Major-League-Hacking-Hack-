@@ -1,0 +1,18 @@
+{
+  "name": "resurface-landing",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "db:migrate:local": "wrangler d1 migrations apply resurface-waitlist --local",
+    "db:migrate:remote": "wrangler d1 migrations apply resurface-waitlist --remote",
+    "deploy": "wrangler deploy",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "wrangler": "4.149.0"
+  },
+  "dependencies": {
+    "postgres": "3.4.7"
+  }
+}
