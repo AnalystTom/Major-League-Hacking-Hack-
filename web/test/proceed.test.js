@@ -166,3 +166,31 @@ test("final progress is read before the feed so a just-rendered clip is not miss
   }
   assert.deepEqual(calls, ["/api/imports", "/api/feed?scope=mine"]);
 });
+
+test("canonicalises Substack post links and rejects non-posts", async () => {
+  const { parseSubstackLink } = await import("../src/substack.js");
+  for (const input of [
+    "https://newsletter.substack.com/p/evals-first?utm_source=share&r=1#comments",
+    "newsletter.substack.com/p/evals-first",
+    "https://open.substack.com/pub/newsletter/p/evals-first?r=2",
+  ]) {
+    const r = parseSubstackLink(input);
+    assert.equal(r.ok, true, input);
+    assert.deepEqual(r.value, { submitted_url: input, source_url: "https://newsletter.substack.com/p/evals-first", start_seconds: null, content_type: "substack_post" });
+  }
+  for (const input of ["https://newsletter.substack.com/", "https://newsletter.substack.com/archive", "https://substack.com/@someone", "https://www.substack.com/p/x", "not a link"]) {
+    assert.equal(parseSubstackLink(input).ok, false, input);
+  }
+});
+
+test("parseImport accepts YouTube and Substack together and de-duplicates posts", () => {
+  const r = parseImport({ links: "https://youtu.be/VQy50fuxI34\nhttps://a.substack.com/p/x?r=1\nhttps://a.substack.com/p/x#c" });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.value.links.map((l) => [l.content_type, l.source_url]), [
+    ["youtube_video", "https://www.youtube.com/watch?v=VQy50fuxI34"],
+    ["substack_post", "https://a.substack.com/p/x"],
+  ]);
+  const bad = parseImport({ links: ["https://a.substack.com/", "https://vimeo.com/1"] });
+  assert.equal(bad.ok, false);
+  assert.equal(bad.invalid.length, 2);
+});

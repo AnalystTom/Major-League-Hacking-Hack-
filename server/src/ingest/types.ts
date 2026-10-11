@@ -21,14 +21,23 @@ export const ModelExtraction = z.object({
 });
 export type ModelExtraction = z.infer<typeof ModelExtraction>;
 
+export type ContentType = "youtube_video" | "substack_post";
+
+/** A numbered chunk of a text source; digests cite it by `index`. */
+export interface TextSection { index: number; text: string }
+export type VideoTranscript = { overview?: string; window: [number, number]; evidence_items: EvidenceItem[] };
+export type TextTranscript = { overview?: string; sections: TextSection[] };
+export const isTextTranscript = (t: unknown): t is TextTranscript => !!t && typeof t === "object" && "sections" in t;
+
 export interface IngestedUnit {
   id: string;
   submittedUrl: string;
   sourceUrl: string;
   startSeconds: number | null;
   title: string | null;
-  /** Timestamped, validated segments; stored in ingested_units.transcript. */
-  transcript: { overview?: string; window: [number, number]; evidence_items: EvidenceItem[] } | null;
+  contentType: ContentType;
+  /** Validated segments (video) or numbered text sections (posts); stored in ingested_units.transcript. */
+  transcript: VideoTranscript | TextTranscript | null;
   extractionMethod: string | null;
   extractedAt: Date | null;
   status: ProcessingStatus;
@@ -45,7 +54,11 @@ export const DigestArtifact = z.object({
   source_ids: z.array(Uuid).min(1),
   category: z.string().min(1),
   processed_text: z.string().min(1),
-  evidence: z.array(z.object({ source_id: Uuid, start_seconds: z.number().int(), end_seconds: z.number().int(), passage: z.string() })).min(1),
+  // Video evidence cites a time range; text evidence cites a section number. validateDigest checks the right one per unit.
+  evidence: z.array(z.object({
+    source_id: Uuid, passage: z.string(),
+    start_seconds: z.number().int().optional(), end_seconds: z.number().int().optional(), section: z.number().int().nonnegative().optional(),
+  })).min(1),
   selection_reason: z.string().min(1),
 });
 export type DigestArtifact = z.infer<typeof DigestArtifact>;

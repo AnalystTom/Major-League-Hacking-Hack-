@@ -12,8 +12,8 @@ let follower = null;
 // First run (no links yet) leads with the paste box; afterwards it's "add more" above the list.
 function setFirstRun(first) {
   $("[data-links]").hidden = first;
-  $("[data-home-title]").textContent = first ? "Paste your first videos" : "Your shorts";
-  $("[data-add-label]").textContent = first ? "Paste YouTube links, one per line (up to 10)" : "Add more YouTube links";
+  $("[data-home-title]").textContent = first ? "Paste your first links" : "Your shorts";
+  $("[data-add-label]").textContent = first ? "Paste YouTube or Substack links, one per line (up to 10)" : "Add more links";
 }
 
 function showLinks(units) {
@@ -28,7 +28,7 @@ addForm.addEventListener("submit", async (e) => {
   const button = addForm.querySelector("button");
   const links = String(new FormData(addForm).get("links") || "").split(/\s+/).filter(Boolean);
   if (!links.length) {
-    status.textContent = "Paste at least one YouTube link.";
+    status.textContent = "Paste at least one YouTube or Substack link.";
     status.dataset.tone = "error";
     return;
   }

@@ -23,7 +23,7 @@ export function parseYouTubeLink(input) {
     return { ok: false, error: "That isn't a link." };
   }
   const host = url.hostname.toLowerCase();
-  if (!HOSTS.has(host)) return { ok: false, error: "Only YouTube video links are supported for now." };
+  if (!HOSTS.has(host)) return { ok: false, error: "Only YouTube videos and Substack posts are supported for now." };
 
   let id = null;
   if (host === "youtu.be") id = url.pathname.slice(1).split("/")[0];
@@ -41,6 +41,7 @@ export function parseYouTubeLink(input) {
       submitted_url: submitted,
       source_url: `https://www.youtube.com/watch?v=${id}`,
       start_seconds: start,
+      content_type: "youtube_video",
     },
   };
 }

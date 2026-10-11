@@ -1,11 +1,21 @@
-// Proceed: pasted YouTube links become ingested units in TigerData, and their progress is read back
+// Proceed: pasted YouTube and Substack links become ingested units in TigerData, and their progress is read back
 // from the units, artifacts and video results the processor writes. Nothing here invents progress.
 
+import { isSubstackHost, parseSubstackLink } from "./substack.js";
 import { parseYouTubeLink } from "./youtube.js";
 
 export const MAX_LINKS = 10;
 export const MAX_LINK_LENGTH = 2048;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Substack hosts go to the Substack parser; everything else is judged as a YouTube link.
+function parseLink(line) {
+  let host = "";
+  try {
+    host = new URL(/^https?:\/\//i.test(line.trim()) ? line.trim() : `https://${line.trim()}`).hostname.toLowerCase();
+  } catch {}
+  return isSubstackHost(host) ? parseSubstackLink(line) : parseYouTubeLink(line);
+}
 
 /** Validates a Proceed submission: { links: string[] | string, company?: honeypot }. */
 export function parseImport(body) {
@@ -15,14 +25,14 @@ export function parseImport(body) {
   const raw = Array.isArray(body.links) ? body.links : typeof body.links === "string" ? body.links.split(/\s+/) : [];
   if (raw.length > MAX_LINKS * 4) return { ok: false, status: 400, error: `Paste at most ${MAX_LINKS} links at a time.` };
   const lines = raw.filter((l) => typeof l === "string" && l.trim() !== "");
-  if (lines.length === 0) return { ok: false, status: 400, error: "Paste at least one YouTube link." };
+  if (lines.length === 0) return { ok: false, status: 400, error: "Paste at least one YouTube or Substack link." };
   if (lines.length > MAX_LINKS) return { ok: false, status: 400, error: `Paste at most ${MAX_LINKS} links at a time.` };
   if (lines.some((l) => l.length > MAX_LINK_LENGTH)) return { ok: false, status: 400, error: "One of those links is too long." };
 
   const links = [];
   const invalid = [];
   for (const line of lines) {
-    const parsed = parseYouTubeLink(line);
+    const parsed = parseLink(line);
     if (parsed.ok) links.push(parsed.value);
     else invalid.push({ link: line.trim(), error: parsed.error });
   }
@@ -62,8 +72,8 @@ export async function createUnits(sql, links, { userId = null } = {}) {
     const [unit] = existing
       ? [{ ...existing, reused: true }]
       : (await sql`
-          INSERT INTO ingested_units (submitted_url, source_url, start_seconds)
-          VALUES (${link.submitted_url}, ${link.source_url}, ${link.start_seconds}::integer)
+          INSERT INTO ingested_units (submitted_url, source_url, start_seconds, content_type)
+          VALUES (${link.submitted_url}, ${link.source_url}, ${link.start_seconds}::integer, ${link.content_type ?? "youtube_video"})
           RETURNING id, status`).map((u) => ({ ...u, reused: false }));
     if (userId) {
       // `linked` is true the first time this user imports the unit, which is when the processor is asked.
