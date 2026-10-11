@@ -211,3 +211,14 @@ test("requestProcessing sends large imports in batches of 10", async () => {
   const failing = async (_u, init) => ({ ok: JSON.parse(init.body).unit_ids[0] !== "id10" });
   assert.equal(await requestProcessing({ PROCESSOR_URL: "http://p" }, ids, failing), "unavailable");
 });
+
+test("a unit held back by the processing limit says when it starts, and counts as settled until then", () => {
+  const now = new Date("2026-10-11T20:00:00Z");
+  const row = { id: ID, source_url: "https://www.youtube.com/watch?v=VQy50fuxI34", start_seconds: null, title: null, status: "pending", error: null };
+  const held = describeUnit({ ...row, deferred_until: "2026-10-12T00:00:00Z" }, now);
+  assert.equal(held.stage, "limited");
+  assert.equal(held.settled, true);
+  assert.match(held.error, /processing limit .* starts after 2026-10-12 00:00 UTC\./);
+  assert.equal(describeUnit({ ...row, deferred_until: "2026-10-11T00:00:00Z" }, now).stage, "queued", "past the time, it's just queued");
+  assert.equal(describeUnit({ ...row, deferred_until: null }, now).stage, "queued");
+});

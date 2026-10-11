@@ -103,7 +103,7 @@ export async function readUnits(sql, ids, visible = ids) {
   const list = ids.join(",");
   const mine = visible.join(",");
   const rows = await sql`
-    SELECT u.id, u.source_url, u.start_seconds, u.title, u.content_type, u.status, u.error,
+    SELECT u.id, u.source_url, u.start_seconds, u.title, u.content_type, u.status, u.error, u.deferred_until,
       COALESCE((SELECT json_agg(e.reason ORDER BY e.created_at) FROM artifact_exclusions e WHERE e.unit_id = u.id), '[]') AS exclusions,
       COALESCE((
         SELECT json_agg(json_build_object(
@@ -121,14 +121,14 @@ export async function readUnits(sql, ids, visible = ids) {
     FROM ingested_units u
     WHERE u.id = ANY (string_to_array(${list}, ',')::uuid[])
     ORDER BY array_position(string_to_array(${list}, ',')::uuid[], u.id)`;
-  return rows.map(describeUnit);
+  return rows.map((row) => describeUnit(row));
 }
 
 /**
  * Collapses a unit's records into the one stage the page shows. `settled` means nothing more will
  * happen automatically: a failure, an exclusion, or a ready clip.
  */
-export function describeUnit(row) {
+export function describeUnit(row, now = new Date()) {
   const base = {
     id: row.id,
     source_url: row.source_url,
@@ -138,7 +138,14 @@ export function describeUnit(row) {
   };
   const at = (stage, settled, error = null) => ({ ...base, stage, settled, error });
 
-  if (row.status === "pending") return at("queued", false);
+  if (row.status === "pending") {
+    // Held back by the processor's daily or monthly limit: nothing happens before then, so it's settled.
+    const until = row.deferred_until ? new Date(row.deferred_until) : null;
+    if (until && until > now) {
+      return at("limited", true, `Resurface has reached its processing limit for now. This link starts after ${until.toISOString().slice(0, 16).replace("T", " ")} UTC.`);
+    }
+    return at("queued", false);
+  }
   if (row.status === "running") return at("fetching", false);
   if (row.status === "failed") return at("failed", true, row.error ?? null);
 

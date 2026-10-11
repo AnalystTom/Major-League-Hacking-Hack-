@@ -5,6 +5,7 @@ import { digestAndStore, extractUnit, type IngestOptions } from "./pipeline.js";
 import { DEFAULT_CATEGORIZATION_REQUEST, promptRevisionText } from "./digest/prompt.js";
 import type { IngestedUnit, StoredArtifact } from "./types.js";
 import { tracked } from "../activity.js";
+import { UNLIMITED, type Limits } from "./limits.js";
 
 export interface ProcessorOptions extends IngestOptions {
   openaiKey?: string;
@@ -16,6 +17,8 @@ export interface ProcessorOptions extends IngestOptions {
   waitTimeoutMs?: number;
   pollMs?: number;
   log?: (msg: string) => void;
+  /** New units allowed per UTC day and month; unlimited when absent (src/index.ts applies the defaults). */
+  limits?: Limits;
   /** Called with each new ready artifact set, without waiting: the skill and short are made from these. */
   onArtifacts?: (artifacts: StoredArtifact[]) => Promise<void>;
 }
@@ -24,6 +27,8 @@ export interface ProcessSummary {
   extracted: { ready: number; failed: number };
   /** Units some other worker was already extracting that we waited for. */
   waitedFor: number;
+  /** Units left pending because the processing limit is used up. */
+  deferred: number;
   digested: number;
   skipped: string | null;
 }
@@ -52,16 +57,20 @@ export function processUnits(unitIds: string[], o: ProcessorOptions): Promise<Pr
 }
 
 async function processNow(unitIds: string[], o: ProcessorOptions): Promise<ProcessSummary> {
-  const summary: ProcessSummary = { extracted: { ready: 0, failed: 0 }, waitedFor: 0, digested: 0, skipped: null };
+  const summary: ProcessSummary = { extracted: { ready: 0, failed: 0 }, waitedFor: 0, deferred: 0, digested: 0, skipped: null };
 
-  const claimed = await o.store.claimPendingUnits(unitIds);
+  const { claimed, deferred, resumesAt } = await o.store.claimWithinLimits(unitIds, o.limits ?? UNLIMITED);
+  summary.deferred = deferred.length;
+  if (deferred.length) o.log?.(`processing limit reached: ${deferred.length} unit(s) wait until ${resumesAt?.toISOString()}`);
   const extracted = await Promise.all(claimed.map((u) => extractUnit(u, o)));
   summary.extracted.ready = extracted.filter((u) => u.status === "ready").length;
   summary.extracted.failed = extracted.filter((u) => u.status === "failed").length;
 
   // Units another worker (the sweep, a duplicate request) is still extracting settle before we digest.
   const claimedIds = new Set(claimed.map((u) => u.id));
-  const others = unitIds.filter((id) => !claimedIds.has(id));
+  // Deferred units won't move until the limit allows, so nothing waits for them.
+  const held = new Set(deferred);
+  const others = unitIds.filter((id) => !claimedIds.has(id) && !held.has(id));
   const units = others.length ? [...extracted, ...(await waitForSettled(others, o))] : extracted;
   summary.waitedFor = units.length - extracted.length;
 
