@@ -59,7 +59,7 @@ function render(units, items) {
   const limited = !waiting && units.some((u) => u.stage === "limited");
   const title = units.length === 0 ? "Paste your first links" : waiting ? "Making your shorts" : limited ? "Your links are in the queue" : "No shorts from these links yet";
   const lede = units.length === 0
-    ? "Each YouTube video or X post becomes a short, narrated clip of the part worth keeping."
+    ? "Each YouTube video, X post or Substack post becomes a short, narrated clip of the part worth keeping."
     : waiting
       ? "Your first short starts playing here as soon as it's ready. You can leave; processing carries on."
       : limited
@@ -129,7 +129,7 @@ form.addEventListener("submit", async (e) => {
   const button = form.querySelector("button");
   const links = String(new FormData(form).get("links") || "").split(/\s+/).filter(Boolean);
   if (!links.length) {
-    status.textContent = "Paste at least one YouTube or X post link.";
+    status.textContent = "Paste at least one YouTube, X post or Substack link.";
     status.dataset.tone = "error";
     return;
   }

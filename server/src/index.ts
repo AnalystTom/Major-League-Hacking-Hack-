@@ -31,6 +31,7 @@ if (process.env.GEMINI_API_KEY) {
     geminiKey: process.env.GEMINI_API_KEY,
     twitterApiKey: process.env.TWITTERAPI_IO_KEY,
     geminiModel: process.env.GEMINI_MODEL,
+    nimbleKey: process.env.NIMBLE_API_KEY,
     windowSeconds: process.env.WINDOW_SECONDS ? Number(process.env.WINDOW_SECONDS) : undefined,
     openaiKey: process.env.OPENAI_API_KEY,
     openaiModel: process.env.OPENAI_MODEL,
