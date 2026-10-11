@@ -71,7 +71,9 @@ per UTC day (default 10) and `MONTHLY_VIDEO_LIMIT` per UTC month (default 40, ab
 5-minute window). Each paid start is recorded in `processing_starts` (`db/migrations/007_processing_starts.sql`):
 every extraction is charged, and so is every digest except the first one after a unit's extraction, so a new video
 costs one slot while re-digests of shared videos and retries cost their own. A retried skill or short (its second or
-third attempt) is charged too (`kind = 'retry'`, `db/migrations/010_retry_starts.sql`) and waits when there's no room.
+third attempt) is charged too (`kind = 'retry'`, `db/migrations/010_retry_starts.sql`) and waits when there's no room,
+and so is each agent brief (`kind = 'handoff'`, one gpt-5 call of about $0.07); without room the brief fails with when
+to try again, and picking the same skills later queues it anew.
 Failures that can't change by retrying settle at once: a provider refusing the request (4xx other than 408/429), a
 used-up quota or prepaid credit, or missing configuration. Every source type, sweep and retry
 counts; `0` pauses processing. Links over the limit stay saved, show **Limit reached** with when they'll start

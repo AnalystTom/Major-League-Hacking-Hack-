@@ -187,3 +187,19 @@ test("a worker whose brief was taken over can't overwrite the newer result", asy
 test("refining refuses two skills with the same name", async () => {
   await assert.rejects(refineHandoff([skill("same"), skill("same")], { apiKey: "k", fetchImpl: openai(brief()).impl }), /both named "same"/);
 });
+
+test("a brief takes a slot under the processing limits, and without room fails with when to come back", async () => {
+  const store = new MemoryHandoffStore();
+  const s = skills();
+  s.forEach((x) => store.skills.set(x.id, x));
+  store.briefs.set("paid", { skill_result_ids: s.map((x) => x.id), status: "pending" });
+  store.briefs.set("full", { skill_result_ids: s.map((x) => x.id), status: "pending" });
+  const { impl, calls } = openai(brief());
+  const limits = { daily: 10, monthly: 40 };
+  store.handoffsAllowed = 1;
+  assert.equal(await runHandoff("paid", { token: "t", store, openaiKey: "k", fetchImpl: impl, limits }), "ready");
+  assert.equal(store.handoffsCharged, 1);
+  assert.equal(await runHandoff("full", { token: "t", store, openaiKey: "k", fetchImpl: impl, limits }), "failed");
+  assert.match((store.briefs.get("full") as any).error, /processing limit for now\. Try again after \d{4}-\d{2}-\d{2} 00:00 UTC\./);
+  assert.equal(calls(), 1, "no paid call without room");
+});

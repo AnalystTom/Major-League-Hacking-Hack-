@@ -3,6 +3,8 @@
 
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
+import { remaining, resumesAt, startOfNextUtcDay, type Limits } from "../ingest/limits.js";
+import { lockLimits, recordStarts, usedSlots } from "../ingest/ledger.js";
 import type { HandoffBrief, HandoffSkill } from "./handoff.js";
 import type { ActionItem } from "./types.js";
 
@@ -19,6 +21,11 @@ export interface HandoffStore {
   /** Both settle the brief only while this claim still holds it; false when a newer worker took it over. */
   finish(c: BriefClaim, brief: HandoffBrief, prompts: unknown, revision: string): Promise<boolean>;
   fail(c: BriefClaim, error: string): Promise<boolean>;
+  /**
+   * Takes a charged 'handoff' slot under the processing limits for this claimed brief; null when it did, or when
+   * there's no room, the time room opens up.
+   */
+  reserve(c: BriefClaim, limits: Limits): Promise<Date | null>;
 }
 
 /** name and description from SKILL.md frontmatter (skills.ts writes description as a JSON string). */
@@ -71,6 +78,28 @@ export function rowToSkill(r: any): HandoffSkill {
 export class PgHandoffStore implements HandoffStore {
   constructor(private pool: pg.Pool) {}
 
+  async reserve(c: BriefClaim, limits: Limits) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await lockLimits(client);
+      const used = await usedSlots(client);
+      if (remaining(limits, used) < 1) { await client.query("ROLLBACK"); return resumesAt(limits, used, new Date()); }
+      // The ledger is per video: charge the brief to the first source of its first skill.
+      const { rows: [u] } = await client.query(
+        `SELECT a.source_ids[1] AS unit_id FROM skill_results s JOIN artifacts a ON a.id = s.artifact_id AND a.version = s.artifact_version
+         WHERE s.id = ANY($1::uuid[]) ORDER BY array_position($1::uuid[], s.id) LIMIT 1`, [c.skill_result_ids]);
+      if (u?.unit_id) await recordStarts(client, [u.unit_id], "handoff", true);
+      await client.query("COMMIT");
+      return null;
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
   async claim(briefId: string) {
     const { rows } = await this.pool.query(
       `UPDATE agent_briefs SET status = 'running', error = NULL, updated_at = now(), claim_token = gen_random_uuid()
@@ -116,6 +145,14 @@ type Row = { skill_result_ids: string[]; status: "pending" | "running" | "ready"
 export class MemoryHandoffStore implements HandoffStore {
   briefs = new Map<string, Row>();
   skills = new Map<string, HandoffSkill>();
+  /** Charged briefs, standing in for the ledger: tests set handoffsAllowed to model room. */
+  handoffsCharged = 0;
+  handoffsAllowed = Infinity;
+  async reserve(_c: BriefClaim, limits: Limits) {
+    if (this.handoffsCharged >= Math.min(this.handoffsAllowed, limits.daily, limits.monthly)) return startOfNextUtcDay(new Date());
+    this.handoffsCharged++;
+    return null;
+  }
   async claim(id: string) {
     const b = this.briefs.get(id);
     if (!b || b.status !== "pending") return null;

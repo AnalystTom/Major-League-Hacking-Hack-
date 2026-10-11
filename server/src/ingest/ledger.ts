@@ -1,5 +1,5 @@
 // The processing_starts ledger the limits count (db/migrations/007, 010), shared by the ingest store (extractions,
-// digests) and the outputs store (retried skills and shorts). Callers hold one transaction for the lock, the count
+// digests), the outputs store (retried skills and shorts) and the handoff store (agent briefs). Callers hold one transaction for the lock, the count
 // and the write, so concurrent workers can't both take the last slot.
 
 import type pg from "pg";
@@ -7,7 +7,7 @@ import type pg from "pg";
 const UTC_DAY = `(date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')`;
 const UTC_MONTH = `(date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')`;
 
-export type StartKind = "extract" | "digest" | "retry";
+export type StartKind = "extract" | "digest" | "retry" | "handoff";
 
 /** Serialises everyone who counts and takes slots, until the transaction ends. */
 export async function lockLimits(client: pg.PoolClient) {

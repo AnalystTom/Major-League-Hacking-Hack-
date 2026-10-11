@@ -77,6 +77,7 @@ export class PgOutputStore implements OutputStore {
     try {
       await client.query("BEGIN");
       // A row that already had an attempt makes this a retry, which spends money again, so it needs room first.
+      // That includes taking over a crashed worker's stale `running` row: its attempt is redone and re-paid.
       const { rows: [prior] } = await client.query(`SELECT attempts FROM ${t} WHERE artifact_id = $1 AND artifact_version = $2`, [a.id, a.version]);
       const retry = limits !== undefined && (prior?.attempts ?? 0) >= 1;
       if (retry) {

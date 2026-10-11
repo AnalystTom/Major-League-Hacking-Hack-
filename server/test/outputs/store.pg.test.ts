@@ -217,3 +217,28 @@ test("a retried output is charged against the limits and waits when there's no r
     await pool.end();
   }
 });
+
+test("an agent brief is charged as one 'handoff' start, and waits without room", { skip: !url && "TEST_DATABASE_URL not set" }, async () => {
+  const { PgHandoffStore } = await import("../../src/outputs/handoff-store.js");
+  const pool = new pg.Pool({ connectionString: url });
+  const handoffs = new PgHandoffStore(pool);
+  const ids = { unit: "", prompt: "", artifact: "", skill: "" };
+  try {
+    ids.unit = (await pool.query(`INSERT INTO ingested_units (submitted_url, source_url, status, transcript) VALUES ('u', 'https://www.youtube.com/watch?v=VQy50fuxI34', 'ready', '{}') RETURNING id`)).rows[0].id;
+    ids.prompt = (await pool.query(`INSERT INTO digestion_prompts (name, revision, prompt_text) VALUES ($1, 1, $1) RETURNING id`, [`test-${randomUUID()}`])).rows[0].id;
+    ids.artifact = (await pool.query(`INSERT INTO artifacts (name, source_url, source_ids, processed_text, digestion_prompt_id, ingestion_status) VALUES ('x', 'x', $1, 't', $2, 'ready') RETURNING id`, [[ids.unit], ids.prompt])).rows[0].id;
+    ids.skill = (await pool.query(`INSERT INTO skill_results (artifact_id, artifact_version, status, skill_markdown) VALUES ($1, 1, 'ready', '---\nname: x\n---\n') RETURNING id`, [ids.artifact])).rows[0].id;
+    const { rows: [c] } = await pool.query(`SELECT count(*)::int AS n FROM processing_starts WHERE charged AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`);
+    const claim = { id: randomUUID(), token: randomUUID(), skill_result_ids: [ids.skill] } as any;
+    assert.ok((await handoffs.reserve(claim, { daily: c.n, monthly: 100_000 }))! > new Date(), "no room: when it opens up");
+    assert.equal(await handoffs.reserve(claim, { daily: c.n + 1, monthly: 100_000 }), null);
+    const n = (await pool.query(`SELECT count(*)::int AS n FROM processing_starts WHERE unit_id = $1 AND kind = 'handoff' AND charged`, [ids.unit])).rows[0].n;
+    assert.equal(n, 1);
+  } finally {
+    if (ids.skill) await pool.query(`DELETE FROM skill_results WHERE id = $1`, [ids.skill]);
+    if (ids.artifact) await pool.query(`DELETE FROM artifacts WHERE id = $1`, [ids.artifact]);
+    if (ids.unit) await pool.query(`DELETE FROM ingested_units WHERE id = $1`, [ids.unit]);
+    if (ids.prompt) await pool.query(`DELETE FROM digestion_prompts WHERE id = $1`, [ids.prompt]);
+    await pool.end();
+  }
+});
