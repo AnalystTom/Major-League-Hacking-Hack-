@@ -50,7 +50,7 @@ export function parseUnitIds(value) {
  * Only ids and status come back: a reused unit's submitted_url is another visitor's original link,
  * which can carry their share or playlist parameters, so it never leaves the database.
  */
-export async function createUnits(sql, links) {
+export async function createUnits(sql, links, { userId = null, project = null } = {}) {
   const units = [];
   for (const link of links) {
     const [existing] = await sql`
@@ -59,21 +59,40 @@ export async function createUnits(sql, links) {
         AND start_seconds IS NOT DISTINCT FROM ${link.start_seconds}::integer
         AND status <> 'failed'
       ORDER BY created_at DESC LIMIT 1`;
-    if (existing) {
-      units.push({ ...existing, reused: true });
-      continue;
+    const [unit] = existing
+      ? [{ ...existing, reused: true }]
+      : (await sql`
+          INSERT INTO ingested_units (submitted_url, source_url, start_seconds)
+          VALUES (${link.submitted_url}, ${link.source_url}, ${link.start_seconds}::integer)
+          RETURNING id, status`).map((u) => ({ ...u, reused: false }));
+    if (userId) {
+      // A first link for this user means the unit needs digesting against their project, even when
+      // its extraction is reused from someone else's import.
+      const linked = await sql`
+        INSERT INTO user_imports (user_id, unit_id, project_context_id, project_context_version)
+        VALUES (${userId}, ${unit.id}, ${project?.id ?? null}, ${project?.version ?? null})
+        ON CONFLICT (user_id, unit_id) DO NOTHING
+        RETURNING unit_id`;
+      unit.linked = linked.length > 0;
     }
-    const [created] = await sql`
-      INSERT INTO ingested_units (submitted_url, source_url, start_seconds)
-      VALUES (${link.submitted_url}, ${link.source_url}, ${link.start_seconds}::integer)
-      RETURNING id, status`;
-    units.push({ ...created, reused: false });
+    units.push(unit);
   }
   return units;
 }
 
-/** Each unit with the artifacts it fed, their newest video result, and any exclusion reasons. */
-export async function readUnits(sql, ids) {
+/** The ids of everything a user has imported, newest first. */
+export async function userUnitIds(sql, userId, limit = 50) {
+  const rows = await sql`
+    SELECT unit_id FROM user_imports WHERE user_id = ${userId} ORDER BY created_at DESC LIMIT ${limit}`;
+  return rows.map((r) => r.unit_id);
+}
+
+/**
+ * Each unit with the artifacts it fed, their newest video result, and any exclusion reasons. With a
+ * project id, only artifacts digested for that project count, so one user never sees another's digest.
+ */
+export async function readUnits(sql, ids, projectId = null) {
+  if (ids.length === 0) return [];
   const list = ids.join(",");
   const rows = await sql`
     SELECT u.id, u.source_url, u.start_seconds, u.title, u.status, u.error,
@@ -88,7 +107,9 @@ export async function readUnits(sql, ids) {
             WHERE v.artifact_id = a.id AND v.artifact_version = a.version
             ORDER BY v.created_at DESC, v.id DESC LIMIT 1)
         ) ORDER BY a.created_at)
-        FROM artifacts a WHERE u.id = ANY (a.source_ids)), '[]') AS artifacts
+        FROM artifacts a
+        WHERE u.id = ANY (a.source_ids)
+          AND (${projectId}::uuid IS NULL OR a.project_context_id = ${projectId}::uuid)), '[]') AS artifacts
     FROM ingested_units u
     WHERE u.id = ANY (string_to_array(${list}, ',')::uuid[])
     ORDER BY array_position(string_to_array(${list}, ',')::uuid[], u.id)`;

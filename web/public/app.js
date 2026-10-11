@@ -1,9 +1,7 @@
-// Page wiring: the demo film, the sample shorts feed, and Proceed with its reel.
+// Page wiring: the demo film, the sample shorts feed, and the Get started call to action.
 
 import { createFeed } from "./feed.js";
 import { createFilm } from "./film.js";
-import { createProceed } from "./proceed.js";
-import { createReel } from "./reel.js";
 
 const feed = createFeed(document.querySelector("[data-feed-root]"));
 createFilm(document.querySelector("[data-film]")).refresh();
@@ -19,12 +17,6 @@ document.addEventListener("keydown", (e) => {
   if (feed.key(e)) e.preventDefault();
 });
 
-// "Proceed" links jump to the hero form and put the cursor in the links box.
-document.querySelectorAll('a[href="#proceed"]').forEach((a) =>
-  a.addEventListener("click", () => {
-    setTimeout(() => document.querySelector("#proceed-links").focus({ preventScroll: true }), 350);
-  })
-);
 
 // ---------- Colour palette picker (shown with ?pick) ----------
 
@@ -50,10 +42,18 @@ picker.addEventListener("click", (e) => {
 });
 markPalette();
 
-// ---------- Proceed ----------
+// ---------- Get started ----------
 
-createProceed({
-  form: document.querySelector("[data-proceed]"),
-  run: document.querySelector("[data-run]"),
-  reel: createReel(document.querySelector("[data-reel]")),
-});
+// Signed-in visitors go straight to their feed instead of onboarding.
+fetch("/api/me", { credentials: "same-origin" })
+  .then((res) => (res.ok ? res.json() : null))
+  .then((me) => {
+    if (!me) return;
+    const to = me.step === "done" ? "/app" : `/start#${me.step}`;
+    document.querySelectorAll("[data-cta]").forEach((a) => {
+      a.href = to;
+      a.textContent = me.step === "done" ? "Open your feed" : "Finish setting up";
+    });
+    document.querySelector("[data-signin-link]")?.remove();
+  })
+  .catch(() => {});

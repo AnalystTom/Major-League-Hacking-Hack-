@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en" data-palette="hn">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Your feed · Resurface</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <script>
+    (function () {
+      var ok = ["hn", "highlighter", "cobalt", "violet"], p = null;
+      try { p = localStorage.getItem("resurface-palette"); } catch (e) {}
+      if (ok.indexOf(p) >= 0) document.documentElement.dataset.palette = p;
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Funnel+Display:wght@400..800&family=Funnel+Sans:wght@400..700&family=Martian+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="/" aria-label="Resurface home">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10 9.5l4.5 2.5-4.5 2.5z"/></svg>
+        Resurface
+      </a>
+      <span class="who" data-who></span>
+      <button type="button" class="btn btn-small btn-quiet-top" data-signout>Sign out</button>
+    </div>
+  </header>
+
+  <main class="home" data-home>
+    <p class="onboard-loading" data-loading>Loading your feed…</p>
+
+    <div class="home-grid" data-home-body hidden>
+      <div class="home-side">
+        <section class="project-card" aria-labelledby="project-name">
+          <p class="eyebrow">Your project</p>
+          <h1 id="project-name" data-project-name></h1>
+          <p class="project-goal" data-project-goal></p>
+          <ul class="project-tags" data-project-tags aria-label="Stack, tools and agents"></ul>
+          <a class="linkish" href="/start#project">Edit project</a>
+        </section>
+
+        <section class="run-progress" aria-labelledby="links-title">
+          <h2 id="links-title">Your links</h2>
+          <p class="hint" data-run-note></p>
+          <ol class="units" data-units></ol>
+          <form class="add-links" data-add novalidate>
+            <label for="add-links">Add more YouTube links</label>
+            <textarea id="add-links" name="links" rows="2" spellcheck="false" autocomplete="off" placeholder="https://youtu.be/…"></textarea>
+            <button class="btn btn-small" type="submit">Add</button>
+            <p class="form-status" role="status" aria-live="polite"></p>
+          </form>
+        </section>
+      </div>
+
+      <section class="home-feed" aria-labelledby="feed-title">
+        <h2 id="feed-title" class="visually-hidden">Your shorts</h2>
+        <div class="reel" data-reel hidden>
+          <div class="reel-track" data-reel-track tabindex="0" aria-label="Your shorts. Use the up and down arrows to move, M for sound."></div>
+          <p class="reel-counter" data-reel-counter aria-live="polite"></p>
+        </div>
+        <div class="reel-placeholder" data-reel-empty>
+          <p class="reel-placeholder-title">Your shorts appear here</p>
+          <p>Each one shows up as soon as it's rendered and approved. The list on the left shows where every link is.</p>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/home.js" type="module"></script>
+</body>
+</html>

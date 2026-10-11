@@ -1,68 +1,145 @@
+import {
+  createSession, createUser, currentUser, endSession, login, parseLogin, parseSignup, sessionCookie,
+} from "./auth.js";
 import { connect } from "./db.js";
 import { readFeed } from "./feed.js";
-import { createUnits, parseImport, parseUnitIds, readUnits } from "./imports.js";
+import { createUnits, parseImport, readUnits, userUnitIds } from "./imports.js";
 import { serveMedia } from "./media.js";
 import { requestProcessing } from "./processor.js";
+import { parseProject, readProject, saveProject } from "./project.js";
 
-const json = (data, status = 200) =>
+const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
+    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers },
   });
 
-const UNAVAILABLE = "Processing isn't connected right now. Try again in a minute.";
+const UNAVAILABLE = "Resurface can't reach its database right now. Try again in a minute.";
+const SIGNED_OUT = { error: "Sign in to continue." };
 
-// POST /api/imports: store the links as units, then ask the processor to start on the new ones.
-async function startImport(request, env, sql) {
-  // Every import can trigger paid extraction and rendering, so cap each client's rate.
-  if (env.IMPORT_LIMITER) {
-    const key = request.headers.get("cf-connecting-ip") ?? "local";
-    const { success } = await env.IMPORT_LIMITER.limit({ key });
-    if (!success) return json({ error: "That's a lot of imports at once. Wait a minute and try again." }, 429);
-  }
-
+async function readJson(request) {
   const text = await request.text();
-  if (text.length > 32_000) return json({ error: "That request is too large." }, 413);
-  let body;
+  if (text.length > 32_000) return { error: json({ error: "That request is too large." }, 413) };
   try {
-    body = JSON.parse(text);
+    return { body: JSON.parse(text) };
   } catch {
-    return json({ error: "Send a JSON body with a links field." }, 400);
+    return { error: json({ error: "Send a JSON body." }, 400) };
   }
+}
+
+async function limited(limiter, key) {
+  if (!limiter) return false;
+  const { success } = await limiter.limit({ key });
+  return !success;
+}
+
+const ip = (request) => request.headers.get("cf-connecting-ip") ?? "local";
+
+/** Where onboarding resumes: the brief first, then sources, then the user's home. */
+async function onboardingState(sql, user) {
+  const project = await readProject(sql, user);
+  const [{ count }] = await sql`SELECT count(*)::int AS count FROM user_imports WHERE user_id = ${user.id}`;
+  return {
+    user: { id: user.id, email: user.email, name: user.name },
+    project,
+    imports: count,
+    step: !project ? "project" : count === 0 ? "sources" : "done",
+  };
+}
+
+async function signup(request, env, sql) {
+  if (await limited(env.AUTH_LIMITER, ip(request))) return json({ error: "Too many attempts. Wait a minute and try again." }, 429);
+  const { body, error } = await readJson(request);
+  if (error) return error;
+  const parsed = parseSignup(body);
+  if (!parsed.ok) return json({ error: parsed.error }, 400);
+  const user = await createUser(sql, parsed.value);
+  if (!user) return json({ error: "There's already an account with that email. Sign in instead." }, 409);
+  const token = await createSession(sql, user.id);
+  return json(await onboardingState(sql, user), 201, { "set-cookie": sessionCookie(token) });
+}
+
+async function signin(request, env, sql) {
+  if (await limited(env.AUTH_LIMITER, ip(request))) return json({ error: "Too many attempts. Wait a minute and try again." }, 429);
+  const { body, error } = await readJson(request);
+  if (error) return error;
+  const parsed = parseLogin(body);
+  if (!parsed.ok) return json({ error: parsed.error }, 400);
+  const user = await login(sql, parsed.value);
+  if (!user) return json({ error: "That email and password don't match an account." }, 401);
+  const token = await createSession(sql, user.id);
+  return json(await onboardingState(sql, user), 200, { "set-cookie": sessionCookie(token) });
+}
+
+// POST /api/imports: store the links as the user's units, then hand the ones new to this user to the
+// processor with their project brief.
+async function startImport(request, env, sql, user) {
+  if (await limited(env.IMPORT_LIMITER, user.id)) {
+    return json({ error: "That's a lot of imports at once. Wait a minute and try again." }, 429);
+  }
+  const { body, error } = await readJson(request);
+  if (error) return error;
   const parsed = parseImport(body);
   if (!parsed.ok) {
-    // Honeypot hits get a success-shaped reply so bots learn nothing.
     if (parsed.status === 202) return json({ units: [], processor: "not_needed" }, 200);
     return json({ error: parsed.error, invalid: parsed.invalid }, parsed.status);
   }
+  const project = await readProject(sql, user);
+  if (!project) return json({ error: "Tell us about your project first." }, 409);
 
-  const units = await createUnits(sql, parsed.value.links);
-  // Only units this request created; resubmitting a link must not re-trigger work already queued.
-  // The processor is expected to sweep units left pending (see docs/proceed-and-media.md).
-  const processor = await requestProcessing(
-    env,
-    units.filter((u) => !u.reused).map((u) => u.id)
-  );
-  return json({ units: await readUnits(sql, units.map((u) => u.id)), processor }, 201);
+  const units = await createUnits(sql, parsed.value.links, { userId: user.id, project });
+  const processor = await requestProcessing(env, units.filter((u) => u.linked).map((u) => u.id), fetch, project);
+  return json({ units: await readUnits(sql, units.map((u) => u.id), project.id), processor }, 201);
 }
 
 async function api(request, env, url, sql) {
-  if (url.pathname === "/api/imports") {
-    if (request.method === "POST") return startImport(request, env, sql);
-    if (request.method === "GET") {
-      const ids = parseUnitIds(url.searchParams.get("units"));
-      if (!ids) return json({ error: "Pass units as comma-separated ids." }, 400);
-      return json({ units: await readUnits(sql, ids) });
+  const { pathname } = url;
+  const method = request.method;
+
+  // Mutations must be JSON, which a cross-site form can't send; with SameSite=Lax this blocks CSRF.
+  if (method !== "GET" && method !== "HEAD" && !(request.headers.get("content-type") ?? "").startsWith("application/json")) {
+    return json({ error: "Send requests as application/json." }, 415);
+  }
+
+  if (pathname === "/api/auth/signup" && method === "POST") return signup(request, env, sql);
+  if (pathname === "/api/auth/login" && method === "POST") return signin(request, env, sql);
+  if (pathname === "/api/auth/logout" && method === "POST") {
+    await endSession(sql, request);
+    return json({ signedOut: true }, 200, { "set-cookie": sessionCookie("", 0) });
+  }
+
+  // The public demo feed needs no account.
+  if (pathname === "/api/feed" && method === "GET" && url.searchParams.get("scope") !== "mine") {
+    return json({ items: await readFeed(sql) });
+  }
+
+  const user = await currentUser(sql, request);
+  if (!user) return json(SIGNED_OUT, 401);
+
+  if (pathname === "/api/me" && method === "GET") return json(await onboardingState(sql, user));
+
+  if (pathname === "/api/project" && method === "PUT") {
+    const { body, error } = await readJson(request);
+    if (error) return error;
+    const parsed = parseProject(body);
+    if (!parsed.ok) return json({ error: parsed.error }, 400);
+    return json({ project: await saveProject(sql, user, parsed.value) });
+  }
+
+  if (pathname === "/api/imports") {
+    if (method === "POST") return startImport(request, env, sql, user);
+    if (method === "GET") {
+      const project = await readProject(sql, user);
+      return json({ units: await readUnits(sql, await userUnitIds(sql, user.id), project?.id ?? null) });
     }
-    return json({ error: "Use GET or POST." }, 405);
   }
-  if (url.pathname === "/api/feed") {
-    if (request.method !== "GET") return json({ error: "Use GET." }, 405);
-    const raw = url.searchParams.get("units");
-    const ids = raw === null ? null : parseUnitIds(raw);
-    if (raw !== null && !ids) return json({ error: "Pass units as comma-separated ids." }, 400);
-    return json({ items: await readFeed(sql, ids) });
+
+  if (pathname === "/api/feed" && method === "GET") {
+    const project = await readProject(sql, user);
+    const ids = await userUnitIds(sql, user.id);
+    return json({ items: project ? await readFeed(sql, ids, project.id) : [] });
   }
+
   return json({ error: "Not found." }, 404);
 }
 

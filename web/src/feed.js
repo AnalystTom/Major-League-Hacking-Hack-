@@ -5,9 +5,10 @@ import { resolveMediaRef } from "./media.js";
 /**
  * One row per artifact revision whose processing and review are done and whose video is rendered
  * and approved. With unit ids, only artifacts built from those units; without, the curated demo feed,
- * which also needs a team-assigned feed_order.
+ * which also needs a team-assigned feed_order. With a project id, only artifacts digested for it.
  */
-export async function readFeed(sql, unitIds = null) {
+export async function readFeed(sql, unitIds = null, projectId = null) {
+  if (unitIds && unitIds.length === 0) return [];
   const list = unitIds ? unitIds.join(",") : null;
   const rows = await sql`
     SELECT * FROM (
@@ -27,6 +28,7 @@ export async function readFeed(sql, unitIds = null) {
       WHERE a.ingestion_status = 'ready' AND a.review_status = 'approved'
         AND (${list}::text IS NULL OR a.source_ids && string_to_array(${list}::text, ',')::uuid[])
         AND (${list}::text IS NOT NULL OR v.feed_order IS NOT NULL)
+        AND (${projectId}::uuid IS NULL OR a.project_context_id = ${projectId}::uuid)
       ORDER BY a.id, a.version, v.created_at DESC, v.id DESC
     ) eligible
     ORDER BY feed_order NULLS LAST, created_at, id`;

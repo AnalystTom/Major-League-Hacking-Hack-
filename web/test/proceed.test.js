@@ -128,7 +128,8 @@ test("requestProcessing reports what actually happened", async () => {
   assert.equal(await requestProcessing({ PROCESSOR_URL: "https://p.dev/process" }, [], ok), "not_needed");
   assert.equal(await requestProcessing({ PROCESSOR_URL: "https://p.dev/process" }, [ID], down), "unavailable");
   assert.equal(await requestProcessing({ PROCESSOR_URL: "https://p.dev/process" }, [ID], boom), "unavailable");
-  assert.equal(await requestProcessing({ PROCESSOR_URL: "https://p.dev/process", PROCESSOR_TOKEN: "t" }, [ID], spy), "requested");
+  const project = { id: ID, version: 2, name: "Resurface", goal: null, tools: ["Postgres"], agents: ["codex"] };
+  assert.equal(await requestProcessing({ PROCESSOR_URL: "https://p.dev/process", PROCESSOR_TOKEN: "t" }, [ID], spy, project), "requested");
   assert.equal(sent.init.headers.authorization, "Bearer t");
-  assert.deepEqual(JSON.parse(sent.init.body), { unit_ids: [ID] });
+  assert.deepEqual(JSON.parse(sent.init.body), { unit_ids: [ID], project });
 });
