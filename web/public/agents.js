@@ -38,12 +38,15 @@ const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStar
 
 /** A link to the moment in the video the evidence comes from, when it's a known YouTube source. */
 export function evidenceLink(evidence, videos) {
-  const video = videos.find((v) => v.id === evidence.source_id) ?? (videos.length === 1 ? videos[0] : null);
+  // Evidence that names a source links only to that source; the single-source fallback is for evidence that names none.
+  const video = videos.find((v) => v.id === evidence.source_id) ?? (!evidence.source_id && videos.length === 1 ? videos[0] : null);
   if (!video) return null;
-  const at = evidence.start_seconds;
+  // X posts have no timeline, so only a YouTube link gets a moment.
+  const timed = video.url.startsWith("https://www.youtube.com/watch");
+  const at = timed ? evidence.start_seconds : null;
   return {
     url: at === null ? video.url : `${video.url}&t=${Math.floor(at)}s`,
-    label: `${video.title || "Source video"}${at === null ? "" : `, ${clock(at)}${evidence.end_seconds === null ? "" : `–${clock(evidence.end_seconds)}`}`}`,
+    label: `${video.title || (timed ? "Source video" : "Source post")}${at === null ? "" : `, ${clock(at)}${evidence.end_seconds === null ? "" : `–${clock(evidence.end_seconds)}`}`}`,
   };
 }
 

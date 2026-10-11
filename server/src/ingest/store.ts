@@ -78,7 +78,7 @@ export class MemoryStore implements Store {
   }
   private sourcesFor(ids: string[]) {
     const src = ids.map((id) => this.units.get(id)).filter((u): u is IngestedUnit => !!u);
-    return { src, sources: src.map((u) => ({ url: u.sourceUrl, title: u.title, content_type: "youtube_video", retrieved_at: u.extractedAt })) };
+    return { src, sources: src.map((u) => ({ url: u.sourceUrl, title: u.title, content_type: u.contentType ?? "youtube_video", retrieved_at: u.extractedAt })) };
   }
   async saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null) {
     const stored = artifacts.map((a): StoredArtifact => {
@@ -108,7 +108,7 @@ export class MemoryStore implements Store {
 
 function rowToUnit(r: any): IngestedUnit {
   return {
-    id: r.id, submittedUrl: r.submitted_url, sourceUrl: r.source_url, startSeconds: r.start_seconds, title: r.title,
+    id: r.id, submittedUrl: r.submitted_url, sourceUrl: r.source_url, startSeconds: r.start_seconds, title: r.title, contentType: r.content_type,
     transcript: r.transcript, extractionMethod: r.extraction_method, extractedAt: r.extracted_at, status: r.status, error: r.error,
   };
 }
@@ -132,10 +132,10 @@ export class PgStore implements Store {
 
   async saveUnit(u: IngestedUnit) {
     await this.pool.query(
-      `INSERT INTO ingested_units (id, submitted_url, source_url, start_seconds, title, transcript, extraction_method, extracted_at, status, error)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      `INSERT INTO ingested_units (id, submitted_url, source_url, start_seconds, title, transcript, extraction_method, extracted_at, status, error, content_type)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        ON CONFLICT (id) DO UPDATE SET title=$5, transcript=$6, extraction_method=$7, extracted_at=$8, status=$9, error=$10`,
-      [u.id, u.submittedUrl, u.sourceUrl, u.startSeconds, u.title, u.transcript && JSON.stringify(u.transcript), u.extractionMethod, u.extractedAt, u.status, u.error],
+      [u.id, u.submittedUrl, u.sourceUrl, u.startSeconds, u.title, u.transcript && JSON.stringify(u.transcript), u.extractionMethod, u.extractedAt, u.status, u.error, u.contentType ?? "youtube_video"],
     );
   }
 

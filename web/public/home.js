@@ -54,9 +54,9 @@ function render(units, items) {
   }
 
   const waiting = units.some((u) => !u.settled);
-  const title = units.length === 0 ? "Paste your first videos" : waiting ? "Making your shorts" : "No shorts from these links yet";
+  const title = units.length === 0 ? "Paste your first links" : waiting ? "Making your shorts" : "No shorts from these links yet";
   const lede = units.length === 0
-    ? "Each YouTube video becomes a short, narrated clip of the part worth keeping."
+    ? "Each YouTube video or X post becomes a short, narrated clip of the part worth keeping."
     : waiting
       ? "Your first short starts playing here as soon as it's ready. You can leave; processing carries on."
       : "Each link below says what happened. Try other videos.";
@@ -122,7 +122,7 @@ form.addEventListener("submit", async (e) => {
   const button = form.querySelector("button");
   const links = String(new FormData(form).get("links") || "").split(/\s+/).filter(Boolean);
   if (!links.length) {
-    status.textContent = "Paste at least one YouTube link.";
+    status.textContent = "Paste at least one YouTube or X post link.";
     status.dataset.tone = "error";
     return;
   }

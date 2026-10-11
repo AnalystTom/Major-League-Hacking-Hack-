@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { parseXLink } from "../src/xpost.js";
 import { parseYouTubeLink } from "../src/youtube.js";
 import { describeUnit, parseImport, parseUnitIds } from "../src/imports.js";
 import { isMediaKey, parseRange, resolveMediaRef } from "../src/media.js";
@@ -42,7 +43,7 @@ test("parseImport validates, reports every bad line, and de-duplicates", () => {
   assert.deepEqual(bad.invalid.map((i) => i.link), ["https://vimeo.com/1"]);
 
   assert.equal(parseImport({ links: [] }).status, 400);
-  assert.equal(parseImport({ links: Array(11).fill("https://youtu.be/VQy50fuxI34") }).status, 400);
+  assert.equal(parseImport({ links: Array(121).fill("https://youtu.be/VQy50fuxI34") }).status, 400);
   assert.equal(parseImport({ links: "https://youtu.be/VQy50fuxI34", company: "bot" }).status, 202);
   assert.equal(parseImport({ links: [`https://youtu.be/VQy50fuxI34?x=${"a".repeat(3000)}`] }).status, 400);
   assert.equal(parseImport({ links: Array(1000).fill("") }).status, 400);
@@ -165,4 +166,48 @@ test("final progress is read before the feed so a just-rendered clip is not miss
     await finished;
   }
   assert.deepEqual(calls, ["/api/imports", "/api/feed?scope=mine"]);
+});
+
+test("canonicalises X post links and rejects X links that aren't a post", () => {
+  for (const input of [
+    "https://x.com/someone/status/1850000000000000001?s=20",
+    "https://twitter.com/someone/status/1850000000000000001",
+    "x.com/i/web/status/1850000000000000001",
+  ]) {
+    const r = parseXLink(input);
+    assert.equal(r.ok, true, input);
+    assert.deepEqual(r.value, { submitted_url: input, source_url: "https://x.com/i/status/1850000000000000001", start_seconds: null, content_type: "x_post" });
+  }
+  for (const input of ["https://x.com/someone", "https://x.com/i/bookmarks", "https://x.com.evil.dev/a/status/1"]) {
+    assert.equal(parseXLink(input).ok, false, input);
+  }
+});
+
+test("parseImport accepts YouTube and X links together and de-duplicates X posts", () => {
+  const r = parseImport({ links: "https://youtu.be/VQy50fuxI34 https://x.com/a/status/12 https://twitter.com/b/status/12" });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.value.links.map((l) => l.source_url), ["https://www.youtube.com/watch?v=VQy50fuxI34", "https://x.com/i/status/12"]);
+
+  const bad = parseImport({ links: ["https://x.com/a/status/12", "https://x.com/a"] });
+  assert.equal(bad.ok, false);
+  assert.deepEqual(bad.invalid.map((i) => i.link), ["https://x.com/a"]);
+});
+
+test("parseImport caps 20 YouTube videos and 100 X posts independently", () => {
+  const yt = (n) => Array.from({ length: n }, (_, i) => `https://www.youtube.com/watch?v=${String(i).padStart(11, "a")}`);
+  const xs = (n) => Array.from({ length: n }, (_, i) => `https://x.com/a/status/${i + 1}`);
+  assert.equal(parseImport({ links: [...yt(20), ...xs(100)] }).ok, true);
+  assert.match(parseImport({ links: yt(21) }).error, /at most 20 YouTube/);
+  assert.match(parseImport({ links: xs(101) }).error, /at most 100 X posts/);
+  assert.equal(parseImport({ links: [...yt(20), ...xs(101)] }).ok, false);
+});
+
+test("requestProcessing sends large imports in batches of 10", async () => {
+  const sent = [];
+  const fetchImpl = async (_url, init) => (sent.push(JSON.parse(init.body).unit_ids.length), { ok: true });
+  const ids = Array.from({ length: 25 }, (_, i) => `id${i}`);
+  assert.equal(await requestProcessing({ PROCESSOR_URL: "http://p" }, ids, fetchImpl), "requested");
+  assert.deepEqual(sent, [10, 10, 5]);
+  const failing = async (_u, init) => ({ ok: JSON.parse(init.body).unit_ids[0] !== "id10" });
+  assert.equal(await requestProcessing({ PROCESSOR_URL: "http://p" }, ids, failing), "unavailable");
 });

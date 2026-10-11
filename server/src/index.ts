@@ -26,6 +26,7 @@ if (process.env.GEMINI_API_KEY) {
   const options = {
     token,
     geminiKey: process.env.GEMINI_API_KEY,
+    twitterApiKey: process.env.TWITTERAPI_IO_KEY,
     geminiModel: process.env.GEMINI_MODEL,
     windowSeconds: process.env.WINDOW_SECONDS ? Number(process.env.WINDOW_SECONDS) : undefined,
     openaiKey: process.env.OPENAI_API_KEY,

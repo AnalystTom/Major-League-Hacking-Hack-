@@ -60,7 +60,8 @@ const strings = (v) => (Array.isArray(v) ? v.filter((s) => typeof s === "string"
 export function serializeSkill(row) {
   const ready = row.status === "ready" && typeof row.skill_markdown === "string";
   const { name, description } = ready ? frontmatter(row.skill_markdown) : { name: null, description: null };
-  const videos = (row.videos ?? []).filter((v) => /^https:\/\/www\.youtube\.com\/watch\?v=[\w-]{11}$/.test(v.url));
+  // The artifact's sources: YouTube videos and X posts, only in their canonical forms.
+  const videos = (row.videos ?? []).filter((v) => /^https:\/\/(?:www\.youtube\.com\/watch\?v=[\w-]{11}|x\.com\/i\/status\/\d{1,19})$/.test(v.url));
   return {
     id: row.id,
     status: row.status,

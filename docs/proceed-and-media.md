@@ -9,7 +9,7 @@ dev. The processor's hosting is PR #5. Shorts reach production only when that's 
 1. **Sign up** at `/start`: email and password, nothing else (`users`, `sessions`; `db/migrations/002_accounts.sql`).
    Signing up or in goes straight to `/app`.
 2. **Paste links** on `/app`. A new account lands on the reel's 9:16 frame with the paste box in it, focused.
-   Up to 10 YouTube links become `ingested_units`, linked to the user in `user_imports`.
+   Up to 20 YouTube videos and 100 X post links (`x.com/<user>/status/<id>`, stored with `content_type = 'x_post'`) become `ingested_units`, linked to the user in `user_imports`. X posts are read as text from twitterapi.io (`TWITTERAPI_IO_KEY` on the processor); no model is involved in reading them.
 3. **Watch them process.** Until the first short is ready, the frame shows "Making your shorts" with each link's
    real stage. After that, a top-bar status chip ("2 ready · 1 couldn't be made") opens the same list with the
    actual errors.

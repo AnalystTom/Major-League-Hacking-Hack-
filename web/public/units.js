@@ -10,11 +10,11 @@ export const FAILED_STAGES = new Set(["failed", "render_failed", "not_selected"]
 
 export const STAGE = {
   queued: "Queued",
-  fetching: "Reading the video",
+  fetching: "Reading the source",
   digesting: "Picking out what's useful",
   rendering: "Rendering the short",
   ready: "Ready to watch",
-  failed: "Couldn't read this video",
+  failed: "Couldn't read this source",
   render_failed: "Rendering failed",
   not_selected: "Nothing in it was worth a short",
 };
@@ -26,7 +26,7 @@ export const PROCESSOR = {
   unavailable: "Your links are saved, but processing didn't answer. They're waiting in the queue.",
 };
 
-const WATCH = /^https:\/\/www\.youtube\.com\/watch\?v=[\w-]{11}$/;
+const OPENABLE = /^https:\/\/(?:www\.youtube\.com\/watch\?v=[\w-]{11}|x\.com\/i\/status\/\d{1,19})$/;
 
 export function renderUnits(list, units) {
   list.replaceChildren(
@@ -34,7 +34,7 @@ export function renderUnits(list, units) {
       const li = document.createElement("li");
       li.dataset.stage = u.stage;
       const name = document.createElement("a");
-      if (WATCH.test(u.source_url)) name.href = u.source_url;
+      if (OPENABLE.test(u.source_url)) name.href = u.source_url;
       name.target = "_blank";
       name.rel = "noopener noreferrer";
       name.textContent = u.title || u.source_url.replace(/^https:\/\/www\./, "");

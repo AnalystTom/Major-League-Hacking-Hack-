@@ -130,3 +130,17 @@ test("shared skill helpers: anchor ids, writing states, and one front-matter pat
   assert.equal(md.replace(FRONTMATTER, ""), "Body");
   assert.deepEqual(frontmatter(md), { name: "x", description: "y" });
 });
+
+test("X post evidence links to the post without a timestamp, and never borrows another source", () => {
+  const POST = "11111111-2222-4333-8444-555555555555";
+  const s = serializeSkill(row({ videos: [
+    { id: UNIT, url: "https://www.youtube.com/watch?v=VQy50fuxI34", title: "Evals talk" },
+    { id: POST, url: "https://x.com/i/status/1850000000000000001", title: "@someone: verify first" },
+  ] }));
+  assert.equal(s.videos.length, 2, "X posts stay in the sources");
+  assert.deepEqual(evidenceLink({ source_id: POST, passage: "p", start_seconds: 0, end_seconds: 0 }, s.videos),
+    { url: "https://x.com/i/status/1850000000000000001", label: "@someone: verify first" });
+  const onlyVideo = s.videos.slice(0, 1);
+  assert.equal(evidenceLink({ source_id: POST, passage: "p", start_seconds: 0, end_seconds: 0 }, onlyVideo), null, "no fallback to the video for a post's evidence");
+  assert.equal(evidenceLink({ source_id: null, passage: "p", start_seconds: 30, end_seconds: null }, onlyVideo).url, "https://www.youtube.com/watch?v=VQy50fuxI34&t=30s");
+});
