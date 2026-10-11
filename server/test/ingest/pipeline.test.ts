@@ -90,18 +90,18 @@ const openai = (choice: object, usage: object = {}) => (async () => Response.jso
 const digest = (fetchImpl: typeof fetch, maxOutputTokens?: number) => runDigestion({ apiKey: "k", units: [unit], request: "r", fetchImpl, maxOutputTokens });
 
 test("an empty digest reply explains itself: finish reason and token usage", async () => {
-  await assert.rejects(digest(openai({ message: { content: "" }, finish_reason: "length" }, { completion_tokens: 8000, completion_tokens_details: { reasoning_tokens: 8000 } })),
-    /hit the 8000-token output cap.*finish_reason: length; completion tokens 8000 of 8000 \(8000 reasoning\).*OPENAI_MAX_OUTPUT_TOKENS/);
+  await assert.rejects(digest(openai({ message: { content: "" }, finish_reason: "length" }, { completion_tokens: 20000, completion_tokens_details: { reasoning_tokens: 20000 } })),
+    /hit the 20000-token output cap.*finish_reason: length; completion tokens 20000 of 20000 \(20000 reasoning\).*OPENAI_MAX_OUTPUT_TOKENS/);
   await assert.rejects(digest(openai({ message: { content: null }, finish_reason: "stop" }, { completion_tokens: 3 })),
-    /no content \(finish_reason: stop; completion tokens 3 of 8000\)/);
+    /no content \(finish_reason: stop; completion tokens 3 of 20000\)/);
   await assert.rejects(digest(openai({ message: { content: null, refusal: "I can't help with that" }, finish_reason: "stop" })), /refused: I can't help/);
 });
 
 test("the output cap is configurable and sent to OpenAI", async () => {
   let sent = 0;
   const f = (async (_u: string, init: { body: string }) => { sent = JSON.parse(init.body).max_completion_tokens; return Response.json({ choices: [{ message: { content: '{"artifacts":[],"exclusions":[]}' }, finish_reason: "stop" }] }); }) as unknown as typeof fetch;
-  await digest(f, 20000);
-  assert.equal(sent, 20000);
+  await digest(f, 30000);
+  assert.equal(sent, 30000);
   await digest(f);
-  assert.equal(sent, 8000);
+  assert.equal(sent, 20000);
 });

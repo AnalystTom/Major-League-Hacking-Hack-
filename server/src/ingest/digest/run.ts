@@ -3,7 +3,7 @@ import { validateDigest } from "./validate.js";
 import type { DigestOutput, IngestedUnit } from "../types.js";
 
 export const DEFAULT_DIGEST_MODEL = "gpt-5";
-export const DEFAULT_MAX_OUTPUT_TOKENS = 8000;
+export const DEFAULT_MAX_OUTPUT_TOKENS = 20000;
 
 export interface DigestOptions {
   apiKey: string;
