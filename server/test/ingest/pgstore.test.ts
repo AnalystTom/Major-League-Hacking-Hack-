@@ -43,7 +43,7 @@ test("PgStore writes match the shared schema", { skip: !url && "TEST_DATABASE_UR
         evidence: [{ source_id: good.id, start_seconds: 5, end_seconds: 20, passage: "p" }] }],
       exclusions: [{ unit_id: unused.id, reason: "unrelated" }],
     }, [good, unused]);
-    const stored = await store.saveArtifacts(digest.artifacts, digest.exclusions, ids.prompt!);
+    const stored = await store.saveArtifacts(digest.artifacts, digest.exclusions, ids.prompt!, null);
     ids.artifact = stored.map((s) => s.id);
     assert.equal(stored[0].digestion_prompt_id, ids.prompt);
     assert.equal(stored[0].review_status, "pending");

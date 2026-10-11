@@ -1,0 +1,118 @@
+// The processing service from the spec's "Processor contract": claim pending units, extract them,
+// then digest ready units for the requested project. Extraction is shared across users; digestion is per project.
+
+import { digestAndStore, extractUnit, type IngestOptions } from "./pipeline.js";
+import { DEFAULT_CATEGORIZATION_REQUEST, promptRevisionText } from "./digest/prompt.js";
+import type { IngestedUnit, Project, ProjectRef } from "./types.js";
+
+export interface ProcessorOptions extends IngestOptions {
+  openaiKey?: string;
+  openaiModel?: string;
+  /** The categorization request for digests; DIGESTION_REQUEST or a built-in default. */
+  categorizationRequest?: string;
+  /** How long to wait for units another worker is extracting, and how often to check. */
+  waitTimeoutMs?: number;
+  pollMs?: number;
+  log?: (msg: string) => void;
+}
+
+export interface ProcessSummary {
+  extracted: { ready: number; failed: number };
+  /** Units some other worker was already extracting that we waited for. */
+  waitedFor: number;
+  digested: number;
+  skipped: string | null;
+}
+
+// Guards the same unit+project being digested twice in this process; another process is covered by the artifact check.
+const inFlight = new Set<string>();
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const settled = (u: IngestedUnit) => u.status === "ready" || u.status === "failed";
+
+async function waitForSettled(ids: string[], o: ProcessorOptions): Promise<IngestedUnit[]> {
+  const deadline = Date.now() + (o.waitTimeoutMs ?? 10 * 60_000);
+  for (;;) {
+    const units = await o.store.getUnits(ids);
+    if (units.every(settled) || Date.now() >= deadline) return units;
+    await sleep(o.pollMs ?? 3000);
+  }
+}
+
+/**
+ * Processes units for a project. Safe to call twice with the same ids: pending units are claimed atomically,
+ * ready units are not re-extracted, and a unit already digested for this project version is skipped.
+ * With no project, units are extracted only.
+ */
+export async function processUnits(unitIds: string[], project: Project | null, o: ProcessorOptions): Promise<ProcessSummary> {
+  const summary: ProcessSummary = { extracted: { ready: 0, failed: 0 }, waitedFor: 0, digested: 0, skipped: null };
+
+  const claimed = await o.store.claimPendingUnits(unitIds);
+  const extracted = await Promise.all(claimed.map((u) => extractUnit(u, o)));
+  summary.extracted.ready = extracted.filter((u) => u.status === "ready").length;
+  summary.extracted.failed = extracted.filter((u) => u.status === "failed").length;
+
+  // Units another worker (the sweep, a duplicate request) is still extracting settle before we digest.
+  const claimedIds = new Set(claimed.map((u) => u.id));
+  const others = unitIds.filter((id) => !claimedIds.has(id));
+  const units = others.length ? [...extracted, ...(await waitForSettled(others, o))] : extracted;
+  summary.waitedFor = units.length - extracted.length;
+
+  const ref: ProjectRef | null = project?.id && project.version != null ? { id: project.id, version: project.version } : null;
+  if (!project || !ref) { summary.skipped = "no project to digest for"; return summary; }
+  if (!o.openaiKey) { summary.skipped = "OPENAI_API_KEY not configured"; return summary; }
+
+  const readyIds = units.filter((u) => u.status === "ready").map((u) => u.id);
+  const needing = (await o.store.unitsNeedingDigest(readyIds, ref)).filter((id) => !inFlight.has(`${id}:${ref.id}:${ref.version}`));
+  if (needing.length === 0) { summary.skipped = "nothing new to digest for this project"; return summary; }
+  const keys = needing.map((id) => `${id}:${ref.id}:${ref.version}`);
+  keys.forEach((k) => inFlight.add(k));
+  try {
+    const request = o.categorizationRequest ?? DEFAULT_CATEGORIZATION_REQUEST;
+    const toDigest = units.filter((u) => needing.includes(u.id));
+    try {
+      const d = await digestAndStore({ apiKey: o.openaiKey, model: o.openaiModel, units: toDigest, request, context: project, fetchImpl: o.fetchImpl, store: o.store });
+      if (d.storeError) throw new Error(`could not store digest: ${d.storeError}`);
+      summary.digested = d.stored?.length ?? 0;
+    } catch (e) {
+      const promptId = await o.store.registerPrompt(promptRevisionText(request), []).catch(() => null);
+      await o.store.saveFailedArtifacts(needing, (e as Error).message, promptId, ref);
+      o.log?.(`digest failed for ${needing.length} unit(s): ${(e as Error).message}`);
+    }
+  } finally {
+    keys.forEach((k) => inFlight.delete(k));
+  }
+  return summary;
+}
+
+/** One sweep: pending units that someone imported, grouped by the project of their newest import. */
+export async function sweepOnce(o: ProcessorOptions, limit = 20): Promise<number> {
+  const ids = await o.store.listPendingUnitIds(limit);
+  const groups = new Map<string, { project: Project | null; ids: string[] }>();
+  for (const id of ids) {
+    const project = await o.store.projectForUnit(id);
+    const key = project ? `${project.id}@${project.version}` : "none";
+    (groups.get(key) ?? groups.set(key, { project, ids: [] }).get(key)!).ids.push(id);
+  }
+  for (const g of groups.values()) await processUnits(g.ids, g.project, o);
+  return ids.length;
+}
+
+/** Runs sweepOnce on a timer (skipping a tick while one is still running). Returns a stop function. */
+export function startSweep(o: ProcessorOptions, intervalMs = 60_000): () => void {
+  let running = false;
+  const timer = setInterval(async () => {
+    if (running) return;
+    running = true;
+    try {
+      const n = await sweepOnce(o);
+      if (n) o.log?.(`sweep processed ${n} pending unit(s)`);
+    } catch (e) {
+      o.log?.(`sweep failed: ${(e as Error).message}`);
+    } finally {
+      running = false;
+    }
+  }, intervalMs);
+  timer.unref();
+  return () => clearInterval(timer);
+}

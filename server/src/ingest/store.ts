@@ -1,15 +1,26 @@
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
-import type { DigestArtifact, IngestedUnit, StoredArtifact } from "./types.js";
+import type { DigestArtifact, IngestedUnit, Project, ProjectRef, StoredArtifact } from "./types.js";
 
 type Exclusion = { unit_id: string; reason: string };
 
 export interface Store {
   saveUnit(unit: IngestedUnit): Promise<void>;
+  getUnits(ids: string[]): Promise<IngestedUnit[]>;
   listReadyUnits(): Promise<IngestedUnit[]>;
+  /** Atomically moves pending units (optionally only these ids) to running and returns the ones this caller now owns. */
+  claimPendingUnits(ids?: string[], limit?: number): Promise<IngestedUnit[]>;
+  /** Pending units that some user has imported, so a project exists to digest them for. */
+  listPendingUnitIds(limit: number): Promise<string[]>;
+  /** The project from the newest user_imports row for this unit. */
+  projectForUnit(unitId: string): Promise<Project | null>;
+  /** Of these ready units, the ones with no non-failed artifact yet for this project version. */
+  unitsNeedingDigest(unitIds: string[], project: ProjectRef): Promise<string[]>;
   /** Returns the id of the digestion_prompts revision for this exact text + few-shot set, creating the next revision if new. */
   registerPrompt(promptText: string, fewShot: unknown[]): Promise<string>;
-  saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null): Promise<StoredArtifact[]>;
+  saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null, project: ProjectRef | null): Promise<StoredArtifact[]>;
+  /** Records a digestion failure per unit as a failed artifact, so the unit shows the error instead of waiting forever. */
+  saveFailedArtifacts(unitIds: string[], error: string, promptId: string | null, project: ProjectRef | null): Promise<void>;
 }
 
 export class MemoryStore implements Store {
@@ -17,7 +28,31 @@ export class MemoryStore implements Store {
   artifacts: StoredArtifact[] = [];
   exclusions: (Exclusion & { promptId: string | null })[] = [];
   prompts: { id: string; revision: number; promptText: string; fewShot: unknown[] }[] = [];
+  /** Test/dev stand-in for user_imports: the project each unit was imported for. */
+  unitProjects = new Map<string, Project>();
+
   async saveUnit(unit: IngestedUnit) { this.units.set(unit.id, unit); }
+  async getUnits(ids: string[]) { return ids.map((id) => this.units.get(id)).filter((u): u is IngestedUnit => !!u); }
+  async listReadyUnits() { return [...this.units.values()].filter((u) => u.status === "ready"); }
+  async claimPendingUnits(ids?: string[], limit = 50) {
+    const claimed: IngestedUnit[] = [];
+    for (const u of this.units.values()) {
+      if (claimed.length >= limit) break;
+      if (u.status !== "pending" || (ids && !ids.includes(u.id))) continue;
+      const running = { ...u, status: "running" as const };
+      this.units.set(u.id, running);
+      claimed.push(running);
+    }
+    return claimed;
+  }
+  async listPendingUnitIds(limit: number) {
+    return [...this.units.values()].filter((u) => u.status === "pending" && this.unitProjects.has(u.id)).slice(0, limit).map((u) => u.id);
+  }
+  async projectForUnit(unitId: string) { return this.unitProjects.get(unitId) ?? null; }
+  async unitsNeedingDigest(unitIds: string[], project: ProjectRef) {
+    return unitIds.filter((id) => this.units.get(id)?.status === "ready" && !this.artifacts.some((a) =>
+      a.source_ids.includes(id) && a.project_context_id === project.id && a.project_context_version === project.version && a.ingestion_status !== "failed"));
+  }
   async registerPrompt(promptText: string, fewShot: unknown[]) {
     const found = this.prompts.find((p) => p.promptText === promptText && JSON.stringify(p.fewShot) === JSON.stringify(fewShot));
     if (found) return found.id;
@@ -25,23 +60,46 @@ export class MemoryStore implements Store {
     this.prompts.push(p);
     return p.id;
   }
-  async listReadyUnits() { return [...this.units.values()].filter((u) => u.status === "ready"); }
-  async saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null) {
+  private sourcesFor(ids: string[]) {
+    const src = ids.map((id) => this.units.get(id)).filter((u): u is IngestedUnit => !!u);
+    return { src, sources: src.map((u) => ({ url: u.sourceUrl, title: u.title, content_type: "youtube_video", retrieved_at: u.extractedAt })) };
+  }
+  async saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null, project: ProjectRef | null) {
     const stored = artifacts.map((a): StoredArtifact => {
-      const src = a.source_ids.map((id) => this.units.get(id)).filter((u): u is IngestedUnit => !!u);
+      const { src, sources } = this.sourcesFor(a.source_ids);
       return {
-        ...a, id: randomUUID(), version: 1, source_url: src[0]?.sourceUrl ?? "",
-        sources: src.map((u) => ({ url: u.sourceUrl, title: u.title, content_type: "youtube_video", retrieved_at: u.extractedAt })),
+        ...a, id: randomUUID(), version: 1, source_url: src[0]?.sourceUrl ?? "", sources,
         ingestion_status: "ready", review_status: "pending", digestion_prompt_id: promptId,
+        project_context_id: project?.id ?? null, project_context_version: project?.version ?? null, error: null,
       };
     });
     this.artifacts.push(...stored);
     for (const e of exclusions) this.exclusions.push({ ...e, promptId });
     return stored;
   }
+  async saveFailedArtifacts(unitIds: string[], error: string, promptId: string | null, project: ProjectRef | null) {
+    for (const id of unitIds) {
+      const { src, sources } = this.sourcesFor([id]);
+      this.artifacts.push({
+        name: "Digestion failed", source_ids: [id], category: "", processed_text: "", evidence: [], selection_reason: "",
+        id: randomUUID(), version: 1, source_url: src[0]?.sourceUrl ?? "", sources,
+        ingestion_status: "failed", review_status: "pending", digestion_prompt_id: promptId,
+        project_context_id: project?.id ?? null, project_context_version: project?.version ?? null, error,
+      } as unknown as StoredArtifact);
+    }
+  }
 }
 
-/** Writes to the shared TigerData schema (db/migrations/001_shared_schema.sql). Workflow 1 owns these tables only. */
+function rowToUnit(r: any): IngestedUnit {
+  return {
+    id: r.id, submittedUrl: r.submitted_url, sourceUrl: r.source_url, startSeconds: r.start_seconds, title: r.title,
+    transcript: r.transcript, extractionMethod: r.extraction_method, extractedAt: r.extracted_at, status: r.status, error: r.error,
+  };
+}
+
+const ARTIFACT_RETURNING = "id, version, source_url, sources, ingestion_status, review_status, digestion_prompt_id, project_context_id, project_context_version, error";
+
+/** Writes to the shared TigerData schema (db/migrations). Workflow 1 owns these tables only. */
 export class PgStore implements Store {
   private pool: pg.Pool;
   constructor(pool: pg.Pool) { this.pool = pool; }
@@ -53,6 +111,57 @@ export class PgStore implements Store {
        ON CONFLICT (id) DO UPDATE SET title=$5, transcript=$6, extraction_method=$7, extracted_at=$8, status=$9, error=$10`,
       [u.id, u.submittedUrl, u.sourceUrl, u.startSeconds, u.title, u.transcript && JSON.stringify(u.transcript), u.extractionMethod, u.extractedAt, u.status, u.error],
     );
+  }
+
+  async getUnits(ids: string[]) {
+    const { rows } = await this.pool.query(`SELECT * FROM ingested_units WHERE id = ANY($1::uuid[]) ORDER BY created_at`, [ids]);
+    return rows.map(rowToUnit);
+  }
+
+  async listReadyUnits() {
+    const { rows } = await this.pool.query(`SELECT * FROM ingested_units WHERE status='ready' ORDER BY created_at`);
+    return rows.map(rowToUnit);
+  }
+
+  async claimPendingUnits(ids?: string[], limit = 50) {
+    const { rows } = await this.pool.query(
+      `UPDATE ingested_units SET status = 'running'
+       WHERE id IN (SELECT id FROM ingested_units WHERE status = 'pending' AND ($1::uuid[] IS NULL OR id = ANY($1::uuid[]))
+                    ORDER BY created_at LIMIT $2 FOR UPDATE SKIP LOCKED)
+       RETURNING *`, [ids ?? null, limit]);
+    return rows.map(rowToUnit);
+  }
+
+  async listPendingUnitIds(limit: number) {
+    const { rows } = await this.pool.query(
+      `SELECT u.id FROM ingested_units u WHERE u.status = 'pending' AND EXISTS (SELECT 1 FROM user_imports ui WHERE ui.unit_id = u.id)
+       ORDER BY u.created_at LIMIT $1`, [limit]);
+    return rows.map((r) => r.id as string);
+  }
+
+  async projectForUnit(unitId: string) {
+    const { rows } = await this.pool.query(
+      `SELECT p.id, p.version, p.name, p.goal, p.facts FROM user_imports ui
+       JOIN project_contexts p ON p.id = ui.project_context_id AND p.version = ui.project_context_version
+       WHERE ui.unit_id = $1 ORDER BY ui.created_at DESC LIMIT 1`, [unitId]);
+    const r = rows[0];
+    if (!r) return null;
+    const facts: { kind?: string; fact?: string; id?: string }[] = r.facts ?? [];
+    return {
+      id: r.id, version: r.version, name: r.name, goal: r.goal,
+      tools: facts.filter((f) => f.kind === "tool" && f.fact).map((f) => f.fact as string),
+      agents: facts.filter((f) => f.kind === "agent" && f.id).map((f) => f.id as string),
+    };
+  }
+
+  async unitsNeedingDigest(unitIds: string[], project: ProjectRef) {
+    const { rows } = await this.pool.query(
+      `SELECT u.id FROM ingested_units u
+       WHERE u.id = ANY($1::uuid[]) AND u.status = 'ready'
+         AND NOT EXISTS (SELECT 1 FROM artifacts a WHERE u.id = ANY (a.source_ids)
+                         AND a.project_context_id = $2 AND a.project_context_version = $3 AND a.ingestion_status <> 'failed')`,
+      [unitIds, project.id, project.version]);
+    return rows.map((r) => r.id as string);
   }
 
   async registerPrompt(promptText: string, fewShot: unknown[]) {
@@ -82,15 +191,7 @@ export class PgStore implements Store {
     }
   }
 
-  async listReadyUnits() {
-    const { rows } = await this.pool.query(`SELECT * FROM ingested_units WHERE status='ready' ORDER BY created_at`);
-    return rows.map((r): IngestedUnit => ({
-      id: r.id, submittedUrl: r.submitted_url, sourceUrl: r.source_url, startSeconds: r.start_seconds, title: r.title,
-      transcript: r.transcript, extractionMethod: r.extraction_method, extractedAt: r.extracted_at, status: r.status, error: r.error,
-    }));
-  }
-
-  async saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null) {
+  async saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null, project: ProjectRef | null) {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -100,11 +201,12 @@ export class PgStore implements Store {
           `SELECT id, source_url, title, content_type, extracted_at FROM ingested_units WHERE id = ANY($1::uuid[])`, [a.source_ids]);
         const sources = src.map((s) => ({ url: s.source_url, title: s.title, content_type: s.content_type, retrieved_at: s.extracted_at }));
         const { rows } = await client.query(
-          `INSERT INTO artifacts (name, source_url, source_ids, sources, processed_text, category, selection_reason, evidence, digestion_prompt_id, ingestion_status, processed_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'ready',now()) RETURNING id, version, source_url, sources, ingestion_status, review_status, digestion_prompt_id`,
-          [a.name, src[0]?.source_url ?? "", a.source_ids, JSON.stringify(sources), a.processed_text, a.category, a.selection_reason, JSON.stringify(a.evidence), promptId]);
-        const r = rows[0];
-        stored.push({ ...a, id: r.id, version: r.version, source_url: r.source_url, sources: r.sources, ingestion_status: r.ingestion_status, review_status: r.review_status, digestion_prompt_id: r.digestion_prompt_id });
+          `INSERT INTO artifacts (name, source_url, source_ids, sources, processed_text, category, selection_reason, evidence, digestion_prompt_id,
+                                  project_context_id, project_context_version, ingestion_status, processed_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'ready',now()) RETURNING ${ARTIFACT_RETURNING}`,
+          [a.name, src[0]?.source_url ?? "", a.source_ids, JSON.stringify(sources), a.processed_text, a.category, a.selection_reason, JSON.stringify(a.evidence),
+           promptId, project?.id ?? null, project?.version ?? null]);
+        stored.push({ ...a, ...rows[0] });
       }
       if (promptId) for (const e of exclusions) {
         await client.query(`INSERT INTO artifact_exclusions (unit_id, digestion_prompt_id, reason) VALUES ($1,$2,$3)`, [e.unit_id, promptId, e.reason]);
@@ -116,6 +218,18 @@ export class PgStore implements Store {
       throw e;
     } finally {
       client.release();
+    }
+  }
+
+  async saveFailedArtifacts(unitIds: string[], error: string, promptId: string | null, project: ProjectRef | null) {
+    for (const id of unitIds) {
+      const { rows: src } = await this.pool.query(`SELECT id, source_url, title, content_type, extracted_at FROM ingested_units WHERE id = $1`, [id]);
+      if (!src[0]) continue;
+      const sources = [{ url: src[0].source_url, title: src[0].title, content_type: src[0].content_type, retrieved_at: src[0].extracted_at }];
+      await this.pool.query(
+        `INSERT INTO artifacts (name, source_url, source_ids, sources, digestion_prompt_id, project_context_id, project_context_version, ingestion_status, error, processed_at)
+         VALUES ('Digestion failed', $1, $2, $3, $4, $5, $6, 'failed', $7, now())`,
+        [src[0].source_url, [id], JSON.stringify(sources), promptId, project?.id ?? null, project?.version ?? null, error]);
     }
   }
 }

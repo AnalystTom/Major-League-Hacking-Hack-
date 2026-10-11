@@ -2,10 +2,11 @@ import { randomUUID } from "node:crypto";
 import { parseYouTubeUrl } from "./urls.js";
 import { extractWithGemini, windowFor, GEMINI_MODEL } from "./extract/gemini.js";
 import { applyValidation, validateExtraction } from "./extract/validate.js";
-import type { Store } from "./store.js";
+import { fetchTitle } from "./extract/title.js";
 import { runDigestion, type DigestOptions } from "./digest/run.js";
 import { promptRevisionText } from "./digest/prompt.js";
-import type { IngestedUnit, StoredArtifact } from "./types.js";
+import type { Store } from "./store.js";
+import type { IngestedUnit, ProjectRef, StoredArtifact } from "./types.js";
 
 export interface IngestOptions {
   geminiKey: string;
@@ -16,26 +17,47 @@ export interface IngestOptions {
   retries?: number;
 }
 
-/** Import one submitted link. Always returns a unit with its actual status/error; never throws for per-link failures. */
+/**
+ * Extracts one existing unit (already claimed as running) from its stored source_url and start time.
+ * Always saves and returns the unit with its actual status/error; never throws.
+ */
+export async function extractUnit(unit: IngestedUnit, o: IngestOptions): Promise<IngestedUnit> {
+  let out: IngestedUnit = { ...unit, extractionMethod: `gemini:${o.geminiModel ?? GEMINI_MODEL}` };
+  try {
+    const window = windowFor(unit.startSeconds, o.windowSeconds);
+    const [extracted, title] = await Promise.all([
+      extractWithGemini({ apiKey: o.geminiKey, sourceUrl: unit.sourceUrl, window, model: o.geminiModel, fetchImpl: o.fetchImpl, retries: o.retries })
+        .then((r) => ({ ok: true as const, ...r }), (e: Error) => ({ ok: false as const, error: e.message })),
+      unit.title ? Promise.resolve(unit.title) : fetchTitle(unit.sourceUrl, o.fetchImpl),
+    ]);
+    out.title = title;
+    if (!extracted.ok) out = { ...out, status: "failed", error: extracted.error, extractedAt: new Date() };
+    else out = applyValidation(out, validateExtraction(extracted.extraction, { sourceUrl: unit.sourceUrl, window }), extracted.extraction, window);
+  } catch (e) {
+    out = { ...out, status: "failed", error: (e as Error).message, extractedAt: new Date() };
+  }
+  await o.store.saveUnit(out);
+  return out;
+}
+
+/** Import one submitted link (dev route/CLI). Returns a unit with its actual status/error; never throws for per-link failures. */
 export async function ingestLink(link: string, o: IngestOptions, onUpdate?: (u: IngestedUnit) => void): Promise<IngestedUnit> {
   const base: IngestedUnit = {
     id: randomUUID(), submittedUrl: link, sourceUrl: link, startSeconds: null, title: null, transcript: null,
-    extractionMethod: `gemini:${o.geminiModel ?? GEMINI_MODEL}`, extractedAt: null, status: "pending", error: null,
+    extractionMethod: null, extractedAt: null, status: "pending", error: null,
   };
-  let unit = base;
+  let p;
   try {
-    const p = parseYouTubeUrl(link);
-    unit = { ...base, sourceUrl: p.sourceUrl, startSeconds: p.startSeconds, status: "running" };
-    await o.store.saveUnit(unit);
-    onUpdate?.(unit);
-    const window = windowFor(p.startSeconds, o.windowSeconds);
-    const { extraction } = await extractWithGemini({ apiKey: o.geminiKey, sourceUrl: p.sourceUrl, window, model: o.geminiModel, fetchImpl: o.fetchImpl, retries: o.retries });
-    unit = applyValidation(unit, validateExtraction(extraction, { sourceUrl: p.sourceUrl, window }), extraction, window);
+    p = parseYouTubeUrl(link);
   } catch (e) {
-    unit = { ...unit, status: "failed", error: (e as Error).message, extractedAt: new Date() };
+    const failed: IngestedUnit = { ...base, status: "failed", error: (e as Error).message, extractedAt: new Date() };
+    await o.store.saveUnit(failed);
+    return failed;
   }
+  const unit: IngestedUnit = { ...base, sourceUrl: p.sourceUrl, startSeconds: p.startSeconds, status: "running" };
   await o.store.saveUnit(unit);
-  return unit;
+  onUpdate?.(unit);
+  return extractUnit(unit, o);
 }
 
 export async function ingestLinks(links: string[], o: IngestOptions): Promise<IngestedUnit[]> {
@@ -46,15 +68,16 @@ export interface DigestAndStoreOptions extends DigestOptions {
   store: Store;
 }
 
-/** Runs the Digestion Prompt, registers its revision, and stores artifacts and exclusions tied to that revision. */
+/** Runs the Digestion Prompt, registers its revision, and stores artifacts and exclusions tied to that revision and project. */
 export async function digestAndStore(o: DigestAndStoreOptions) {
   const result = await runDigestion(o);
+  const project: ProjectRef | null = o.context.id && o.context.version != null ? { id: o.context.id, version: o.context.version } : null;
   let promptId: string | null = null;
   let stored: StoredArtifact[] | null = null;
   let storeError: string | null = null;
   try {
     promptId = await o.store.registerPrompt(promptRevisionText(o.request), o.fewShot ?? []);
-    stored = await o.store.saveArtifacts(result.artifacts, result.exclusions, promptId);
+    stored = await o.store.saveArtifacts(result.artifacts, result.exclusions, promptId, project);
   } catch (e) {
     storeError = (e as Error).message;
   }

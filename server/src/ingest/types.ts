@@ -21,6 +21,17 @@ export const ModelExtraction = z.object({
 });
 export type ModelExtraction = z.infer<typeof ModelExtraction>;
 
+/** The project brief a digest is matched against. id/version are null only for local dev runs. */
+export interface Project {
+  id: string | null;
+  version: number | null;
+  name: string;
+  goal: string | null;
+  tools: string[];
+  agents: string[];
+}
+export interface ProjectRef { id: string; version: number }
+
 export interface IngestedUnit {
   id: string;
   submittedUrl: string;
@@ -58,6 +69,9 @@ export interface StoredArtifact extends DigestArtifact {
   ingestion_status: ProcessingStatus;
   review_status: "pending" | "approved" | "rejected";
   digestion_prompt_id: string | null;
+  project_context_id: string | null;
+  project_context_version: number | null;
+  error: string | null;
 }
 
 export const DigestOutput = z.object({

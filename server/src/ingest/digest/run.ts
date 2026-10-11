@@ -1,6 +1,6 @@
-import { SYSTEM_PROMPT, buildUserMessage, type ProjectContext } from "./prompt.js";
+import { SYSTEM_PROMPT, buildUserMessage } from "./prompt.js";
 import { validateDigest } from "./validate.js";
-import type { DigestOutput, IngestedUnit } from "../types.js";
+import type { DigestOutput, IngestedUnit, Project } from "../types.js";
 
 export const DEFAULT_DIGEST_MODEL = "gpt-5";
 
@@ -10,7 +10,7 @@ export interface DigestOptions {
   model?: string;
   units: IngestedUnit[];
   request: string;
-  context: ProjectContext;
+  context: Project;
   fewShot?: unknown[];
   fetchImpl?: typeof fetch;
 }

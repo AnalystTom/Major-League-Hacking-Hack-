@@ -4,16 +4,18 @@ import type { Hono } from "hono";
 import { createIngestApp } from "../../src/ingest/api.js";
 import { MemoryStore } from "../../src/ingest/store.js";
 
-const ctx = { name: "p", goal: null, facts: [] };
+const ctx = { id: null, version: null, name: "p", goal: null, tools: [], agents: [] };
+const TOKEN = "test-token";
+const AUTH = { authorization: `Bearer ${TOKEN}` };
 const ok = async () => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({
   source_url: "https://www.youtube.com/watch?v=VQy50fuxI34", content_accessed: true,
   evidence_items: [{ start_seconds: 5, end_seconds: 20, observed_spoken_content: "x" }] }) }] } }] }));
 
-const post = (app: Hono, body: unknown) => app.request("/imports", { method: "POST", body: JSON.stringify(body) });
+const post = (app: Hono, body: unknown) => app.request("/imports", { method: "POST", headers: AUTH, body: JSON.stringify(body) });
 async function settle(app: Hono, id: string, done: (b: any) => boolean) {
   let body: any;
   for (let i = 0; i < 50; i++) {
-    body = await (await app.request(`/imports/${id}`)).json();
+    body = await (await app.request(`/imports/${id}`, { headers: AUTH })).json();
     if (done(body)) break;
     await new Promise((r) => setTimeout(r, 20));
   }
@@ -22,7 +24,7 @@ async function settle(app: Hono, id: string, done: (b: any) => boolean) {
 const settled = (b: any) => b.links.every((l: any) => l.status === "ready" || l.status === "failed");
 
 test("POST /imports reports per-link state; bad link shows its error", async () => {
-  const app = createIngestApp({ geminiKey: "k", store: new MemoryStore(), context: ctx, fetchImpl: ok as typeof fetch, retries: 0 });
+  const app = createIngestApp({ token: TOKEN, geminiKey: "k", store: new MemoryStore(), context: ctx, fetchImpl: ok as typeof fetch, retries: 0 });
   const res = await post(app, { links: ["https://www.youtube.com/watch?v=VQy50fuxI34&list=WL", "https://example.com/x"], request: "group by problem" });
   assert.equal(res.status, 202);
   const body = await settle(app, (await res.json()).id, settled);
@@ -31,8 +33,8 @@ test("POST /imports reports per-link state; bad link shows its error", async () 
   assert.equal(body.links[1].status, "failed");
   assert.match(body.links[1].error, /YouTube/);
   assert.equal((await post(app, { links: [] })).status, 400);
-  assert.equal((await app.request("/imports", { method: "POST", body: "{" })).status, 400);
-  assert.equal((await app.request("/imports/nope")).status, 404);
+  assert.equal((await app.request("/imports", { method: "POST", headers: AUTH, body: "{" })).status, 400);
+  assert.equal((await app.request("/imports/nope", { headers: AUTH })).status, 404);
 });
 
 test("API returns extracted evidence and stores digested artifacts", async () => {
@@ -47,7 +49,7 @@ test("API returns extracted evidence and stores digested artifacts", async () =>
     }
     return ok();
   }) as unknown as typeof fetch;
-  const app = createIngestApp({ geminiKey: "k", openaiKey: "a", store, context: ctx, fetchImpl, retries: 0 });
+  const app = createIngestApp({ token: TOKEN, geminiKey: "k", openaiKey: "a", store, context: ctx, fetchImpl, retries: 0 });
   const { id } = await (await post(app, { links: ["https://www.youtube.com/watch?v=VQy50fuxI34"], request: "r" })).json();
   const body = await settle(app, id, (b) => ["ready", "failed", "skipped"].includes(b.digest.status));
   assert.equal(body.links[0].extraction.evidence_items[0].observed_spoken_content, "x");
@@ -70,7 +72,7 @@ test("API returns extracted evidence and stores digested artifacts", async () =>
 });
 
 test("window_seconds is validated and applied per import", async () => {
-  const app = createIngestApp({ geminiKey: "k", store: new MemoryStore(), context: ctx, fetchImpl: ok as typeof fetch, retries: 0 });
+  const app = createIngestApp({ token: TOKEN, geminiKey: "k", store: new MemoryStore(), context: ctx, fetchImpl: ok as typeof fetch, retries: 0 });
   const send = (window_seconds: number) => post(app, { links: ["https://www.youtube.com/watch?v=VQy50fuxI34"], request: "r", window_seconds });
   assert.equal((await send(3601)).status, 400);
   assert.equal((await send(10)).status, 400);

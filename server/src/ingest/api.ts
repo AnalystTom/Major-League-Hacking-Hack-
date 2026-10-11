@@ -1,9 +1,10 @@
 import { Hono } from "hono";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { z } from "zod";
 import { MAX_WINDOW_SECONDS, MIN_WINDOW_SECONDS } from "./extract/gemini.js";
-import { digestAndStore, ingestLink, type IngestOptions } from "./pipeline.js";
-import type { ProjectContext } from "./digest/prompt.js";
-import type { DigestOutput, IngestedUnit, StoredArtifact } from "./types.js";
+import { digestAndStore, ingestLink } from "./pipeline.js";
+import { processUnits, type ProcessorOptions } from "./processor.js";
+import type { DigestOutput, IngestedUnit, Project, StoredArtifact } from "./types.js";
 
 interface ImportJob {
   id: string;
@@ -21,11 +22,28 @@ interface ImportJob {
   };
 }
 
-export interface ApiOptions extends IngestOptions {
-  context: ProjectContext;
-  openaiKey?: string;
-  openaiModel?: string;
+export interface ApiOptions extends ProcessorOptions {
+  /** Placeholder project for the dev /imports route only; /process takes the real project from the request. */
+  context: Project;
+  /** Bearer token callers must send (the PROCESSOR_TOKEN the web Worker uses). */
+  token: string;
 }
+
+const Uuid = z.string().uuid();
+const ProcessRequest = z.object({
+  unit_ids: z.array(Uuid).min(1).max(10),
+  project: z.object({
+    id: Uuid,
+    version: z.number().int().min(1),
+    name: z.string().min(1).max(200),
+    goal: z.string().max(2000).nullable().optional(),
+    tools: z.array(z.string().max(100)).max(50).default([]),
+    agents: z.array(z.string().max(100)).max(20).default([]),
+  }).nullable(),
+});
+
+const digestOf = (s: string) => createHash("sha256").update(s).digest();
+const tokenMatches = (given: string, expected: string) => timingSafeEqual(digestOf(given), digestOf(expected));
 
 const MAX_LINKS = 20;
 const EMPTY_DIGEST = { error: null, result: null, digestion_prompt_id: null, stored_artifacts: null, store_error: null } as const;
@@ -45,6 +63,7 @@ function view(job: ImportJob) {
 
 /** Node-only ingestion routes (they use pg and long-running requests); mounted by src/index.ts, not the Worker. */
 export function createIngestApp(o: ApiOptions): Hono {
+  if (!o.token) throw new Error("createIngestApp requires a non-empty token");
   const jobs = new Map<string, ImportJob>();
 
   async function run(job: ImportJob, links: string[], windowSeconds: number | undefined) {
@@ -62,6 +81,28 @@ export function createIngestApp(o: ApiOptions): Hono {
   }
 
   const app = new Hono();
+
+  app.use("*", async (c, next) => {
+    const given = /^Bearer (.+)$/.exec(c.req.header("authorization") ?? "")?.[1];
+    if (!given || !tokenMatches(given, o.token)) return c.json({ error: "unauthorized" }, 401);
+    await next();
+  });
+
+  // The processor contract: reply 202 quickly and work in the background. Duplicate requests are safe
+  // because pending units are claimed atomically and digested units are skipped.
+  app.post("/process", async (c) => {
+    const raw = await c.req.text();
+    if (raw.length > 100_000) return c.json({ error: "body too large" }, 413);
+    let json: unknown;
+    try { json = JSON.parse(raw); } catch { return c.json({ error: "invalid JSON" }, 400); }
+    const parsed = ProcessRequest.safeParse(json);
+    if (!parsed.success) return c.json({ error: "expected { unit_ids: uuid[1-10], project: {id, version, name, goal, tools, agents} | null }" }, 400);
+    const { unit_ids, project } = parsed.data;
+    void processUnits(unit_ids, project && { ...project, goal: project.goal ?? null }, o)
+      .then((s) => o.log?.(`processed ${unit_ids.length} unit(s): ${JSON.stringify(s)}`))
+      .catch((e: Error) => o.log?.(`processing failed: ${e.message}`));
+    return c.json({ accepted: unit_ids.length }, 202);
+  });
 
   app.post("/imports", async (c) => {
     const raw = await c.req.text();
