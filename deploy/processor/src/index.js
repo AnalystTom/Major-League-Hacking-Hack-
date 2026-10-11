@@ -84,6 +84,14 @@ export class Processor extends Container {
   }
 }
 
+// Best effort: right after a deploy, the Durable Object can still be running the previous code without
+// useSettings, and a failure here must never fail the request. The next request applies the settings.
+async function applySettings(processor, env) {
+  try {
+    await processor.useSettings(settingsFrom(env));
+  } catch {}
+}
+
 // Only callers holding the processor's token may wake it: anyone else could keep it awake and run up the bill.
 async function authorized(request, env) {
   const header = request.headers.get("authorization") ?? "";
@@ -114,7 +122,7 @@ export default {
     const body = request.method === "GET" ? undefined : await request.arrayBuffer();
     const forward = new Request(request.url, { method: request.method, headers: request.headers, body });
     const processor = getContainer(env.PROCESSOR);
-    await processor.useSettings(settingsFrom(env));
+    await applySettings(processor, env);
     const reply = processor.fetch(forward)
       .catch(() => new Response("The processor didn't start.", { status: 502 }));
     ctx.waitUntil(reply);
@@ -125,6 +133,6 @@ export default {
   // A health check starts the container if it's asleep; it then sleeps again once its sweeps find nothing to do.
   async scheduled(_event, env, ctx) {
     const processor = getContainer(env.PROCESSOR);
-    ctx.waitUntil(processor.useSettings(settingsFrom(env)).then(() => processor.fetch(new Request("http://processor/health"))));
+    ctx.waitUntil(applySettings(processor, env).then(() => processor.fetch(new Request("http://processor/health"))));
   },
 };
