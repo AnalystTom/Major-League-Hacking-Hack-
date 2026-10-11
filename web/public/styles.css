@@ -644,23 +644,6 @@ button { font: inherit; color: inherit; }
 .linkish { font: inherit; font-weight: 700; color: var(--accent-ink); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .onboard-switch { display: flex; flex-wrap: wrap; gap: 6px; font-size: .9375rem; color: var(--ink-soft); }
 
-.tool-suggest { display: flex; flex-wrap: wrap; gap: 6px; }
-.tool-suggest button {
-  font-size: .8125rem; font-weight: 600; padding: 5px 10px; border-radius: 999px; cursor: pointer;
-  background: var(--bg-2); border: 1px solid var(--rule); color: var(--ink);
-}
-.tool-suggest button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent-ink); }
-
-.agent-pick { border: 0; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.agent-pick legend { padding: 0; margin-bottom: 8px; }
-.agent-pick label {
-  display: flex; align-items: center; gap: 10px; margin: 0; cursor: pointer; font-weight: 600;
-  border: 2px solid var(--rule); border-radius: 12px; padding: 11px 12px; background: var(--bg);
-}
-.agent-pick label:has(input:checked) { border-color: var(--accent); }
-.agent-pick input { accent-color: var(--accent); width: 18px; height: 18px; margin: 0; }
-.agent-pick .logo { width: 20px; height: 20px; }
-
 .soon { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; font-size: .8125rem; color: var(--ink-soft); }
 .soon span { font-weight: 700; margin-right: 4px; }
 .soon i { font-style: normal; padding: 4px 9px; border-radius: 999px; border: 1px dashed var(--rule); }
@@ -678,13 +661,8 @@ button { font: inherit; color: inherit; }
 .home { padding: clamp(28px, 5vw, 56px) var(--inline) 96px; }
 .home-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 32px 48px; align-items: start; }
 .home-side { display: grid; gap: 28px; min-width: 0; }
-.project-card { display: grid; gap: 10px; justify-items: start; }
-.project-card .eyebrow { font-weight: 700; font-size: .8125rem; letter-spacing: .08em; text-transform: uppercase; color: var(--accent-ink); }
-.project-card h1 { font-size: clamp(2rem, 4.4vw, 3rem); font-weight: 800; letter-spacing: -.03em; }
-.project-goal { color: var(--ink-soft); font-size: 1.0625rem; max-width: 40rem; }
-.project-tags { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
-.tag { font-size: .8125rem; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: var(--bg-2); border: 1px solid var(--rule); }
-.tag-agent { border-color: var(--accent); color: var(--accent-ink); }
+.home-head { display: grid; gap: 8px; }
+.home-head h1 { font-size: clamp(2rem, 4.4vw, 3rem); font-weight: 800; letter-spacing: -.03em; }
 .add-links { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 10px; align-items: end; margin-top: 16px; }
 .add-links label { grid-column: 1 / -1; margin: 0; }
 .add-links .form-status { grid-column: 1 / -1; }
@@ -767,7 +745,6 @@ button { font: inherit; color: inherit; }
   .home-grid { grid-template-columns: minmax(0, 1fr); }
   .home-feed { justify-self: center; }
   .reel-placeholder { --h: min(70svh, calc((100vw - 2 * var(--gutter)) * 16 / 9)); }
-  .agent-pick { grid-template-columns: minmax(0, 1fr); }
   .topbar-inner { gap: 12px; }
   .reel { --h: min(80svh, calc((100vw - 2 * var(--gutter)) * 16 / 9)); justify-self: center; }
   .works-with ul { gap: 10px 16px; }

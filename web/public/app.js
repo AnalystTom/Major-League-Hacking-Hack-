@@ -48,7 +48,7 @@ markPalette();
 fetch("/api/me", { credentials: "same-origin" })
   .then((res) => (res.ok ? res.json() : null))
   .then((me) => {
-    if (!me) return;
+    if (!me?.user) return;
     const to = me.step === "done" ? "/app" : `/start#${me.step}`;
     document.querySelectorAll("[data-cta]").forEach((a) => {
       a.href = to;

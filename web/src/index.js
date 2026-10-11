@@ -35,7 +35,7 @@ async function limited(limiter, key) {
 
 const ip = (request) => request.headers.get("cf-connecting-ip") ?? "local";
 
-/** Where onboarding resumes: the brief first, then sources, then the user's home. */
+/** Where onboarding resumes: videos until the first import, then the user's home. */
 async function onboardingState(sql, user) {
   const project = await readProject(sql, user);
   const [{ count }] = await sql`SELECT count(*)::int AS count FROM user_imports WHERE user_id = ${user.id}`;
@@ -43,7 +43,7 @@ async function onboardingState(sql, user) {
     user: { id: user.id, email: user.email, name: user.name },
     project,
     imports: count,
-    step: !project ? "project" : count === 0 ? "sources" : "done",
+    step: count === 0 ? "sources" : "done",
   };
 }
 
@@ -72,7 +72,7 @@ async function signin(request, env, sql) {
 }
 
 // POST /api/imports: store the links as the user's units, then hand the ones new to this user to the
-// processor with their project brief.
+// processor, with their project brief when they've given one (it's optional).
 async function startImport(request, env, sql, user) {
   if (await limited(env.IMPORT_LIMITER, user.id)) {
     return json({ error: "That's a lot of imports at once. Wait a minute and try again." }, 429);
@@ -85,11 +85,9 @@ async function startImport(request, env, sql, user) {
     return json({ error: parsed.error, invalid: parsed.invalid }, parsed.status);
   }
   const project = await readProject(sql, user);
-  if (!project) return json({ error: "Tell us about your project first." }, 409);
-
   const units = await createUnits(sql, parsed.value.links, { userId: user.id, project });
   const processor = await requestProcessing(env, units.filter((u) => u.linked).map((u) => u.id), fetch, project);
-  return json({ units: await readUnits(sql, units.map((u) => u.id), project.id), processor }, 201);
+  return json({ units: await readUnits(sql, units.map((u) => u.id), project?.id ?? null), processor }, 201);
 }
 
 async function api(request, env, url, sql) {
@@ -114,9 +112,11 @@ async function api(request, env, url, sql) {
   }
 
   const user = await currentUser(sql, request);
+  // "Am I signed in?" is a normal question for every visitor, so a signed-out answer isn't an error.
+  if (pathname === "/api/me" && method === "GET") {
+    return json(user ? await onboardingState(sql, user) : { user: null, step: "account" });
+  }
   if (!user) return json(SIGNED_OUT, 401);
-
-  if (pathname === "/api/me" && method === "GET") return json(await onboardingState(sql, user));
 
   if (pathname === "/api/project" && method === "PUT") {
     const { body, error } = await readJson(request);
@@ -137,7 +137,7 @@ async function api(request, env, url, sql) {
   if (pathname === "/api/feed" && method === "GET") {
     const project = await readProject(sql, user);
     const ids = await userUnitIds(sql, user.id);
-    return json({ items: project ? await readFeed(sql, ids, project.id) : [] });
+    return json({ items: await readFeed(sql, ids, project?.id ?? null) });
   }
 
   return json({ error: "Not found." }, 404);

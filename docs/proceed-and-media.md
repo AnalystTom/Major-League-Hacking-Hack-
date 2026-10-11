@@ -1,19 +1,18 @@
 # Onboarding, processing, and where shorts live
 
-The landing page's **Get started** button opens `/start`, a four-step onboarding:
+The landing page's **Get started** button opens `/start`, a three-step onboarding with no setup:
 
 1. **Account**: email and password, stored in TigerData (`users`, `sessions`; `db/migrations/002_accounts.sql`).
-2. **Your project**: name, what you're working on, stack and tools, coding agents. Saved as a new
-   `project_contexts` version each time, so every result is tied to the brief it was made for.
-3. **Your saves**: up to 10 YouTube links. Stored as `ingested_units` and linked to the user in `user_imports`.
-4. **Processing**: each link's real stage, until shorts are rendered. Then `/app`, the signed-in home with
-   the project, the links and the user's reel.
+2. **Your videos**: up to 10 YouTube links, straight after sign-up. Stored as `ingested_units` and linked to
+   the user in `user_imports`.
+3. **Processing**: each link's real stage, then `/app`, the signed-in home with the user's links and reel.
 
 Leaving part-way resumes at the first unfinished step. Signed-in visitors see "Open your feed" on the landing page.
+A project brief (`PUT /api/project`) is optional and has no screen yet. Without one, digests are generic
+(`project_context_id` null) and shared by everyone who imports the same video.
 
 ```
 Browser ──POST /api/auth/signup──▶ Worker ──INSERT users, sessions──▶ TigerData   (httpOnly cookie back)
-        ──PUT /api/project──▶ Worker ──INSERT project_contexts (next version)──▶ TigerData
         ──POST /api/imports──▶ Worker ──INSERT ingested_units, user_imports──▶ TigerData
                                   └──POST PROCESSOR_URL {unit_ids, project}──▶ Processor
 Processor: Gemini extraction → Digestion Prompt against the project → artifacts → Opus script → render
@@ -31,11 +30,11 @@ Every mutation must be `application/json`; with the `SameSite=Lax` session cooki
 | `POST /api/auth/signup` `{ email, password, name? }` | Creates the account (password ≥ 10 chars, PBKDF2-SHA256, 100k iterations) and signs in. `409` if the email is taken. |
 | `POST /api/auth/login` `{ email, password }` | Signs in. Wrong password and unknown email get the same `401`. |
 | `POST /api/auth/logout` | Ends the session. |
-| `GET /api/me` | `{ user, project, imports, step }`, where `step` is `project`, `sources` or `done`. `401` when signed out. |
-| `PUT /api/project` `{ name, goal?, tools, agents }` | Saves the next version of the user's brief. |
-| `POST /api/imports` `{ links }` | Needs a project. Canonicalises links, reuses a non-failed unit for the same video and start time, links each to the user, and sends units new to this user to the processor with the brief. Returns `{ units, processor }`. |
+| `GET /api/me` | `{ user, project, imports, step }`, where `step` is `sources` or `done`; `{ user: null, step: "account" }` when signed out. |
+| `PUT /api/project` `{ name, goal?, tools, agents }` | Optional, no screen yet: saves the next version of the user's brief. |
+| `POST /api/imports` `{ links }` | Canonicalises links, reuses a non-failed unit for the same video and start time, links each to the user, and sends units new to this user to the processor (with the brief, or `project: null`). Returns `{ units, processor }`. |
 | `GET /api/imports` | The user's links with their stage: `queued`, `fetching`, `digesting`, `rendering`, `ready`, `failed`, `render_failed`, `not_selected`, plus the actual error. |
-| `GET /api/feed?scope=mine` | The user's shorts: artifacts for their project whose artifact and video are both `ready`. |
+| `GET /api/feed?scope=mine` | The user's shorts: artifacts for their project (or generic ones without a project) whose artifact and video are both `ready`. |
 | `GET /api/feed` | The public curated feed (needs `feed_order`); no account. |
 | `GET /media/<key>` | Streams `videos/`, `captions/` or `posters/` objects from R2 with byte ranges (Safari and seeking need them). |
 
@@ -44,7 +43,8 @@ Rate limits: sign-up and sign-in 10 per IP per minute (`AUTH_LIMITER`), imports 
 ## What the processor must do
 
 It receives `POST PROCESSOR_URL` with `Authorization: Bearer PROCESSOR_TOKEN` and
-`{ "unit_ids": [...], "project": { "id", "version", "name", "goal", "tools", "agents" } }`.
+`{ "unit_ids": [...], "project": { "id", "version", "name", "goal", "tools", "agents" } }`. `project` is null
+for users who haven't given a brief: digest generically and leave `project_context_id` null.
 Reply `202` quickly and work asynchronously. The same id can arrive twice, so be idempotent.
 A unit is sent the first time a user imports it; resubmitting doesn't resend it. Also sweep
 `ingested_units WHERE status = 'pending'` on a timer (take the project from the newest `user_imports` row),
