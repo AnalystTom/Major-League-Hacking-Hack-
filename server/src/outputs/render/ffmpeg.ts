@@ -2,8 +2,8 @@
 
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { copyFile, writeFile } from "node:fs/promises";
+import { extname, join } from "node:path";
 import { wrap, type Slot } from "./timeline.js";
 
 const FONT_CANDIDATES = [
@@ -12,10 +12,21 @@ const FONT_CANDIDATES = [
   "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
 ];
 
-/** RENDER_FONT, else a bold system font, else fontconfig's default sans. */
-export function fontOption(font = process.env.RENDER_FONT): string {
-  const file = font ?? FONT_CANDIDATES.find((f) => existsSync(f));
-  return file ? `fontfile='${file.replace(/'/g, "")}'` : "font='Sans'";
+/** RENDER_FONT, else a bold system font; null means fontconfig's default sans. */
+export function fontFile(font = process.env.RENDER_FONT): string | null {
+  return font ?? FONT_CANDIDATES.find((f) => existsSync(f)) ?? null;
+}
+
+/**
+ * The drawtext font option. The font is copied into the render dir first, so its path in the filter graph is
+ * always the plain temp path: a RENDER_FONT containing ':', '\\' or quotes can't break the graph.
+ */
+async function fontOption(dir: string): Promise<string> {
+  const src = fontFile();
+  if (!src) return "font='Sans'";
+  const local = join(dir, `font${extname(src).replace(/[^.\w]/g, "")}`);
+  await copyFile(src, local);
+  return `fontfile='${local}'`;
 }
 
 export function run(cmd: string, args: string[], { timeoutMs = 300_000, cwd }: { timeoutMs?: number; cwd?: string } = {}): Promise<string> {
@@ -67,7 +78,7 @@ export interface ComposeInput {
 /** Writes short.mp4 and narration.m4a into dir and returns their paths and the probed duration. */
 export async function composeShort(c: ComposeInput): Promise<{ mp4: string; narration: string; duration: number }> {
   const total = c.slots.at(-1)!.end;
-  const font = fontOption();
+  const font = await fontOption(c.dir);
   const gap = (c.slots[0].end - c.slots[0].speechEnd).toFixed(3);
 
   const header = join(c.dir, "header.txt");

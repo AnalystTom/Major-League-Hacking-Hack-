@@ -10,16 +10,13 @@ import type { MediaStore } from "./media.js";
 import { SCRIPT_PROMPT_REVISION, writeScript } from "./script.js";
 import { captionCues, timeline, toVtt } from "./timeline.js";
 import { synthesize, TTS_MODEL } from "./tts.js";
-import type { ReadyArtifact, RenderedVideo, ScriptScene } from "../types.js";
+import type { ProviderOptions, ReadyArtifact, RenderedVideo, ScriptScene } from "../types.js";
 
-export interface RenderOptions {
+/** The provider settings, with the two keys a render can't run without, and where the files go. */
+export interface RenderOptions extends ProviderOptions {
   openaiKey: string;
-  openaiModel?: string;
   geminiKey: string;
-  ttsModel?: string;
-  ttsVoice?: string;
   media: MediaStore;
-  fetchImpl?: typeof fetch;
 }
 
 export async function renderArtifact(a: ReadyArtifact, o: RenderOptions): Promise<RenderedVideo> {

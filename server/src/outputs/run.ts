@@ -5,26 +5,28 @@ import { generateSkill } from "./skills.js";
 import { renderArtifact } from "./render/render.js";
 import type { MediaStore } from "./render/media.js";
 import { LostClaim, type Kind, type OutputStore } from "./store.js";
-import type { ReadyArtifact } from "./types.js";
+import { sourceRefs, type ProviderOptions, type ReadyArtifact } from "./types.js";
 import type { StoredArtifact } from "../ingest/types.js";
 
-export interface OutputOptions {
+export interface OutputOptions extends ProviderOptions {
   outputs: OutputStore;
-  openaiKey?: string;
-  openaiModel?: string;
-  geminiKey?: string;
-  ttsModel?: string;
-  ttsVoice?: string;
   /** Where rendered files go; without one, renders fail with that reason instead of waiting forever. */
   media: MediaStore | null;
-  fetchImpl?: typeof fetch;
   log?: (msg: string) => void;
 }
 
-const inFlight = new Set<string>();
-let renderQueue: Promise<void> = Promise.resolve();
+// What's in flight and the render queue belong to one options object, so two processors in a process (or two
+// tests) never share them. src/index.ts passes the same object to produceOutputs and the sweep.
+interface ProducerState { inFlight: Set<string>; renderQueue: Promise<void> }
+const states = new WeakMap<OutputOptions, ProducerState>();
+function stateFor(o: OutputOptions): ProducerState {
+  let s = states.get(o);
+  if (!s) states.set(o, (s = { inFlight: new Set(), renderQueue: Promise.resolve() }));
+  return s;
+}
 
 async function produce(kind: Kind, a: ReadyArtifact, o: OutputOptions) {
+  const { inFlight } = stateFor(o);
   const key = `${kind}:${a.id}:${a.version}`;
   if (inFlight.has(key)) return;
   inFlight.add(key);
@@ -38,10 +40,7 @@ async function produce(kind: Kind, a: ReadyArtifact, o: OutputOptions) {
       } else {
         if (!o.geminiKey) throw new Error("GEMINI_API_KEY isn't configured on the processor");
         if (!o.media) throw new Error("Media storage isn't configured on the processor (R2_* or MEDIA_LOCAL_WEB_DIR)");
-        await o.outputs.finishVideo(claim, await renderArtifact(a, {
-          openaiKey: o.openaiKey, openaiModel: o.openaiModel, geminiKey: o.geminiKey, ttsModel: o.ttsModel, ttsVoice: o.ttsVoice,
-          media: o.media, fetchImpl: o.fetchImpl,
-        }));
+        await o.outputs.finishVideo(claim, await renderArtifact(a, { ...o, openaiKey: o.openaiKey, geminiKey: o.geminiKey, media: o.media }));
       }
       o.log?.(`${kind} ready for artifact ${a.id} v${a.version}`);
     } catch (e) {
@@ -58,8 +57,9 @@ async function produce(kind: Kind, a: ReadyArtifact, o: OutputOptions) {
 
 /** Renders run one after another; a job that fails doesn't stop the ones behind it. */
 function queueRender(a: ReadyArtifact, o: OutputOptions): Promise<void> {
-  const job = renderQueue.then(() => produce("video", a, o));
-  renderQueue = job.catch(() => {});
+  const state = stateFor(o);
+  const job = state.renderQueue.then(() => produce("video", a, o));
+  state.renderQueue = job.catch(() => {});
   return job;
 }
 
@@ -82,7 +82,7 @@ export async function sweepOutputs(o: OutputOptions, limit = 10): Promise<number
 export const toReadyArtifact = (a: StoredArtifact): ReadyArtifact => ({
   id: a.id, version: a.version, name: a.name, category: a.category || null, processed_text: a.processed_text,
   selection_reason: a.selection_reason || null, source_ids: a.source_ids,
-  sources: a.sources.map((s) => ({ url: s.url, title: s.title ?? null })), evidence: a.evidence,
+  sources: sourceRefs(a.sources), evidence: a.evidence,
 });
 
 /** Runs sweepOutputs on a timer, skipping a tick while one is still running. Returns a stop function. */

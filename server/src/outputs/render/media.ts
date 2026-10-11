@@ -7,6 +7,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run } from "./ffmpeg.js";
 
+/** How a stored file is referenced in TigerData (media_ref, caption_ref, narration_ref); the web Worker resolves it. */
+export const r2Ref = (key: string) => `r2:${key}`;
+
 export interface MediaStore {
   /** Uploads a local file under key and checks it's there with the same size. Returns `r2:<key>`. */
   put(key: string, file: string, contentType: string): Promise<string>;
@@ -26,7 +29,7 @@ export class R2Media implements MediaStore {
     if (!put.ok) throw new Error(`R2 upload of ${key} failed: HTTP ${put.status} ${(await put.text()).slice(0, 200)}`);
     const head = await signed({ method: "HEAD" });
     if (!head.ok || Number(head.headers.get("content-length")) !== body.length) throw new Error(`R2 has no complete copy of ${key} after upload`);
-    return `r2:${key}`;
+    return r2Ref(key);
   }
 }
 
@@ -51,7 +54,7 @@ export class WranglerLocalMedia implements MediaStore {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
-    return `r2:${key}`;
+    return r2Ref(key);
   }
 }
 

@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { copyFile, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { probe } from "../../src/outputs/render/ffmpeg.js";
+import { fontFile, probe } from "../../src/outputs/render/ffmpeg.js";
 import type { MediaStore } from "../../src/outputs/render/media.js";
 import { renderArtifact } from "../../src/outputs/render/render.js";
 import { artifact, outputsFetch } from "./helpers.js";
@@ -57,4 +57,23 @@ test("a TTS failure fails the render with the provider's status", { skip: !hasFf
   const a = artifact();
   const { impl } = outputsFetch(a, { ttsStatus: 403 });
   await assert.rejects(renderArtifact(a, { openaiKey: "o", geminiKey: "g", media: new DirMedia(tmpdir()), fetchImpl: impl }), /TTS HTTP 403/);
+});
+
+test("a RENDER_FONT path with ':' or quotes still renders", { skip: !hasFfmpeg && "ffmpeg not installed", timeout: 120_000 }, async () => {
+  const font = fontFile(undefined);
+  if (!font) return; // no bold system font to copy on this host
+  const out = await mkdtemp(join(tmpdir(), "resurface-font-test-"));
+  const awkward = join(out, "odd: name's.ttf");
+  await copyFile(font, awkward);
+  const before = process.env.RENDER_FONT;
+  process.env.RENDER_FONT = awkward;
+  try {
+    const a = artifact();
+    const v = await renderArtifact(a, { openaiKey: "o", geminiKey: "g", media: new DirMedia(out), fetchImpl: outputsFetch(a).impl });
+    assert.ok(v.duration_seconds > 0);
+  } finally {
+    if (before === undefined) delete process.env.RENDER_FONT;
+    else process.env.RENDER_FONT = before;
+    await rm(out, { recursive: true, force: true });
+  }
 });

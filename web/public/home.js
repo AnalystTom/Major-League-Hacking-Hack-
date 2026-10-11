@@ -5,7 +5,7 @@
 import { api } from "./api.js";
 import { createReel } from "./reel.js";
 import { createSkills } from "./skills.js";
-import { followImports, PROCESSOR, renderUnits } from "./units.js";
+import { FAILED_STAGES, followImports, PROCESSOR, renderUnits } from "./units.js";
 
 const $ = (sel) => document.querySelector(sel);
 const reel = createReel($("[data-reel]"));
@@ -18,7 +18,6 @@ const skills = createSkills({
 const form = $("[data-add-template]").content.firstElementChild.cloneNode(true);
 let follower = null;
 
-const FAILED = new Set(["failed", "render_failed", "not_selected"]);
 
 function placeForm(where) {
   const slot = $(where === "sheet" ? "[data-sheet-form-slot]" : "[data-first-form-slot]");
@@ -27,7 +26,7 @@ function placeForm(where) {
 
 function summarize(units) {
   const making = units.filter((u) => !u.settled).length;
-  const failed = units.filter((u) => FAILED.has(u.stage)).length;
+  const failed = units.filter((u) => FAILED_STAGES.has(u.stage)).length;
   const ready = units.filter((u) => u.stage === "ready").length;
   const parts = [];
   if (making) parts.push(`${making} making`);
@@ -181,15 +180,26 @@ $("[data-signout]").addEventListener("click", async () => {
     reveal();
     form.querySelector("textarea").focus({ preventScroll: true });
   }
+  // A failed check is shown wherever the user is looking: the loading line before the page appears, the reel's
+  // frame for a new account (the status chip only exists once there are links), else the status list.
+  let erroring = false;
+  const showError = (err) => {
+    const message = `${err.message} Retrying…`;
+    erroring = true;
+    if (!shown) $("[data-loading]").textContent = `Couldn't load your shorts. ${message}`;
+    else if ($("[data-status]").hidden) Object.assign($("[data-first-note]"), { textContent: message }).dataset.tone = "error";
+    else $("[data-run-note]").textContent = message;
+  };
+  const clearError = () => {
+    if (!erroring) return;
+    erroring = false;
+    $("[data-first-note]").textContent = "";
+    if ($("[data-run-note]").textContent.endsWith("Retrying…")) $("[data-run-note]").textContent = "";
+  };
   follower = followImports({
     onUnits: (u) => { units = u; },
-    onItems: (i) => { items = i; render(units, items); reveal(); },
+    onItems: (i) => { items = i; render(units, items); reveal(); clearError(); },
     onSkills: showSkills,
-    onError: (err) => {
-      if (err.status === 401) return location.assign("/start");
-      const message = `${err.message} Retrying…`;
-      if (shown) $("[data-run-note]").textContent = message;
-      else $("[data-loading]").textContent = `Couldn't load your shorts. ${message}`;
-    },
+    onError: (err) => (err.status === 401 ? location.assign("/start") : showError(err)),
   });
 })();

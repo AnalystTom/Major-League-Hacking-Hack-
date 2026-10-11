@@ -1,6 +1,8 @@
 // GET /api/skills: the skills and tasks the processor wrote for a user's imports (workflow 3). Skill readiness
 // is separate from the video: a skill can be ready while its short is still rendering, or after it failed.
 
+import { FRONTMATTER } from "../public/agents.js";
+
 /**
  * The newest skill result per ready artifact revision built only from these units (all of the user's imports),
  * newest artifact first, with its
@@ -37,7 +39,7 @@ export async function readSkills(sql, unitIds) {
 
 /** name and description from SKILL.md frontmatter; null when absent. */
 export function frontmatter(markdown) {
-  const m = /^---\n([\s\S]*?)\n---\n/.exec(markdown ?? "");
+  const m = FRONTMATTER.exec(markdown ?? "");
   const out = { name: null, description: null };
   if (!m) return out;
   for (const line of m[1].split("\n")) {

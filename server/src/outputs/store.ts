@@ -3,15 +3,10 @@
 
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
-import type { GeneratedSkill, ReadyArtifact, RenderedVideo } from "./types.js";
+import { STALE_CLAIM_MINUTES } from "../claims.js";
+import { sourceRefs, type GeneratedSkill, type ReadyArtifact, type RenderedVideo } from "./types.js";
 
 export type Kind = "skill" | "video";
-
-/**
- * A claimed `running` row older than this is treated as abandoned by a crashed processor. A render's worst case
- * (script, six narrated scenes with retries, ffmpeg, three uploads) stays well inside it.
- */
-export const STALE_MINUTES = 60;
 
 /** The row a worker holds, and the token that proves it still holds it. */
 export interface Claim { id: string; token: string }
@@ -39,7 +34,7 @@ function rowToArtifact(r: any): ReadyArtifact {
   return {
     id: r.id, version: r.version, name: r.name, category: r.category, processed_text: r.processed_text,
     selection_reason: r.selection_reason, source_ids: r.source_ids,
-    sources: (r.sources ?? []).map((s: any) => ({ url: s.url, title: s.title ?? null })), evidence: r.evidence ?? [],
+    sources: sourceRefs(r.sources), evidence: r.evidence ?? [],
   };
 }
 
@@ -55,7 +50,7 @@ export class PgOutputStore implements OutputStore {
          AND EXISTS (SELECT 1 FROM user_imports ui WHERE ui.unit_id = ANY (a.source_ids))
          AND NOT EXISTS (SELECT 1 FROM ${TABLE[kind]} r WHERE r.artifact_id = a.id AND r.artifact_version = a.version
                          AND NOT (r.status = 'pending' OR (r.status = 'running' AND r.updated_at < now() - make_interval(mins => $2))))
-       ORDER BY a.created_at LIMIT $1`, [limit, STALE_MINUTES]);
+       ORDER BY a.created_at LIMIT $1`, [limit, STALE_CLAIM_MINUTES]);
     return rows.map(rowToArtifact);
   }
 
@@ -65,7 +60,7 @@ export class PgOutputStore implements OutputStore {
       `INSERT INTO ${t} (artifact_id, artifact_version, status, updated_at, claim_token) VALUES ($1, $2, 'running', now(), gen_random_uuid())
        ON CONFLICT (artifact_id, artifact_version) DO UPDATE SET status = 'running', error = NULL, updated_at = now(), claim_token = gen_random_uuid()
        WHERE ${t}.status = 'pending' OR (${t}.status = 'running' AND ${t}.updated_at < now() - make_interval(mins => $3))
-       RETURNING id, claim_token`, [a.id, a.version, STALE_MINUTES]);
+       RETURNING id, claim_token`, [a.id, a.version, STALE_CLAIM_MINUTES]);
     return rows[0] ? { id: rows[0].id as string, token: rows[0].claim_token as string } : null;
   }
 
@@ -131,10 +126,8 @@ export class MemoryOutputStore implements OutputStore {
     this.rows[kind].set(this.key(a), row);
     return { id: row.id, token: row.token };
   }
-  /** Test hook: what a newer worker's claim does to a stale row. */
-  takeOver(kind: Kind, id: string) { this.held(kind, { id, token: "" }, true)!.token = randomUUID(); }
-  private held(kind: Kind, c: Claim, any = false) {
-    return [...this.rows[kind].values()].find((r) => r.id === c.id && (any || (r.token === c.token && r.status === "running")));
+  private held(kind: Kind, c: Claim) {
+    return [...this.rows[kind].values()].find((r) => r.id === c.id && r.token === c.token && r.status === "running");
   }
   async fail(kind: Kind, c: Claim, error: string) {
     const row = this.held(kind, c);
