@@ -131,10 +131,13 @@ export function validateBrief(raw: unknown, skills: HandoffSkill[]): HandoffBrie
   brief.tensions.forEach((t) => t.positions.forEach((p) => known(p.skill, `tension "${t.topic}"`)));
   brief.actions.forEach((a) => a.skills.forEach((s) => known(s, `action "${a.title}"`)));
   brief.not_actionable.forEach((n) => known(n.skill, "not_actionable"));
-  // Same rule as a skill: a brief derived from videos never tells the agent to run a downloaded script.
-  const texts = [brief.summary, ...brief.review_focus, ...brief.themes.flatMap((t) => [t.lesson, t.transfer]), ...brief.tensions.map((t) => t.decide_by),
-    ...brief.actions.flatMap((a) => [a.why, ...a.look_for, ...a.steps, a.done_when, a.not_applicable_if, a.already_done_if])];
-  if (texts.some((t) => PIPE_TO_SHELL.test(t))) throw new Error("the brief tells the agent to pipe a download into a shell");
+  // Same rule as a skill: a brief derived from videos never tells the agent to run a downloaded script. Every string is
+  // checked, flattened the way the prompt prints it, so a line break can't split the command past the check.
+  const strings = (v: unknown): string[] =>
+    typeof v === "string" ? [v] : Array.isArray(v) ? v.flatMap(strings) : v && typeof v === "object" ? Object.values(v).flatMap(strings) : [];
+  if (strings(brief).some((t) => PIPE_TO_SHELL.test(t) || PIPE_TO_SHELL.test(one(t)))) {
+    throw new Error("the brief tells the agent to pipe a download into a shell");
+  }
   const covered = new Set([...brief.themes.flatMap((t) => t.skills), ...brief.not_actionable.map((n) => n.skill)]);
   const missing = skills.filter((s) => !covered.has(s.slug)).map((s) => s.slug);
   if (missing.length) throw new Error(`brief leaves out ${missing.join(", ")}`);
