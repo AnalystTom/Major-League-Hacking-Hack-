@@ -1,0 +1,173 @@
+{
+  "test_date": "2026-10-11",
+  "status": "model_extraction_pending_source_review",
+  "scope": "Two five-minute segments; no full-video transcription, Digestion Prompt run, database write, or feed publication",
+  "results": [
+    {
+      "source_url": "https://www.youtube.com/watch?v=VQy50fuxI34",
+      "selected_start_seconds": 0,
+      "requested_window_seconds": [
+        0,
+        300
+      ],
+      "model": "gemini-3.8-flash",
+      "http_status": 200,
+      "elapsed_seconds": 14.2,
+      "response_id": "X7_Lav6jLb7W-sAPnfae2AQ",
+      "usage": {
+        "promptTokenCount": 27429,
+        "candidatesTokenCount": 586,
+        "totalTokenCount": 28922,
+        "promptTokensDetails": [
+          {
+            "modality": "TEXT",
+            "tokenCount": 128
+          },
+          {
+            "modality": "VIDEO",
+            "tokenCount": 27301
+          }
+        ],
+        "thoughtsTokenCount": 907,
+        "serviceTier": "standard"
+      },
+      "review_status": "pending",
+      "model_extraction": {
+        "source_url": "https://www.youtube.com/watch?v=VQy50fuxI34",
+        "selected_start_seconds": 0,
+        "content_accessed": true,
+        "overview": "The video breaks down the concept of 'loop engineering', critiquing it as an overhyped rebranding of the traditional software development life cycle (SDLC). The creator argues that software engineers should view building with AI agents through structured developer workflows within a 'software factory', balancing the three primary actors of value creation: human engineers, AI agents, and deterministic code.",
+        "extraction_limitations": "Audio and visual information are limited to the provided video segment spanning from 00:00 to 05:00.",
+        "evidence_items": [
+          {
+            "start_seconds": 22,
+            "end_seconds": 35,
+            "observed_spoken_content": "The speaker characterizes 'loop engineering' as an unclear and hype-filled rebranding of the traditional software development life cycle (SDLC), promising to simplify and clarify the concept.",
+            "observed_visual_content": "An overhead view of hands poised over a MacBook keyboard with animated text and an SDLC cycle diagram (Plan, Build, Test, Review, Ship) overlaid on the laptop.",
+            "technique": "Direct critique paired with kinetic typography and circular workflow diagrams."
+          },
+          {
+            "start_seconds": 56,
+            "end_seconds": 115,
+            "observed_spoken_content": "The speaker advises developers to conceptualize agentic building as constructing structured developer workflows inside a 'software factory' combining deterministic code with AI agents.",
+            "observed_visual_content": "An isometric diagram labeled 'SOFTWARE FACTORY' illustrating input prompts flowing through modular 'CODE' and 'AGENT' blocks into 'RESULTS'.",
+            "technique": "Conceptual architectural modeling using isometric motion graphics."
+          },
+          {
+            "start_seconds": 338,
+            "end_seconds": 435,
+            "observed_spoken_content": "The presenter categorizes engineering value creation into three actors\u2014Engineers, Agents, and Code\u2014highlighting that code provides zero marginal execution cost and maximum reliability compared to costly engineers and agents.",
+            "observed_visual_content": "A tree diagram connecting 'Engineers', 'Agents', and 'Code' under 'Your actors of value creation', followed by comparative cost bars showing Engineers ($$$), Agents ($$), and Code ($0 Free).",
+            "technique": "Cost-benefit comparison supported by categorized hierarchical and horizontal bar graphics."
+          }
+        ]
+      },
+      "evidence_checks": [
+        {
+          "start_seconds": 22,
+          "end_seconds": 35,
+          "within_requested_window": true,
+          "review_status": "pending",
+          "rejection_reason": null
+        },
+        {
+          "start_seconds": 56,
+          "end_seconds": 115,
+          "within_requested_window": true,
+          "review_status": "pending",
+          "rejection_reason": null
+        },
+        {
+          "start_seconds": 338,
+          "end_seconds": 435,
+          "within_requested_window": false,
+          "review_status": "rejected",
+          "rejection_reason": "Timestamp outside requested video window"
+        }
+      ]
+    },
+    {
+      "source_url": "https://www.youtube.com/watch?v=V-EDrhIhHzQ",
+      "selected_start_seconds": 306,
+      "requested_window_seconds": [
+        306,
+        606
+      ],
+      "model": "gemini-3.8-flash",
+      "http_status": 200,
+      "elapsed_seconds": 13.0,
+      "response_id": "iL_Laq6-CbyI1MkPge_msAs",
+      "usage": {
+        "promptTokenCount": 27455,
+        "candidatesTokenCount": 523,
+        "totalTokenCount": 28756,
+        "promptTokensDetails": [
+          {
+            "modality": "VIDEO",
+            "tokenCount": 27301
+          },
+          {
+            "modality": "TEXT",
+            "tokenCount": 154
+          }
+        ],
+        "thoughtsTokenCount": 778,
+        "serviceTier": "standard"
+      },
+      "review_status": "pending",
+      "model_extraction": {
+        "source_url": "https://www.youtube.com/watch?v=V-EDrhIhHzQ",
+        "selected_start_seconds": 306,
+        "content_accessed": true,
+        "overview": "The speaker covers the post-training development cycle, detailing the progression from defining environments and evaluations to model training (via reinforcement learning, supervised fine-tuning, and distillation) and deployment, emphasizing that unifying evaluation and training environments creates an iterative flywheel for model improvement.",
+        "extraction_limitations": "",
+        "evidence_items": [
+          {
+            "start_seconds": 346,
+            "end_seconds": 375,
+            "observed_spoken_content": "The speaker introduces the post-training loop, explaining that environments act as a language for defining what a model should do, encompassing data, scenario interaction, and scoring criteria.",
+            "observed_visual_content": "A slide titled 'THE POST-TRAINING LOOP: from environment to trained model' displays a horizontal pipeline showing four stages: BUILD, EVALUATE, TRAIN, and DEPLOY.",
+            "technique": "presentation analysis"
+          },
+          {
+            "start_seconds": 450,
+            "end_seconds": 485,
+            "observed_spoken_content": "The speaker discusses modern post-training techniques, contrasting traditional SFT and RL pipelines with methods like on-policy distillation, particularly when training expert models across distinct environments.",
+            "observed_visual_content": "The presenter stands on stage speaking next to the post-training loop diagram displayed on the large backdrop screen.",
+            "technique": "thematic analysis"
+          },
+          {
+            "start_seconds": 572,
+            "end_seconds": 605,
+            "observed_spoken_content": "The speaker presents the concept of 'environments = evals', explaining that decomposing an environment into tasks, a test harness, and verification creates a single installable package that serves both evaluation and training.",
+            "observed_visual_content": "A slide titled 'ONE ARTIFACT: environments = evals' shows a diagram where an 'ENVIRONMENT (tasks + harness + verification)' package branches into 'EVALUATE' and 'TRAIN'.",
+            "technique": "visual and audio analysis"
+          }
+        ]
+      },
+      "evidence_checks": [
+        {
+          "start_seconds": 346,
+          "end_seconds": 375,
+          "within_requested_window": true,
+          "review_status": "pending",
+          "rejection_reason": null
+        },
+        {
+          "start_seconds": 450,
+          "end_seconds": 485,
+          "within_requested_window": true,
+          "review_status": "pending",
+          "rejection_reason": null
+        },
+        {
+          "start_seconds": 572,
+          "end_seconds": 605,
+          "within_requested_window": true,
+          "review_status": "pending",
+          "rejection_reason": null
+        }
+      ]
+    }
+  ]
+}

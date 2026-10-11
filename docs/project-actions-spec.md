@@ -178,7 +178,7 @@ Choose one concrete transport before building the **Use in Codex** CTA. Copy/dow
 - **Nimble:** authenticated v0 watch-page retrieval passed for both supplied videos; the tested caption route failed. Do not treat metadata as a spoken transcript. V1 adds supporting-source research.
 - **TigerData:** PostgreSQL storage for raw evidence, processed text, context, topics, video metadata, processed skills, action items, and handoffs. Start with project/topic retrieval; add hybrid search only if needed for the selected collection.
 - **Opus 5.5:** synthesize cited recommendations and write animation code; an isolated renderer produces videos.
-- **Gemini, proposed:** TTS narration and the recommended next test for public-YouTube content extraction. Neither was exercised in the Nimble test. Verify access and review timestamped model extraction before relying on it.
+- **Gemini:** explicit-window video-content extraction returned model observations for both YouTube inputs; source review is pending. TTS narration remains proposed and untested.
 - **Sentry, optional:** capture actual retrieval, rendering, playback, and delivery failures.
 
 TigerData is based on PostgreSQL. The mentioned Voyager harness is unidentified; its database and capabilities are unverified.
@@ -209,22 +209,37 @@ For each canonical watch URL, the request used `render: true` and `formats: ["ht
 
 The follow-up Nimble requests used the actual English caption-track URLs discovered in those responses, requesting `fmt=json3`, `render: false`, and HTML output. Both returned `success: "false"` and the message `can't download the query response - please try again`. Direct HTTP reads of those same caption URLs returned HTTP 200 with an empty body. The underlying caption failure reason remains unknown. These results establish page retrieval and a failed caption route; they do not establish that every possible Nimble transcript route fails. Browser-action transcript extraction was not tested.
 
-Do not mark either source fully ingested for video-grounded synthesis: no spoken transcript or inspected video content was obtained. Do not infer missing dialogue from the descriptions, titles, chapter labels, or the presence of a caption URL.
+At the end of the Nimble test, neither source was fully ingested for video-grounded synthesis: no spoken transcript or inspected video content was obtained through that route. Do not infer missing dialogue from the descriptions, titles, chapter labels, or the presence of a caption URL.
 
 ### Do we need Gemini for ingestion?
 
-**Gemini is a recommended next test, not a required dependency or a verified replacement.** Google's [video-understanding documentation](https://ai.google.dev/gemini-api/docs/video-understanding#pass-youtube-urls) supports passing public YouTube URLs directly to the API; that feature is in preview. Nimble's [Extract API](https://docs.nimbleway.com/nimble-sdk/web-tools/extract/quickstart) retrieves webpage content. Its [Media API](https://docs.nimbleway.com/nimble-sdk/web-tools/media) downloads media-file URLs and does not itself provide video understanding.
+**Gemini returned timestamped model extraction for both test segments; source review remains pending.** Google's [video-understanding documentation](https://ai.google.dev/gemini-api/docs/video-understanding#pass-youtube-urls) supports passing public YouTube URLs directly to the API; that feature is in preview. Nimble's [Extract API](https://docs.nimbleway.com/nimble-sdk/web-tools/extract/quickstart) retrieves webpage content. Its [Media API](https://docs.nimbleway.com/nimble-sdk/web-tools/media) downloads media-file URLs and does not itself provide video understanding.
 
-For this YouTube-only v0, test Gemini on each canonical URL separately with its own credential. Request source-grounded, timestamped speech/visual observations; preserve the raw model output and label it as model extraction, not an authoritative verbatim transcript. Review cited moments against the video before approving synthesis. Keep the second source's 306-second selection in its input metadata. Validate the extraction before passing it to the existing Digestion Prompt and shared schema.
+### Gemini test — 2026-10-11
 
-No Gemini API request ran: no Gemini credential was found in the checked environment or project configuration. If Gemini retrieval fails, show the actual failure and keep the unit out of synthesis. A working transcript provider or user-supplied transcript would also satisfy ingestion; Gemini is not the only possible route. Nimble remains useful for page metadata and V1 supporting-web research.
+The supplied Gemini key authenticated successfully (`GET /v1beta/models`, HTTP 200). It was held in process memory and not saved in the repository or deployment configuration. Production secret configuration is still pending.
+
+Successful requests used `gemini-3.8-flash:generateContent` with the canonical YouTube URL in `fileData` and explicit `videoMetadata.startOffset`/`endOffset`. JSON output used temperature 0 and a 2,000-token output limit. The prompt requested timestamped speech paraphrases and visual observations, not a verbatim transcript. Source URLs and selected times were compared with the submitted inputs; each timestamp was checked against its requested window.
+
+| Input | Requested segment | HTTP / time | Response ID | Validation |
+| --- | --- | --- | --- | --- |
+| `VQy50fuxI34` | 0–300 seconds | 200 / 14.2 seconds | `X7_Lav6jLb7W-sAPnfae2AQ` | Correct source URL and start. Two of three observations are within the window; the 338–435 second item is rejected. |
+| `V-EDrhIhHzQ` | 306–606 seconds | 200 / 13.0 seconds | `iL_Laq6-CbyI1MkPge_msAs` | Correct source URL and selected start. All three observations are within the window. |
+
+The [returned extraction and validation records](evidence/gemini-ingestion-2026-10-11.json) preserve actual model output, response IDs, token usage, and review states. Five observations passed structural/source-identity/window checks. They remain pending source review: a model's `content_accessed: true` assertion and valid timestamps do not independently prove accuracy. Do not publish them or mark them approved until their speech/visual claims are checked against the video. Some `technique` fields describe presentation or analysis styles rather than actionable engineering lessons; refine that extraction instruction before using it as Digestion Prompt input.
+
+Earlier attempts: the first unbounded `gemini-3.8-flash` request returned HTTP 503 (`UNAVAILABLE`, high demand). The second returned HTTP 200 but claimed a different source URL (`0k1j_1m1i0E`), so that response was rejected. Both `gemini-2.5-flash` fallback requests timed out. An Interactions API request using its documented `processing` object returned HTTP 400 (`Invalid input at 'input[0].processing'`). The successful requests used the [Generate Content video-metadata contract](https://ai.google.dev/gemini-api/docs/generate-content/video-understanding) instead. Full-video content was submitted in the earlier requests; requesting a five-minute focus in prompt text alone did not limit input processing.
+
+**Ingestion direction:** use explicit-window Gemini extraction as the v0 video-content candidate, with validation and source review before Digestion Prompt. Keep Nimble for page metadata and V1 supporting-web research. Preserve request-derived source identity and selected time; never let model-generated metadata replace them. Reject wrong identities and out-of-window evidence, retain actual failure details, and retry without fabricating content. A working transcript provider or supplied transcript remains another route.
+
+This test extracted two five-minute segments only. It did not create a full transcript, run Digestion Prompt, write TigerData records, generate clips/skills, or change the deployed app. Remote SSH to big-machine-1 timed out, so no Playwright or remote video review ran; no test browser/app/server was launched.
 
 ## Open questions
 
 These replace the answered 20-question backlog. Recommended answers remain proposals.
 
 1. **Which prepared project and current goal?** Supply its actual brief and authorized repository/site context. Recommend one task with a checkable result.
-2. **Where will production Nimble and Gemini credentials be configured?** Nimble authentication/page retrieval passed using the supplied test key; transcript retrieval remains blocked. Configure a separate Gemini credential to test public-YouTube understanding before choosing the ingestion provider.
+2. **Where will production Nimble and Gemini credentials be configured?** Both supplied keys authenticated in isolated tests; neither is stored in repository or deployment configuration. Gemini returned model extraction for the selected windows; source review is pending.
 3. **Which provider is the motion/video API key for, and where is the existing Opus generation prompt?** Keep that credential separate from extraction and TTS.
 4. **Which narration voice/provider and music track?** Recommend Gemini TTS plus one licensed instrumental track; Kokoro is the open-source alternative.
 5. **Who reviews Digestion Prompt output and clips?** Recommend one teammate records approval/rejection with reasons and selects the demo set.
@@ -233,7 +248,7 @@ These replace the answered 20-question backlog. Recommended answers remain propo
 
 ## Next actions
 
-- Test Gemini public-YouTube understanding on both supplied videos with its own credential; inspect timestamped evidence before selecting it as the content extractor. Nimble page retrieval passed, but the tested caption route failed.
+- Review the five structurally valid Gemini observations against the actual video moments; exclude the out-of-window item and refine the prompt to extract engineering lessons. Expand beyond the two test windows only after review passes.
 - Refine Digestion Prompt with real few-shot examples and approval/rejection feedback; retain prompt revisions and output provenance.
 - Inspect the supplied motion examples and derive style instructions for the team's Opus prompt.
 - Test one narration/music mix and align captions/scenes to measured audio; select and review the real demo clips.
