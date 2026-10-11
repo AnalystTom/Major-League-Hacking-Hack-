@@ -22,12 +22,7 @@ These are the links supplied in the conversation. The observations below come fr
 
 | Source | Observed content / access | Suggested use |
 | --- | --- | --- |
-| [Matt Pocock skills](https://github.com/mattpocock/skills) | Repository README describes engineering practices for clarification, testing, debugging, and architecture. | Extract individual techniques, rather than summarize the entire repository. |
-| [pstack](https://github.com/cursor/plugins/tree/main/pstack) | README and guide describe task routing, playbooks, verification, model roles, and engineering principles. | Extract workflow steps and their requirements. |
-| [Kun Chen article](http://substack.com/@kunchenguid/p-214840284) | Resolves to [I distilled myself, and you should too](https://blog.kunchenguid.com/p/i-distilled-myself-and-you-should). Describes capturing judgment in a skill and updating it from public material. | Explain how to turn repeated decisions into agent guidance. |
-| [Stephan Livera X post](https://x.com/stephanlivera/status/2103315922098470926) | Research fetch returned 403. Contents not read. | Unclassified until successfully retrieved. |
-| [achxvi X post](https://x.com/achxvi/status/2103918792845963545?s=20) | Research fetch returned 403. Contents not read. | Unclassified until successfully retrieved. |
-| [LLMJunky X post](https://x.com/LLMJunky/status/2106411941497389342?s=20) | Research fetch returned 403. Contents not read. | Unclassified until successfully retrieved. |
+
 | [X history](https://x.com/i/history) | Private account content not inspected. This is not the documented bookmark API endpoint. | Future input route; v0 accepts supplied public links. |
 | [YouTube Watch Later](https://www.youtube.com/playlist?list=WL) | Private list not inspected. The official YouTube API cannot retrieve Watch Later items. | Supply individual public video links or a regular playlist if YouTube is included. |
 
