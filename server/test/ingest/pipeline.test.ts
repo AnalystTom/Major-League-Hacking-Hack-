@@ -45,3 +45,39 @@ test("digest validation rejects unknown ids and out-of-window evidence", async (
   assert.throws(() => validateDigest({ artifacts: [art("00000000-0000-4000-8000-000000000000")], exclusions: [] }, [u]), /unknown/);
   assert.throws(() => validateDigest({ artifacts: [art(u.id, 500)], exclusions: [] }, [u]), /outside/);
 });
+
+
+import { extractWithGemini } from "../../src/ingest/extract/gemini.js";
+const reply = (text: string) => new Response(JSON.stringify({ responseId: "r", candidates: [{ content: { parts: [{ text }] } }] }));
+const good = JSON.stringify({ source_url: "https://www.youtube.com/watch?v=VQy50fuxI34", content_accessed: true,
+  evidence_items: [{ start_seconds: 5, end_seconds: 20, observed_spoken_content: "x" }] });
+const opts = (fetchImpl: () => Promise<Response>, retries: number) => ({
+  apiKey: "k", sourceUrl: "https://www.youtube.com/watch?v=VQy50fuxI34", window: [0, 300] as [number, number],
+  fetchImpl: fetchImpl as unknown as typeof fetch, retries, retryDelayMs: 1,
+});
+
+test("a malformed JSON reply is retried and then succeeds", async () => {
+  let calls = 0;
+  const r = await extractWithGemini(opts(async () => reply(++calls === 1 ? '{"source_url": "x",\n  "evidence_items": [\n   {,}]}' : good), 2));
+  assert.equal(calls, 2);
+  assert.equal(r.extraction.content_accessed, true);
+});
+
+test("persistent malformed JSON fails with an excerpt of the bad reply", async () => {
+  let calls = 0;
+  const bad = '{"source_url": "https://www.youtube.com/watch?v=VQy50fuxI34",\n  "evidence_items": [\n    {"start_seconds": 1,}\n  ]}';
+  await assert.rejects(extractWithGemini(opts(async () => (calls++, reply(bad)), 2)), (e: Error) => {
+    assert.match(e.message, /not valid JSON/);
+    assert.match(e.message, /near char \d+ of \d+/);
+    assert.match(e.message, /start_seconds/);
+    return true;
+  });
+  assert.equal(calls, 3, "initial attempt plus two retries");
+});
+
+test("a reply with the wrong shape is retried too", async () => {
+  let calls = 0;
+  const r = await extractWithGemini(opts(async () => reply(++calls === 1 ? JSON.stringify({ unexpected: true }) : good), 1));
+  assert.equal(calls, 2);
+  assert.equal(r.extraction.evidence_items.length, 1);
+});
