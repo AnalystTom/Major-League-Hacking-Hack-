@@ -3,12 +3,14 @@
 // from several videos), orders the tasks, and stores a prompt for every agent and mode. Copying is an export, not
 // a delivery receipt.
 
+import { processorFetch } from "./processor.js";
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_SKILLS = 12;
 /** Changing the processor's handoff prompt (HANDOFF_PROMPT_REVISION) should change this, so picks are rewritten. */
 export const HANDOFF_REVISION = "handoff-v5";
 /** A brief still `running` after this was abandoned by its processor (its STALE_BRIEF_MINUTES) and is requested again. */
-const STALE_MS = 10 * 60_000;
+const STALE_MS = 25 * 60_000;
 /** A `pending` brief the processor hasn't picked up after this was probably never received. */
 const UNCLAIMED_MS = 2 * 60_000;
 
@@ -34,7 +36,7 @@ export const inputKey = (skills) =>
 export async function requestHandoff(env, briefId, fetchImpl = fetch) {
   if (!env.PROCESSOR_URL) return "not_configured";
   try {
-    const res = await fetchImpl(new URL("handoff", env.PROCESSOR_URL), {
+    const res = await processorFetch(env, fetchImpl)(new URL("handoff", env.PROCESSOR_URL), {
       method: "POST",
       headers: {
         "content-type": "application/json",
