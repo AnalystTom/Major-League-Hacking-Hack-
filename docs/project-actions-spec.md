@@ -2,7 +2,7 @@
 
 This is the single canonical product spec. It supersedes the earlier v0 draft and HTML planning preview.
 
-Status: product scope agreed. The web Worker implements accounts, the project brief, imports and their progress, the feed, and media streaming, as described in [HTTP API](#http-api). The shared schema and accounts migrations are written but not confirmed as applied. The processor, Digestion Prompt, rendering, and workstream 3 are not built yet. Contracts not marked as implemented remain proposals. Migration, provider runs, commits, and deployment require approval.
+Status: product scope agreed. The web Worker implements accounts, the project brief, imports and their progress, the feed, and media streaming, as described in [HTTP API](#http-api). The shared schema and accounts migrations are written but not confirmed as applied. The Node ingestion backend implements Gemini extraction and the Digestion Prompt. It is not connected to web imports; rendering, the end-to-end processor, and workstream 3 are not built yet. Contracts not marked as implemented remain proposals. Migration, provider runs, commits, and deployment require approval.
 
 ## Goal
 
@@ -292,6 +292,27 @@ This Worker serves the five landing-page sample shorts from a hardcoded list; no
 | `GET /api/shorts/:id/export?agent=` | `{ agent, path, content }`: the file that agent reads. Skill shorts become `.claude/skills/<slug>/SKILL.md`, `.agents/skills/<slug>/SKILL.md`, `.cursor/rules/<slug>.mdc`, or `~/.hermes/skills/<slug>/SKILL.md`; rules shorts become a section of `CLAUDE.md`, `AGENTS.md`, or `.cursor/rules/project.mdc` (Hermes has no rules file, so they become skills). `400` for an unknown agent. |
 
 This is a candidate shape for workstream 3's export, not a delivery route. It writes nothing and produces no receipt.
+
+### Node ingestion backend (`server/src/ingest/`)
+
+The Node server mounts `POST /api/ingest/imports` and `GET /api/ingest/imports/:id`
+when `GEMINI_API_KEY` is configured. Both require `Authorization: Bearer <INGEST_TOKEN>`.
+Set `PROJECT_CONTEXT` to a real project brief JSON file with `name`, nullable `goal`,
+and `facts: [{ fact, source? }]`; startup fails when the token or brief is missing.
+No placeholder project is selected automatically.
+
+The POST body is `{ links, request, window_seconds? }`, where `request` is the
+categorization instruction. It accepts 1–20 links and a 30–3,600 second window.
+Gemini extracts source evidence; `OPENAI_API_KEY` enables digestion (otherwise it
+reports skipped). `GEMINI_MODEL` and `OPENAI_MODEL` select the configured models.
+`DATABASE_URL` selects TigerData storage; without it, results remain in memory.
+Jobs are process-local and are lost on restart. From `server/`, the CLI uses `npm run ingest --
+"<request>" <youtube-url>...` with the same provider and project configuration.
+
+This backend does not implement the web Worker's `PROCESSOR_URL` contract: it
+accepts URLs, rather than existing `unit_ids` and a per-user project, and does not
+render video. Web imports still need that integration and a real render processor.
+
 
 ## Workflow 3: processed skill and Codex use
 

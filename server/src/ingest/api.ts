@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { bearerAuth } from "hono/bearer-auth";
 import { randomUUID } from "node:crypto";
 import { MAX_WINDOW_SECONDS, MIN_WINDOW_SECONDS } from "./extract/gemini.js";
 import { digestAndStore, ingestLink, type IngestOptions } from "./pipeline.js";
@@ -22,6 +23,7 @@ interface ImportJob {
 }
 
 export interface ApiOptions extends IngestOptions {
+  token: string;
   context: ProjectContext;
   openaiKey?: string;
   openaiModel?: string;
@@ -45,29 +47,38 @@ function view(job: ImportJob) {
 
 /** Node-only ingestion routes (they use pg and long-running requests); mounted by src/index.ts, not the Worker. */
 export function createIngestApp(o: ApiOptions): Hono {
+  if (!o.token) throw new Error("INGEST_TOKEN is required");
   const jobs = new Map<string, ImportJob>();
 
   async function run(job: ImportJob, links: string[], windowSeconds: number | undefined) {
-    await Promise.all(links.map(async (l, i) => { job.units[i] = await ingestLink(l, { ...o, windowSeconds: windowSeconds ?? o.windowSeconds }, (u) => { job.units[i] = u; }); }));
+    await Promise.all(links.map(async (l, i) => {
+      try {
+        job.units[i] = await ingestLink(l, { ...o, windowSeconds: windowSeconds ?? o.windowSeconds }, (u) => { job.units[i] = u; });
+      } catch (e) {
+        job.units[i] = { ...job.units[i], status: "failed", error: (e as Error).message };
+      }
+    }));
     const ready = job.units.filter((u) => u.status === "ready");
     if (!o.openaiKey) { job.digest = { ...EMPTY_DIGEST, status: "skipped", error: "OPENAI_API_KEY not configured" }; return; }
     if (ready.length === 0) { job.digest = { ...EMPTY_DIGEST, status: "skipped", error: "no successfully extracted sources" }; return; }
     job.digest.status = "running";
     try {
       const d = await digestAndStore({ apiKey: o.openaiKey, model: o.openaiModel, units: ready, request: job.request, context: o.context, fetchImpl: o.fetchImpl, store: o.store });
-      job.digest = { status: "ready", error: null, result: d.result, digestion_prompt_id: d.promptId, stored_artifacts: d.stored, store_error: d.storeError };
+      job.digest = { status: d.storeError ? "failed" : "ready", error: d.storeError, result: d.result, digestion_prompt_id: d.promptId, stored_artifacts: d.stored, store_error: d.storeError };
     } catch (e) {
       job.digest = { ...EMPTY_DIGEST, status: "failed", error: (e as Error).message };
     }
   }
 
   const app = new Hono();
+  app.use("*", bearerAuth({ token: o.token }));
 
   app.post("/imports", async (c) => {
     const raw = await c.req.text();
     if (raw.length > 100_000) return c.json({ error: "body too large" }, 413);
     let body: { links?: unknown; request?: unknown; window_seconds?: unknown };
     try { body = JSON.parse(raw); } catch { return c.json({ error: "invalid JSON" }, 400); }
+    if (!body || typeof body !== "object") return c.json({ error: "body must be an object" }, 400);
     if (!Array.isArray(body.links) || body.links.length === 0 || body.links.length > MAX_LINKS || !body.links.every((l) => typeof l === "string"))
       return c.json({ error: `links must be 1-${MAX_LINKS} strings` }, 400);
     if (typeof body.request !== "string" || !body.request.trim()) return c.json({ error: "request (Digestion Prompt text) is required" }, 400);
