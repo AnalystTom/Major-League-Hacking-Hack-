@@ -1,8 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { IngestedUnit, Project } from "../../src/ingest/types.js";
-
-export const PROJECT_A: Project = { id: randomUUID(), version: 1, name: "Agent app", goal: "ship evals", tools: ["TypeScript"], agents: ["codex"] };
-export const PROJECT_B: Project = { id: randomUUID(), version: 1, name: "Other app", goal: null, tools: [], agents: [] };
+import type { IngestedUnit } from "../../src/ingest/types.js";
 
 export function pendingUnit(videoId: string, start: number | null = null): IngestedUnit {
   return {
@@ -14,7 +11,7 @@ export function pendingUnit(videoId: string, start: number | null = null): Inges
 
 /** Routes Gemini, YouTube oEmbed and OpenAI calls to canned replies and counts them. */
 export function mockFetch(opts: { failVideo?: string; digestStatus?: () => number; title?: string | null } = {}) {
-  const calls = { gemini: 0, openai: 0, oembed: 0 };
+  const calls = { gemini: 0, openai: 0, oembed: 0, lastDigestRequest: null as unknown };
   const impl = (async (url: string, init?: { body?: string }) => {
     const u = String(url);
     if (u.includes("oembed")) {
@@ -36,6 +33,7 @@ export function mockFetch(opts: { failVideo?: string; digestStatus?: () => numbe
       const status = opts.digestStatus?.() ?? 200;
       if (status !== 200) return new Response("boom", { status });
       const sent = JSON.parse(JSON.parse(init!.body!).messages[1].content);
+      calls.lastDigestRequest = sent;
       const units = sent.units as { id: string; evidence_items: { start_seconds: number; end_seconds: number }[] }[];
       return Response.json({ choices: [{ message: { content: JSON.stringify({
         artifacts: [{ name: "topic", source_ids: units.map((x) => x.id), category: "c", processed_text: "t", selection_reason: "r",

@@ -1,12 +1,13 @@
 # Ingestion (workflow 1)
 
-Node-only. Extracts supplied YouTube videos with Gemini, then digests them for a project with the Digestion Prompt.
+Node-only. Extracts supplied YouTube videos with Gemini, then digests them with the Digestion Prompt. There is no
+project: extraction and digests are shared, so a video imported by several users is read and digested once.
 Mounted by `src/index.ts` at `/api/ingest` when `GEMINI_API_KEY` is set (and then `INGEST_TOKEN` is required, or startup fails).
 
 | Route | Purpose |
 | --- | --- |
-| `POST /api/ingest/process` | The processor contract: `{ unit_ids, project }` -> `202`. Claims pending units, extracts them, digests ready units for the project. Safe to repeat. |
-| `POST /api/ingest/imports`, `GET /api/ingest/imports/:id` | Dev tool: submit links directly and watch per-link state. Uses an in-memory job map; answers 503 unless `PROJECT_CONTEXT` points at a project brief. |
+| `POST /api/ingest/process` | The processor contract: `{ unit_ids }` -> `202`. Claims pending units, extracts them, digests ready units that have no digest yet. Safe to repeat. |
+| `POST /api/ingest/imports`, `GET /api/ingest/imports/:id` | Dev tool: submit links directly and watch per-link state. Uses an in-memory job map. |
 
 Every route needs `Authorization: Bearer $INGEST_TOKEN`. The web Worker sends its `PROCESSOR_TOKEN`, so set both to the same secret.
 
@@ -19,8 +20,7 @@ Every route needs `Authorization: Bearer $INGEST_TOKEN`. The web Worker sends it
 | `DIGESTION_REQUEST` | Categorization request stored with each Digestion Prompt revision. |
 | `DATABASE_URL` | Postgres/TigerData. Enables the sweep; without it records stay in memory. |
 | `SWEEP_INTERVAL_MS` | Pending-unit sweep interval (default 60000). |
-| `PROJECT_CONTEXT` | Path to a project brief JSON (`name`, `goal`, `tools`, `agents`). Needed by the CLI and the dev `/imports` route only; `/process` takes the project from the request. |
 
 Behavior: pending units are claimed atomically (`UPDATE ... WHERE status = 'pending'`); a `ready` unit is never re-extracted;
-a unit is digested once per project id + version; a failed digest is stored as a failed artifact with its error and retried
-by the next request. Migration `004_artifact_revisions.sql` makes `(id, version)` the artifact key and freezes a ready revision (not yet applied to TigerData).
+a unit is digested once (skipped when it already has a non-failed artifact or an exclusion); artifacts are written with
+`project_context_id` null; a failed digest is stored as a failed artifact with its error and retried by the next request.

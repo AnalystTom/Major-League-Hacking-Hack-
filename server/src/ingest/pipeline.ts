@@ -6,7 +6,7 @@ import { fetchTitle } from "./extract/title.js";
 import { runDigestion, type DigestOptions } from "./digest/run.js";
 import { promptRevisionText } from "./digest/prompt.js";
 import type { Store } from "./store.js";
-import type { IngestedUnit, ProjectRef, StoredArtifact } from "./types.js";
+import type { IngestedUnit, StoredArtifact } from "./types.js";
 
 export interface IngestOptions {
   geminiKey: string;
@@ -68,16 +68,15 @@ export interface DigestAndStoreOptions extends DigestOptions {
   store: Store;
 }
 
-/** Runs the Digestion Prompt, registers its revision, and stores artifacts and exclusions tied to that revision and project. */
+/** Runs the Digestion Prompt, registers its revision, and stores artifacts and exclusions tied to that revision. */
 export async function digestAndStore(o: DigestAndStoreOptions) {
   const result = await runDigestion(o);
-  const project: ProjectRef | null = o.context.id && o.context.version != null ? { id: o.context.id, version: o.context.version } : null;
   let promptId: string | null = null;
   let stored: StoredArtifact[] | null = null;
   let storeError: string | null = null;
   try {
     promptId = await o.store.registerPrompt(promptRevisionText(o.request), o.fewShot ?? []);
-    stored = await o.store.saveArtifacts(result.artifacts, result.exclusions, promptId, project);
+    stored = await o.store.saveArtifacts(result.artifacts, result.exclusions, promptId);
   } catch (e) {
     storeError = (e as Error).message;
   }

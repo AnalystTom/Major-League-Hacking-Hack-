@@ -1,9 +1,0 @@
-{
-  "_note": "PLACEHOLDER - not a real project. Used only by the dev /imports route and the CLI. The processor takes the real project from the request or user_imports.",
-  "id": null,
-  "version": null,
-  "name": "PLACEHOLDER PROJECT",
-  "goal": null,
-  "tools": [],
-  "agents": []
-}

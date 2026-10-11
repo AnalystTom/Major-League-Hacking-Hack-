@@ -3,7 +3,6 @@
 import { serve } from "@hono/node-server";
 import pg from "pg";
 import { createApp, parseOrigins } from "./app.js";
-import { readProjectContext } from "./ingest/context.js";
 import { createIngestApp } from "./ingest/api.js";
 import { startSweep } from "./ingest/processor.js";
 import { MemoryStore, PgStore } from "./ingest/store.js";
@@ -14,11 +13,9 @@ const app = createApp({ webOrigins: parseOrigins(process.env.WEB_ORIGINS) });
 // It spends provider keys, so it is mounted only when GEMINI_API_KEY is set, and then INGEST_TOKEN is required:
 // callers must send it as a Bearer token (the web Worker sends its PROCESSOR_TOKEN, which must equal this).
 // DATABASE_URL selects Postgres and enables the pending-unit sweep; otherwise records stay in memory.
-// PROJECT_CONTEXT is optional here: it only feeds the dev /imports route, never /process.
 if (process.env.GEMINI_API_KEY) {
   const token = process.env.INGEST_TOKEN;
   if (!token) throw new Error("INGEST_TOKEN is required when ingestion is enabled");
-  const context = process.env.PROJECT_CONTEXT ? await readProjectContext(process.env.PROJECT_CONTEXT) : undefined;
   const pool = process.env.DATABASE_URL ? new pg.Pool({ connectionString: process.env.DATABASE_URL }) : null;
   const options = {
     token,
@@ -29,7 +26,6 @@ if (process.env.GEMINI_API_KEY) {
     openaiModel: process.env.OPENAI_MODEL,
     categorizationRequest: process.env.DIGESTION_REQUEST,
     store: pool ? new PgStore(pool) : new MemoryStore(),
-    context,
     log: (m: string) => console.log(`[ingest] ${m}`),
   };
   app.route("/api/ingest", createIngestApp(options));

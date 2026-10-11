@@ -21,17 +21,6 @@ export const ModelExtraction = z.object({
 });
 export type ModelExtraction = z.infer<typeof ModelExtraction>;
 
-/** The project brief a digest is matched against. id/version are null only for local dev runs. */
-export interface Project {
-  id: string | null;
-  version: number | null;
-  name: string;
-  goal: string | null;
-  tools: string[];
-  agents: string[];
-}
-export interface ProjectRef { id: string; version: number }
-
 export interface IngestedUnit {
   id: string;
   submittedUrl: string;

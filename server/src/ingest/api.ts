@@ -5,7 +5,7 @@ import { z } from "zod";
 import { MAX_WINDOW_SECONDS, MIN_WINDOW_SECONDS } from "./extract/gemini.js";
 import { digestAndStore, ingestLink } from "./pipeline.js";
 import { processUnits, type ProcessorOptions } from "./processor.js";
-import type { DigestOutput, IngestedUnit, Project, StoredArtifact } from "./types.js";
+import type { DigestOutput, IngestedUnit, StoredArtifact } from "./types.js";
 
 interface ImportJob {
   id: string;
@@ -26,23 +26,11 @@ interface ImportJob {
 export interface ApiOptions extends ProcessorOptions {
   /** Bearer token callers must send; the web Worker sends its PROCESSOR_TOKEN. */
   token: string;
-  /** Project brief for the dev /imports route only. /process takes the real project from the request. */
-  context?: Project;
 }
 
 const Uuid = z.string().uuid();
-const ProcessRequest = z.object({
-  unit_ids: z.array(Uuid).min(1).max(10),
-  project: z.object({
-    id: Uuid,
-    version: z.number().int().min(1),
-    name: z.string().min(1).max(200),
-    goal: z.string().max(2000).nullable().optional(),
-    tools: z.array(z.string().max(100)).max(50).default([]),
-    agents: z.array(z.string().max(100)).max(20).default([]),
-  }).nullable(),
-});
-
+// Unknown keys (an older caller's `project`) are stripped, not rejected.
+const ProcessRequest = z.object({ unit_ids: z.array(Uuid).min(1).max(10) });
 
 const MAX_LINKS = 20;
 const EMPTY_DIGEST = { error: null, result: null, digestion_prompt_id: null, stored_artifacts: null, store_error: null } as const;
@@ -78,7 +66,7 @@ export function createIngestApp(o: ApiOptions): Hono {
     if (ready.length === 0) { job.digest = { ...EMPTY_DIGEST, status: "skipped", error: "no successfully extracted sources" }; return; }
     job.digest.status = "running";
     try {
-      const d = await digestAndStore({ apiKey: o.openaiKey, model: o.openaiModel, units: ready, request: job.request, context: o.context!, fetchImpl: o.fetchImpl, store: o.store });
+      const d = await digestAndStore({ apiKey: o.openaiKey, model: o.openaiModel, units: ready, request: job.request, fetchImpl: o.fetchImpl, store: o.store });
       job.digest = { status: d.storeError ? "failed" : "ready", error: d.storeError, result: d.result, digestion_prompt_id: d.promptId, stored_artifacts: d.stored, store_error: d.storeError };
     } catch (e) {
       job.digest = { ...EMPTY_DIGEST, status: "failed", error: (e as Error).message };
@@ -86,8 +74,6 @@ export function createIngestApp(o: ApiOptions): Hono {
   }
 
   const app = new Hono();
-  app.use("*", bearerAuth({ token: o.token }));
-
   app.use("*", bearerAuth({ token: o.token }));
 
   // The processor contract: reply 202 quickly and work in the background. Duplicate requests are safe
@@ -98,16 +84,15 @@ export function createIngestApp(o: ApiOptions): Hono {
     let json: unknown;
     try { json = JSON.parse(raw); } catch { return c.json({ error: "invalid JSON" }, 400); }
     const parsed = ProcessRequest.safeParse(json);
-    if (!parsed.success) return c.json({ error: "expected { unit_ids: uuid[1-10], project: {id, version, name, goal, tools, agents} | null }" }, 400);
-    const { unit_ids, project } = parsed.data;
-    void processUnits(unit_ids, project && { ...project, goal: project.goal ?? null }, o)
+    if (!parsed.success) return c.json({ error: "expected { unit_ids: uuid[1-10] }" }, 400);
+    const { unit_ids } = parsed.data;
+    void processUnits(unit_ids, o)
       .then((s) => o.log?.(`processed ${unit_ids.length} unit(s): ${JSON.stringify(s)}`))
       .catch((e: Error) => o.log?.(`processing failed: ${e.message}`));
     return c.json({ accepted: unit_ids.length }, 202);
   });
 
   app.post("/imports", async (c) => {
-    if (!o.context) return c.json({ error: "PROJECT_CONTEXT is not configured; the dev /imports route needs a real project brief" }, 503);
     const raw = await c.req.text();
     if (raw.length > 100_000) return c.json({ error: "body too large" }, 413);
     let body: { links?: unknown; request?: unknown; window_seconds?: unknown };

@@ -1,6 +1,6 @@
 import { SYSTEM_PROMPT, buildUserMessage } from "./prompt.js";
 import { validateDigest } from "./validate.js";
-import type { DigestOutput, IngestedUnit, Project } from "../types.js";
+import type { DigestOutput, IngestedUnit } from "../types.js";
 
 export const DEFAULT_DIGEST_MODEL = "gpt-5";
 
@@ -10,7 +10,6 @@ export interface DigestOptions {
   model?: string;
   units: IngestedUnit[];
   request: string;
-  context: Project;
   fewShot?: unknown[];
   fetchImpl?: typeof fetch;
 }
@@ -26,7 +25,7 @@ export async function runDigestion(o: DigestOptions): Promise<DigestOutput> {
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: buildUserMessage(o.units, o.request, o.context, o.fewShot) },
+        { role: "user", content: buildUserMessage(o.units, o.request, o.fewShot) },
       ],
     }),
   });
