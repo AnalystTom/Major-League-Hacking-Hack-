@@ -1,3 +1,4 @@
+import { effortField } from "../../openaiEffort.js";
 import { httpError } from "../../httpError.js";
 import { openaiUsage, recordUsage } from "../../usage.js";
 import { SYSTEM_PROMPT, buildUserMessage } from "./prompt.js";
@@ -57,6 +58,7 @@ async function complete(o: DigestOptions, messages: Message[], cap: number): Pro
     body: JSON.stringify({
       model: o.model ?? DEFAULT_DIGEST_MODEL,
       max_completion_tokens: cap,
+      ...effortField(),
       response_format: { type: "json_object" },
       messages,
     }),

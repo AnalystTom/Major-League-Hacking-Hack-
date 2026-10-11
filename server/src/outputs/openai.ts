@@ -1,4 +1,5 @@
 import { httpError } from "../httpError.js";
+import { effortField } from "../openaiEffort.js";
 import { openaiUsage, recordUsage, type Usage } from "../usage.js";
 import { DEFAULT_DIGEST_MODEL, DEFAULT_MAX_OUTPUT_TOKENS } from "../ingest/digest/run.js";
 import type { OpenAIOptions } from "./types.js";
@@ -15,13 +16,15 @@ export interface ChatJsonOptions extends OpenAIOptions {
 
 /** One JSON-mode chat completion. Throws with the actual HTTP or parse failure. */
 export async function chatJson(o: ChatJsonOptions): Promise<unknown> {
-  const cap = DEFAULT_MAX_OUTPUT_TOKENS;
+  // OPENAI_MAX_OUTPUT_TOKENS, like the digest: a high reasoning effort needs room for its hidden reasoning tokens.
+  const cap = Number(process.env.OPENAI_MAX_OUTPUT_TOKENS) > 0 ? Number(process.env.OPENAI_MAX_OUTPUT_TOKENS) : DEFAULT_MAX_OUTPUT_TOKENS;
   const res = await (o.fetchImpl ?? fetch)("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${o.apiKey}` },
     body: JSON.stringify({
       model: o.model ?? DEFAULT_DIGEST_MODEL,
       max_completion_tokens: cap,
+      ...effortField(),
       response_format: { type: "json_object" },
       messages: [{ role: "system", content: o.system }, { role: "user", content: o.user }],
     }),

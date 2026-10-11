@@ -4,7 +4,7 @@
 import { Hono } from "hono";
 import { bearerAuth } from "hono/bearer-auth";
 import { z } from "zod";
-import { tracked } from "../activity.js";
+import { recordError, tracked } from "../activity.js";
 import { HANDOFF_PROMPT_REVISION, refineHandoff, renderAllPrompts } from "./handoff.js";
 import type { BriefClaim, HandoffStore } from "./handoff-store.js";
 
@@ -58,7 +58,7 @@ export function createHandoffApp(o: HandoffOptions): Hono {
     const parsed = Request.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: "Send { brief_id }." }, 400);
     // Counted in /health's busy count, so a host that sleeps idle containers waits for the brief.
-    tracked(() => runHandoff(parsed.data.brief_id, o)).catch((e: Error) => o.log?.(`handoff ${parsed.data.brief_id} crashed: ${e.message}`));
+    tracked(() => runHandoff(parsed.data.brief_id, o)).catch((e: Error) => { recordError("handoff crashed", e); o.log?.(`handoff ${parsed.data.brief_id} crashed: ${e.message}`); });
     return c.json({ accepted: true }, 202);
   });
   return app;

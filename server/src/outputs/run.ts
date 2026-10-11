@@ -2,6 +2,7 @@
 // Called after each digest and by the sweep, which also picks up claims a crashed processor left behind.
 
 import { generateSkill } from "./skills.js";
+import { recordError } from "../activity.js";
 import { renderArtifact } from "./render/render.js";
 import type { MediaStore } from "./render/media.js";
 import { LostClaim, type Kind, type OutputStore } from "./store.js";
@@ -101,6 +102,7 @@ export function startOutputSweep(o: OutputOptions, intervalMs = 60_000): () => v
       const n = await sweepOutputs(o);
       if (n) o.log?.(`output sweep handled ${n} artifact output(s)`);
     } catch (e) {
+      recordError("output sweep failed", e);
       o.log?.(`output sweep failed: ${(e as Error).message}`);
     } finally {
       running = false;
