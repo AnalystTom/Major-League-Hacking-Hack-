@@ -6,6 +6,8 @@ import { MemoryStore } from "../../src/ingest/store.js";
 import { mockFetch } from "./helpers.js";
 import type { IngestedUnit } from "../../src/ingest/types.js";
 
+process.env.TWITTERAPI_MIN_INTERVAL_MS = "0"; // no pacing in tests
+
 const POST = "1850000000000000001";
 
 function xUnit(): IngestedUnit {
@@ -75,4 +77,29 @@ test("X posts fail with the real reason: missing key, unavailable post, API erro
     assert.match(saved.error ?? "", error);
     assert.equal(store.artifacts.length, 0);
   }
+});
+
+test("a 429 from twitterapi.io is retried and the post is then read", async () => {
+  const store = new MemoryStore();
+  const unit = xUnit();
+  await store.saveUnit(unit);
+  let n = 0;
+  const { fetchImpl, x } = withX(() => n++ < 2
+    ? new Response(JSON.stringify({ error: "Too Many Requests" }), { status: 429 })
+    : Response.json({ status: "success", message: "success", tweets: [{ id: POST, text: "Hello", author: { userName: "someone" } }] }));
+  await processUnits([unit.id], opts(store, fetchImpl, "tok"));
+  assert.equal((await store.getUnits([unit.id]))[0].status, "ready");
+  assert.equal(x.calls, 3);
+});
+
+test("a 429 that never clears fails with the real error after the retries", async () => {
+  const store = new MemoryStore();
+  const unit = xUnit();
+  await store.saveUnit(unit);
+  const { fetchImpl, x } = withX(() => new Response("Too Many Requests", { status: 429 }));
+  await processUnits([unit.id], opts(store, fetchImpl, "tok"));
+  const saved = (await store.getUnits([unit.id]))[0];
+  assert.equal(saved.status, "failed");
+  assert.match(saved.error ?? "", /twitterapi.io HTTP 429/);
+  assert.equal(x.calls, 4);
 });
