@@ -4,6 +4,7 @@ import type { DigestArtifact, IngestedUnit, StoredArtifact } from "./types.js";
 import { remaining, resumesAt, type Limits } from "./limits.js";
 
 export interface Claimed { claimed: IngestedUnit[]; deferred: string[]; resumesAt: Date | null }
+export interface Reserved { allowed: string[]; deferred: string[]; resumesAt: Date | null }
 import { STALE_CLAIM_MINUTES } from "../claims.js";
 
 type Exclusion = { unit_id: string; reason: string };
@@ -22,6 +23,12 @@ export interface Store {
    * when the limit runs out, marks the requested pending units it couldn't claim as deferred until room opens up.
    */
   claimWithinLimits(ids: string[], limits: Limits): Promise<Claimed>;
+  /**
+   * Of these ready units about to be digested, the ones the limits allow. The first digest after a unit's
+   * extraction is covered by the extraction's charge; any other digest (a shared video digested for someone else,
+   * a retry) takes a slot. Units without room are marked deferred until it opens up.
+   */
+  reserveDigests(ids: string[], limits: Limits): Promise<Reserved>;
   /** Pending units that some user has imported (dev-route units nobody imported are left alone). */
   listPendingUnitIds(limit: number): Promise<string[]>;
   /**
@@ -45,8 +52,8 @@ export class MemoryStore implements Store {
   artifacts: StoredArtifact[] = [];
   exclusions: (Exclusion & { promptId: string | null })[] = [];
   prompts: { id: string; revision: number; promptText: string; fewShot: unknown[] }[] = [];
-  /** When each unit was last claimed, for the processing limits; and when deferred ones may start. */
-  claimedAt = new Map<string, Date>();
+  /** The processing_starts ledger the limits count, and when deferred units may start. */
+  starts: { unitId: string; kind: "extract" | "digest"; charged: boolean; at: Date }[] = [];
   deferredUntil = new Map<string, Date>();
   /** Test/dev stand-in for user_imports: units some user has imported. */
   imported = new Set<string>();
@@ -62,23 +69,43 @@ export class MemoryStore implements Store {
       const running = { ...u, status: "running" as const };
       this.units.set(u.id, running);
       claimed.push(running);
-      this.claimedAt.set(u.id, new Date());
     }
     return claimed;
   }
-  async claimWithinLimits(ids: string[], limits: Limits): Promise<Claimed> {
-    const now = new Date();
+  private used(now: Date) {
     const day = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
     const month = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
-    const at = [...this.claimedAt.values()].map((d) => d.getTime());
-    const used = { today: at.filter((t) => t >= day).length, month: at.filter((t) => t >= month).length };
+    const charged = this.starts.filter((e) => e.charged).map((e) => e.at.getTime());
+    return { today: charged.filter((t) => t >= day).length, month: charged.filter((t) => t >= month).length };
+  }
+  async claimWithinLimits(ids: string[], limits: Limits): Promise<Claimed> {
+    const now = new Date();
+    const used = this.used(now);
     const room = remaining(limits, used);
     const claimed = room > 0 ? await this.claimPendingUnits(ids, Math.min(50, room)) : [];
+    for (const u of claimed) { this.starts.push({ unitId: u.id, kind: "extract", charged: true, at: now }); this.deferredUntil.delete(u.id); }
     if (claimed.length < room) return { claimed, deferred: [], resumesAt: null };
     const until = resumesAt(limits, { today: used.today + claimed.length, month: used.month + claimed.length }, now);
     const deferred = ids.filter((id) => this.units.get(id)?.status === "pending");
     deferred.forEach((id) => this.deferredUntil.set(id, until));
     return { claimed, deferred, resumesAt: deferred.length ? until : null };
+  }
+  async reserveDigests(ids: string[], limits: Limits): Promise<Reserved> {
+    const now = new Date();
+    const used = this.used(now);
+    const last = (id: string) => this.starts.filter((e) => e.unitId === id).at(-1);
+    const covered = ids.filter((id) => last(id)?.kind === "extract");
+    const charged = ids.filter((id) => last(id)?.kind !== "extract");
+    const room = remaining(limits, used);
+    const allowedCharged = charged.slice(0, room === Infinity ? charged.length : room);
+    const deferred = charged.slice(allowedCharged.length);
+    for (const id of covered) this.starts.push({ unitId: id, kind: "digest", charged: false, at: now });
+    for (const id of allowedCharged) this.starts.push({ unitId: id, kind: "digest", charged: true, at: now });
+    const allowed = [...covered, ...allowedCharged];
+    allowed.forEach((id) => this.deferredUntil.delete(id));
+    const until = deferred.length ? resumesAt(limits, { today: used.today + allowedCharged.length, month: used.month + allowedCharged.length }, now) : null;
+    if (until) deferred.forEach((id) => this.deferredUntil.set(id, until));
+    return { allowed: ids.filter((id) => allowed.includes(id)), deferred, resumesAt: until };
   }
   async listPendingUnitIds(limit: number) {
     return [...this.units.values()].filter((u) => u.status === "pending" && this.imported.has(u.id)).slice(0, limit).map((u) => u.id);
@@ -155,6 +182,14 @@ const UNSEEN_BY = (user: string) => `NOT EXISTS (
 const UTC_DAY = `(date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')`;
 const UTC_MONTH = `(date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')`;
 
+/** Charged starts today and this month (UTC), from the processing_starts ledger. */
+async function usedSlots(client: pg.PoolClient) {
+  const { rows: [c] } = await client.query(
+    `SELECT count(*) FILTER (WHERE created_at >= ${UTC_DAY})::int AS today, count(*)::int AS month
+     FROM processing_starts WHERE charged AND created_at >= ${UTC_MONTH}`);
+  return { today: c.today as number, month: c.month as number };
+}
+
 export class PgStore implements Store {
   private pool: pg.Pool;
   constructor(pool: pg.Pool) { this.pool = pool; }
@@ -193,10 +228,7 @@ export class PgStore implements Store {
       await client.query("BEGIN");
       // One claimer at a time counts and claims, so concurrent requests can't both take the last slot.
       await client.query(`SELECT pg_advisory_xact_lock(hashtext('resurface:processing-limits'))`);
-      const { rows: [c] } = await client.query(
-        `SELECT count(*) FILTER (WHERE claimed_at >= ${UTC_DAY})::int AS today, count(*)::int AS month
-         FROM ingested_units WHERE claimed_at >= ${UTC_MONTH}`);
-      const used = { today: c.today as number, month: c.month as number };
+      const used = await usedSlots(client);
       const room = remaining(limits, used);
       const { rows } = room > 0
         ? await client.query(
@@ -205,6 +237,9 @@ export class PgStore implements Store {
                           ORDER BY created_at LIMIT $2 FOR UPDATE SKIP LOCKED)
              RETURNING *`, [ids, Math.min(50, room)])
         : { rows: [] };
+      if (rows.length) {
+        await client.query(`INSERT INTO processing_starts (unit_id, kind, charged) SELECT unnest($1::uuid[]), 'extract', true`, [rows.map((r) => r.id)]);
+      }
       let deferred: string[] = [];
       let until: Date | null = null;
       if (rows.length >= room) {
@@ -215,6 +250,43 @@ export class PgStore implements Store {
       }
       await client.query("COMMIT");
       return { claimed: rows.map(rowToUnit), deferred, resumesAt: deferred.length ? until : null };
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
+  async reserveDigests(ids: string[], limits: Limits): Promise<Reserved> {
+    if (ids.length === 0) return { allowed: [], deferred: [], resumesAt: null };
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(`SELECT pg_advisory_xact_lock(hashtext('resurface:processing-limits'))`);
+      const used = await usedSlots(client);
+      // Covered: the unit's latest start is its extraction, so this is the digest that extraction paid for.
+      const { rows } = await client.query(
+        `SELECT u.id, (SELECT e.kind FROM processing_starts e WHERE e.unit_id = u.id ORDER BY e.created_at DESC, e.id DESC LIMIT 1) = 'extract' AS covered
+         FROM unnest($1::uuid[]) WITH ORDINALITY AS u(id, n) ORDER BY u.n`, [ids]);
+      const covered = rows.filter((r) => r.covered).map((r) => r.id as string);
+      const charged = rows.filter((r) => !r.covered).map((r) => r.id as string);
+      const room = remaining(limits, used);
+      const allowedCharged = charged.slice(0, room === Infinity ? charged.length : room);
+      const deferred = charged.slice(allowedCharged.length);
+      await client.query(
+        `INSERT INTO processing_starts (unit_id, kind, charged)
+         SELECT id, 'digest', false FROM unnest($1::uuid[]) AS id UNION ALL SELECT id, 'digest', true FROM unnest($2::uuid[]) AS id`,
+        [covered, allowedCharged]);
+      const allowed = new Set([...covered, ...allowedCharged]);
+      await client.query(`UPDATE ingested_units SET deferred_until = NULL WHERE id = ANY($1::uuid[]) AND deferred_until IS NOT NULL`, [[...allowed]]);
+      let until: Date | null = null;
+      if (deferred.length) {
+        until = resumesAt(limits, { today: used.today + allowedCharged.length, month: used.month + allowedCharged.length }, new Date());
+        await client.query(`UPDATE ingested_units SET deferred_until = $2 WHERE id = ANY($1::uuid[])`, [deferred, until]);
+      }
+      await client.query("COMMIT");
+      return { allowed: ids.filter((id) => allowed.has(id)), deferred, resumesAt: until };
     } catch (e) {
       await client.query("ROLLBACK");
       throw e;
