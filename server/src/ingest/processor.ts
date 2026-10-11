@@ -48,10 +48,10 @@ async function waitForSettled(ids: string[], o: ProcessorOptions): Promise<Inges
  * not re-extracted, and a unit that already has a digest (or was excluded) is skipped.
  */
 export function processUnits(unitIds: string[], o: ProcessorOptions): Promise<ProcessSummary> {
-  return tracked(() => process(unitIds, o));
+  return tracked(() => processNow(unitIds, o));
 }
 
-async function process(unitIds: string[], o: ProcessorOptions): Promise<ProcessSummary> {
+async function processNow(unitIds: string[], o: ProcessorOptions): Promise<ProcessSummary> {
   const summary: ProcessSummary = { extracted: { ready: 0, failed: 0 }, waitedFor: 0, digested: 0, skipped: null };
 
   const claimed = await o.store.claimPendingUnits(unitIds);
