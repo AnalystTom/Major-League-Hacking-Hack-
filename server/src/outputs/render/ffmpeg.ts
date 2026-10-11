@@ -48,6 +48,13 @@ export async function probe(path: string): Promise<Probe> {
   };
 }
 
+/** About 34 bold capitals fit across the frame at the header size, so a long category gets its own clipped line. */
+export function headerText(category: string | null, max = 34): string {
+  const cat = (category ?? "").replace(/\s+/g, " ").trim().toUpperCase();
+  if (!cat) return "RESURFACE";
+  return `RESURFACE\n${cat.length > max ? `${cat.slice(0, max - 1).trimEnd()}…` : cat}`;
+}
+
 export interface ComposeInput {
   dir: string;
   /** One WAV per scene, in order. */
@@ -64,7 +71,7 @@ export async function composeShort(c: ComposeInput): Promise<{ mp4: string; narr
   const gap = (c.slots[0].end - c.slots[0].speechEnd).toFixed(3);
 
   const header = join(c.dir, "header.txt");
-  await writeFile(header, `RESURFACE${c.category ? `  ·  ${c.category.toUpperCase().slice(0, 40)}` : ""}`);
+  await writeFile(header, headerText(c.category));
   const texts = await Promise.all(c.onScreen.map(async (t, i) => {
     const p = join(c.dir, `scene-${i}.txt`);
     await writeFile(p, wrap(t, 16));
@@ -80,7 +87,7 @@ export async function composeShort(c: ComposeInput): Promise<{ mp4: string; narr
   });
   const video = [
     "[0:v]drawbox=x=96:y=200:w=140:h=12:color=0x7C5CFF:t=fill",
-    `drawtext=${font}:textfile='${header}':expansion=none:fontsize=38:fontcolor=0xB8C0CC:x=96:y=240`,
+    `drawtext=${font}:textfile='${header}':expansion=none:fontsize=36:fontcolor=0xB8C0CC:line_spacing=14:x=96:y=240`,
     ...scenes,
   ].join(",") + "[vout]";
 
