@@ -84,7 +84,8 @@ export function validateSkill(raw: unknown, a: ReadyArtifact): { name: string; d
     for (const e of item.applicability_evidence) {
       if (e.start_seconds === undefined && e.end_seconds === undefined) continue;
       const lo = e.start_seconds ?? e.end_seconds!, hi = e.end_seconds ?? e.start_seconds!;
-      if (!a.evidence.some((x) => x.source_id === e.source_id && x.start_seconds <= hi && lo <= x.end_seconds)) {
+      // Evidence without seconds (a Substack section) can't vouch for a moment.
+      if (!a.evidence.some((x) => x.source_id === e.source_id && x.start_seconds !== undefined && x.end_seconds !== undefined && x.start_seconds <= hi && lo <= x.end_seconds)) {
         throw new Error(`task "${item.task}" cites ${lo}-${hi}s, which isn't in the artifact's evidence`);
       }
     }

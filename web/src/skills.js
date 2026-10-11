@@ -63,8 +63,8 @@ export function serializeSkill(row) {
   const retrying = willRetry(row);
   const ready = row.status === "ready" && typeof row.skill_markdown === "string";
   const { name, description } = ready ? frontmatter(row.skill_markdown) : { name: null, description: null };
-  // The artifact's sources: YouTube videos and X posts, only in their canonical forms.
-  const videos = (row.videos ?? []).filter((v) => /^https:\/\/(?:www\.youtube\.com\/watch\?v=[\w-]{11}|x\.com\/i\/status\/\d{1,19})$/.test(v.url));
+  // The artifact's sources: YouTube videos, X posts and Substack posts, only in their canonical forms.
+  const videos = (row.videos ?? []).filter((v) => /^https:\/\/(?:www\.youtube\.com\/watch\?v=[\w-]{11}|x\.com\/i\/status\/\d{1,19}|[a-z0-9-]+\.substack\.com\/p\/[\w-]+)$/.test(v.url));
   return {
     id: row.id,
     status: row.status,

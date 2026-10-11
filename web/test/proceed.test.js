@@ -43,7 +43,7 @@ test("parseImport validates, reports every bad line, and de-duplicates", () => {
   assert.deepEqual(bad.invalid.map((i) => i.link), ["https://vimeo.com/1"]);
 
   assert.equal(parseImport({ links: [] }).status, 400);
-  assert.equal(parseImport({ links: Array(121).fill("https://youtu.be/VQy50fuxI34") }).status, 400);
+  assert.equal(parseImport({ links: Array(141).fill("https://youtu.be/VQy50fuxI34") }).status, 400);
   assert.equal(parseImport({ links: "https://youtu.be/VQy50fuxI34", company: "bot" }).status, 202);
   assert.equal(parseImport({ links: [`https://youtu.be/VQy50fuxI34?x=${"a".repeat(3000)}`] }).status, 400);
   assert.equal(parseImport({ links: Array(1000).fill("") }).status, 400);
@@ -228,4 +228,39 @@ test("a unit held back by the processing limit says when it starts, and counts a
   const ready = { ...row, status: "ready", exclusions: [], artifacts: [] };
   assert.equal(describeUnit({ ...ready, deferred_until: "2026-10-12T00:00:00Z" }, now).stage, "limited");
   assert.equal(describeUnit({ ...ready, deferred_until: null }, now).stage, "digesting");
+});
+
+test("canonicalises Substack post links and rejects non-posts", async () => {
+  const { parseSubstackLink } = await import("../src/substack.js");
+  for (const input of [
+    "https://newsletter.substack.com/p/evals-first?utm_source=share&r=1#comments",
+    "newsletter.substack.com/p/evals-first",
+    "https://open.substack.com/pub/newsletter/p/evals-first?r=2",
+  ]) {
+    const r = parseSubstackLink(input);
+    assert.equal(r.ok, true, input);
+    assert.deepEqual(r.value, { submitted_url: input, source_url: "https://newsletter.substack.com/p/evals-first", start_seconds: null, content_type: "substack_post" });
+  }
+  for (const input of ["https://newsletter.substack.com/", "https://newsletter.substack.com/archive", "https://substack.com/@someone", "https://www.substack.com/p/x", "not a link"]) {
+    assert.equal(parseSubstackLink(input).ok, false, input);
+  }
+});
+
+test("parseImport accepts YouTube and Substack together and de-duplicates posts", () => {
+  const r = parseImport({ links: "https://youtu.be/VQy50fuxI34\nhttps://a.substack.com/p/x?r=1\nhttps://a.substack.com/p/x#c" });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.value.links.map((l) => [l.content_type ?? "youtube_video", l.source_url]), [
+    ["youtube_video", "https://www.youtube.com/watch?v=VQy50fuxI34"],
+    ["substack_post", "https://a.substack.com/p/x"],
+  ]);
+  const bad = parseImport({ links: ["https://a.substack.com/", "https://vimeo.com/1"] });
+  assert.equal(bad.ok, false);
+  assert.equal(bad.invalid.length, 2);
+});
+
+test("parseImport caps Substack posts at 20 independently of videos and X posts", () => {
+  const posts = (n) => Array.from({ length: n }, (_, i) => `https://pub.substack.com/p/post-${i}`);
+  const yt = Array.from({ length: 20 }, (_, i) => `https://www.youtube.com/watch?v=${String(i).padStart(11, "a")}`);
+  assert.equal(parseImport({ links: [...yt, ...posts(20)] }).ok, true);
+  assert.match(parseImport({ links: posts(21) }).error, /at most 20 Substack/);
 });

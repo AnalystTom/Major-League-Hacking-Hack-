@@ -28,7 +28,7 @@ export const PROCESSOR = {
   unavailable: "Your links are saved, but processing didn't answer. They're waiting in the queue.",
 };
 
-const OPENABLE = /^https:\/\/(?:www\.youtube\.com\/watch\?v=[\w-]{11}|x\.com\/i\/status\/\d{1,19})$/;
+const OPENABLE = /^https:\/\/(?:www\.youtube\.com\/watch\?v=[\w-]{11}|x\.com\/i\/status\/\d{1,19}|[a-z0-9-]+\.substack\.com\/p\/[\w-]+)$/;
 
 export function renderUnits(list, units) {
   list.replaceChildren(
@@ -39,7 +39,7 @@ export function renderUnits(list, units) {
       if (OPENABLE.test(u.source_url)) name.href = u.source_url;
       name.target = "_blank";
       name.rel = "noopener noreferrer";
-      name.textContent = u.title || u.source_url.replace(/^https:\/\/www\./, "");
+      name.textContent = u.title || u.source_url.replace(/^https:\/\/(?:www\.)?/, "");
       const stage = document.createElement("span");
       stage.className = "unit-stage";
       stage.textContent = STAGE[u.stage] ?? u.stage;

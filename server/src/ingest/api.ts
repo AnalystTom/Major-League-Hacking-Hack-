@@ -43,7 +43,7 @@ const EMPTY_DIGEST = { error: null, result: null, digestion_prompt_id: null, sto
 function view(job: ImportJob) {
   return {
     id: job.id,
-    links: job.units.map((u) => ({ id: u.id, submitted_url: u.submittedUrl, source_url: u.sourceUrl, start_seconds: u.startSeconds, status: u.status, error: u.error,
+    links: job.units.map((u) => ({ id: u.id, submitted_url: u.submittedUrl, source_url: u.sourceUrl, start_seconds: u.startSeconds, content_type: u.contentType, status: u.status, error: u.error,
       title: u.title, extraction_method: u.extractionMethod, extracted_at: u.extractedAt,
       // API-only: the unreviewed model extraction (ingested_units.transcript) and items validation dropped.
       extraction: u.transcript,
@@ -113,7 +113,7 @@ export function createIngestApp(o: ApiOptions): Hono {
       const links = body.links as string[];
       const job: ImportJob = {
         id: randomUUID(), request: body.request,
-        units: links.map((l) => ({ id: randomUUID(), submittedUrl: l, sourceUrl: l, startSeconds: null, title: null, transcript: null, extractionMethod: null, extractedAt: null, status: "pending", error: null })),
+        units: links.map((l) => ({ id: randomUUID(), submittedUrl: l, sourceUrl: l, startSeconds: null, title: null, contentType: "youtube_video", transcript: null, extractionMethod: null, extractedAt: null, status: "pending", error: null })),
         digest: { ...EMPTY_DIGEST, status: "pending" },
       };
       jobs.set(job.id, job);

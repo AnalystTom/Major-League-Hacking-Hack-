@@ -21,7 +21,13 @@ export const ModelExtraction = z.object({
 });
 export type ModelExtraction = z.infer<typeof ModelExtraction>;
 
-export type ContentType = "youtube_video" | "x_post";
+export type ContentType = "youtube_video" | "x_post" | "substack_post";
+
+/** A numbered chunk of a text source; digests cite it by `index`. */
+export interface TextSection { index: number; text: string }
+export type VideoTranscript = { overview?: string; window: [number, number]; evidence_items: EvidenceItem[] };
+export type TextTranscript = { overview?: string; sections: TextSection[] };
+export const isTextTranscript = (t: unknown): t is TextTranscript => !!t && typeof t === "object" && "sections" in t;
 
 export interface IngestedUnit {
   id: string;
@@ -31,8 +37,8 @@ export interface IngestedUnit {
   title: string | null;
   /** What kind of source this is; absent means a YouTube video. Stored in ingested_units.content_type. */
   contentType?: ContentType;
-  /** Timestamped, validated segments; stored in ingested_units.transcript. */
-  transcript: { overview?: string; window: [number, number]; evidence_items: EvidenceItem[] } | null;
+  /** Validated segments (video; X posts sit at second 0) or numbered text sections (Substack); stored in ingested_units.transcript. */
+  transcript: VideoTranscript | TextTranscript | null;
   extractionMethod: string | null;
   extractedAt: Date | null;
   status: ProcessingStatus;
@@ -49,7 +55,11 @@ export const DigestArtifact = z.object({
   source_ids: z.array(Uuid).min(1),
   category: z.string().min(1),
   processed_text: z.string().min(1),
-  evidence: z.array(z.object({ source_id: Uuid, start_seconds: z.number().int(), end_seconds: z.number().int(), passage: z.string() })).min(1),
+  // Video evidence cites a time range; Substack evidence cites a section number. validateDigest checks the right one per unit.
+  evidence: z.array(z.object({
+    source_id: Uuid, passage: z.string(),
+    start_seconds: z.number().int().optional(), end_seconds: z.number().int().optional(), section: z.number().int().nonnegative().optional(),
+  })).min(1),
   selection_reason: z.string().min(1),
 });
 export type DigestArtifact = z.infer<typeof DigestArtifact>;

@@ -23,7 +23,7 @@ export function parseYouTubeLink(input) {
     return { ok: false, error: "That isn't a link." };
   }
   const host = url.hostname.toLowerCase();
-  if (!HOSTS.has(host)) return { ok: false, error: "Only YouTube video and X post links are supported for now." };
+  if (!HOSTS.has(host)) return { ok: false, error: "Only YouTube video, X post and Substack post links are supported for now." };
 
   let id = null;
   if (host === "youtu.be") id = url.pathname.slice(1).split("/")[0];

@@ -20,7 +20,8 @@ export type SourceRef = { url: string; title: string | null };
 export const sourceRefs = (sources: { url: string; title?: string | null }[] | null | undefined): SourceRef[] =>
   (sources ?? []).map((s) => ({ url: s.url, title: s.title ?? null }));
 
-export interface ArtifactEvidence { source_id: string; start_seconds: number; end_seconds: number; passage: string }
+// Video and X post evidence cites seconds; Substack evidence cites a numbered section.
+export interface ArtifactEvidence { source_id: string; start_seconds?: number; end_seconds?: number; section?: number; passage: string }
 
 /** One ready artifact revision, the input to both outputs. */
 export interface ReadyArtifact {

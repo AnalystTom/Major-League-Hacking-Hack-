@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { isXUrl, parseXPostUrl, parseYouTubeUrl } from "./urls.js";
+import { isXUrl, parseSourceUrl, parseXPostUrl } from "./urls.js";
+import { extractWithNimble } from "./extract/nimble.js";
 import { extractXPost, X_POST_METHOD } from "./extract/xpost.js";
 import { extractWithGemini, windowFor, GEMINI_MODEL } from "./extract/gemini.js";
 import { applyValidation, validateExtraction } from "./extract/validate.js";
@@ -13,6 +14,8 @@ export interface IngestOptions {
   geminiKey: string;
   /** twitterapi.io key; without it X posts fail with a clear error instead of being skipped. */
   twitterApiKey?: string;
+  /** Nimble key; without it Substack posts fail with a clear error. */
+  nimbleKey?: string;
   store: Store;
   windowSeconds?: number;
   geminiModel?: string;
@@ -26,6 +29,7 @@ export interface IngestOptions {
  */
 export async function extractUnit(unit: IngestedUnit, o: IngestOptions): Promise<IngestedUnit> {
   if (unit.contentType === "x_post") return extractXPostUnit(unit, o);
+  if (unit.contentType === "substack_post") return extractSubstackUnit(unit, o);
   let out: IngestedUnit = { ...unit, extractionMethod: `gemini:${o.geminiModel ?? GEMINI_MODEL}` };
   try {
     const window = windowFor(unit.startSeconds, o.windowSeconds);
@@ -60,6 +64,20 @@ async function extractXPostUnit(unit: IngestedUnit, o: IngestOptions): Promise<I
   return out;
 }
 
+/** Substack posts are fetched through Nimble as markdown and split into numbered sections; no model is involved in extraction. */
+async function extractSubstackUnit(unit: IngestedUnit, o: IngestOptions): Promise<IngestedUnit> {
+  let out: IngestedUnit = { ...unit, extractionMethod: "nimble:markdown", extractedAt: new Date() };
+  try {
+    if (!o.nimbleKey) throw new Error("NIMBLE_API_KEY is not configured");
+    const r = await extractWithNimble({ apiKey: o.nimbleKey, sourceUrl: unit.sourceUrl, fetchImpl: o.fetchImpl, retries: o.retries });
+    out = { ...out, title: unit.title ?? r.title, transcript: r.transcript, status: "ready", error: null, rejectedItems: [] };
+  } catch (e) {
+    out = { ...out, status: "failed", error: (e as Error).message };
+  }
+  await o.store.saveUnit(out);
+  return out;
+}
+
 /** Import one submitted link (dev route/CLI). Returns a unit with its actual status/error; never throws for per-link failures. */
 export async function ingestLink(link: string, o: IngestOptions, onUpdate?: (u: IngestedUnit) => void): Promise<IngestedUnit> {
   const base: IngestedUnit = {
@@ -82,13 +100,13 @@ export async function ingestLink(link: string, o: IngestOptions, onUpdate?: (u: 
   }
   let p;
   try {
-    p = parseYouTubeUrl(link);
+    p = parseSourceUrl(link);
   } catch (e) {
     const failed: IngestedUnit = { ...base, status: "failed", error: (e as Error).message, extractedAt: new Date() };
     await o.store.saveUnit(failed);
     return failed;
   }
-  const unit: IngestedUnit = { ...base, sourceUrl: p.sourceUrl, startSeconds: p.startSeconds, status: "running" };
+  const unit: IngestedUnit = { ...base, sourceUrl: p.sourceUrl, startSeconds: p.startSeconds, contentType: p.contentType, status: "running" };
   await o.store.saveUnit(unit);
   onUpdate?.(unit);
   return extractUnit(unit, o);

@@ -4,7 +4,7 @@ import type { IngestedUnit } from "../../src/ingest/types.js";
 export function pendingUnit(videoId: string, start: number | null = null): IngestedUnit {
   return {
     id: randomUUID(), submittedUrl: `https://www.youtube.com/watch?v=${videoId}&list=WL&index=4`,
-    sourceUrl: `https://www.youtube.com/watch?v=${videoId}`, startSeconds: start, title: null, transcript: null,
+    sourceUrl: `https://www.youtube.com/watch?v=${videoId}`, startSeconds: start, title: null, contentType: "youtube_video", transcript: null,
     extractionMethod: null, extractedAt: null, status: "pending", error: null,
   };
 }

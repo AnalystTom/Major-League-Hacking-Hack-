@@ -1,15 +1,26 @@
 // Proceed: pasted YouTube and X post links become ingested units in TigerData, and their progress is read back
 // from the units, artifacts and video results the processor writes. Nothing here invents progress.
 
+import { isSubstackHost, parseSubstackLink } from "./substack.js";
 import { isXLink, parseXLink } from "./xpost.js";
 import { parseYouTubeLink } from "./youtube.js";
 
 // Per source type: a video costs a long Gemini read, an X post one cheap API read.
 export const MAX_YOUTUBE_LINKS = 20;
 export const MAX_X_LINKS = 100;
-export const MAX_LINKS = MAX_YOUTUBE_LINKS + MAX_X_LINKS;
+export const MAX_SUBSTACK_LINKS = 20; // a post is one Nimble read plus a long digest input
+export const MAX_LINKS = MAX_YOUTUBE_LINKS + MAX_X_LINKS + MAX_SUBSTACK_LINKS;
 export const MAX_LINK_LENGTH = 2048;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function hostOf(line) {
+  try {
+    const s = line.trim();
+    return new URL(/^https?:\/\//i.test(s) ? s : `https://${s}`).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
 
 /** Validates a Proceed submission: { links: string[] | string, company?: honeypot }. */
 export function parseImport(body) {
@@ -19,14 +30,14 @@ export function parseImport(body) {
   const raw = Array.isArray(body.links) ? body.links : typeof body.links === "string" ? body.links.split(/\s+/) : [];
   if (raw.length > MAX_LINKS * 4) return { ok: false, status: 400, error: `Paste at most ${MAX_LINKS} links at a time.` };
   const lines = raw.filter((l) => typeof l === "string" && l.trim() !== "");
-  if (lines.length === 0) return { ok: false, status: 400, error: "Paste at least one YouTube or X post link." };
-  if (lines.length > MAX_LINKS) return { ok: false, status: 400, error: `Paste at most ${MAX_YOUTUBE_LINKS} YouTube videos and ${MAX_X_LINKS} X posts at a time.` };
+  if (lines.length === 0) return { ok: false, status: 400, error: "Paste at least one YouTube, X post or Substack link." };
+  if (lines.length > MAX_LINKS) return { ok: false, status: 400, error: `Paste at most ${MAX_YOUTUBE_LINKS} YouTube videos, ${MAX_X_LINKS} X posts and ${MAX_SUBSTACK_LINKS} Substack posts at a time.` };
   if (lines.some((l) => l.length > MAX_LINK_LENGTH)) return { ok: false, status: 400, error: "One of those links is too long." };
 
   const links = [];
   const invalid = [];
   for (const line of lines) {
-    const parsed = isXLink(line) ? parseXLink(line) : parseYouTubeLink(line);
+    const parsed = isXLink(line) ? parseXLink(line) : isSubstackHost(hostOf(line)) ? parseSubstackLink(line) : parseYouTubeLink(line);
     if (parsed.ok) links.push(parsed.value);
     else invalid.push({ link: line.trim(), error: parsed.error });
   }
@@ -38,9 +49,10 @@ export function parseImport(body) {
     const key = `${l.source_url}@${l.start_seconds}`;
     return seen.has(key) ? false : (seen.add(key), true);
   });
-  const xCount = unique.filter((l) => l.content_type === "x_post").length;
-  if (unique.length - xCount > MAX_YOUTUBE_LINKS) return { ok: false, status: 400, error: `Paste at most ${MAX_YOUTUBE_LINKS} YouTube videos at a time.` };
-  if (xCount > MAX_X_LINKS) return { ok: false, status: 400, error: `Paste at most ${MAX_X_LINKS} X posts at a time.` };
+  const count = (type) => unique.filter((l) => (l.content_type ?? "youtube_video") === type).length;
+  if (count("youtube_video") > MAX_YOUTUBE_LINKS) return { ok: false, status: 400, error: `Paste at most ${MAX_YOUTUBE_LINKS} YouTube videos at a time.` };
+  if (count("x_post") > MAX_X_LINKS) return { ok: false, status: 400, error: `Paste at most ${MAX_X_LINKS} X posts at a time.` };
+  if (count("substack_post") > MAX_SUBSTACK_LINKS) return { ok: false, status: 400, error: `Paste at most ${MAX_SUBSTACK_LINKS} Substack posts at a time.` };
   return { ok: true, value: { links: unique } };
 }
 

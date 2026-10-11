@@ -1,4 +1,4 @@
-import { DigestOutput, type IngestedUnit } from "../types.js";
+import { DigestOutput, isTextTranscript, type IngestedUnit } from "../types.js";
 import { unitRef } from "./prompt.js";
 
 /** Replaces the model's unit refs ("u3") with real unit ids. Real ids are accepted as-is; unknown refs are left for validation to reject. */
@@ -37,12 +37,20 @@ export function validateDigest(raw: unknown, units: IngestedUnit[]): DigestOutpu
     for (const ev of a.evidence) {
       const u = need(ev.source_id, `evidence in "${a.name}"`);
       if (!a.source_ids.includes(ev.source_id)) throw new Error(`evidence in "${a.name}" cites a unit not in its source_ids`);
-      const [lo, hi] = u.transcript!.window;
-      if (ev.start_seconds < lo || ev.end_seconds > hi) throw new Error(`evidence in "${a.name}" is outside unit ${refOf.get(ev.source_id)}'s window`);
-      // Inside the window isn't enough: the moment must be one extraction actually reported.
-      const items = u.transcript!.evidence_items ?? [];
-      if (!items.some((x) => x.start_seconds <= ev.end_seconds && ev.start_seconds <= x.end_seconds)) {
-        throw new Error(`evidence in "${a.name}" cites ${ev.start_seconds}-${ev.end_seconds}s of ${refOf.get(ev.source_id)}, where nothing was extracted`);
+      const t = u.transcript!;
+      if (isTextTranscript(t)) {
+        if (ev.section === undefined || !t.sections.some((s) => s.index === ev.section))
+          throw new Error(`evidence in "${a.name}" must cite an existing section of unit ${refOf.get(ev.source_id)}`);
+      } else {
+        if (ev.start_seconds === undefined || ev.end_seconds === undefined)
+          throw new Error(`evidence in "${a.name}" must cite start_seconds and end_seconds of unit ${refOf.get(ev.source_id)}`);
+        const [lo, hi] = t.window;
+        if (ev.start_seconds < lo || ev.end_seconds > hi) throw new Error(`evidence in "${a.name}" is outside unit ${refOf.get(ev.source_id)}'s window`);
+        // Inside the window isn't enough: the moment must be one extraction actually reported.
+        const items = t.evidence_items ?? [];
+        if (!items.some((x) => x.start_seconds <= ev.end_seconds! && ev.start_seconds! <= x.end_seconds)) {
+          throw new Error(`evidence in "${a.name}" cites ${ev.start_seconds}-${ev.end_seconds}s of ${refOf.get(ev.source_id)}, where nothing was extracted`);
+        }
       }
     }
   }
