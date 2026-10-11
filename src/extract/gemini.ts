@@ -30,7 +30,7 @@ export function buildRequestBody(sourceUrl: string, window: [number, number]) {
     contents: [{
       parts: [
         { fileData: { fileUri: sourceUrl }, videoMetadata: { startOffset: `${window[0]}s`, endOffset: `${window[1]}s` } },
-        { text: EXTRACTION_PROMPT },
+        { text: `${EXTRACTION_PROMPT}\n\nThe video is ${sourceUrl}. Set "source_url" to exactly this value. The segment covers seconds ${window[0]} to ${window[1]} of the video.` },
       ],
     }],
     generationConfig: { temperature: 0, maxOutputTokens: 2000, responseMimeType: "application/json" },

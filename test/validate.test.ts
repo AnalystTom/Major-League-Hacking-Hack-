@@ -21,3 +21,10 @@ test("not ready without content or any valid item", () => {
   assert.equal(validateExtraction(ex({ content_accessed: false }), req).ok, false);
   assert.equal(validateExtraction(ex({ evidence_items: [item(400, 410)] }), req).ok, false);
 });
+
+import { buildRequestBody } from "../src/extract/gemini.ts";
+test("extraction prompt names the video and window so the model can echo them", () => {
+  const body = buildRequestBody(req.sourceUrl, [306, 606]);
+  const text = body.contents[0].parts[1].text!;
+  assert.ok(text.includes(req.sourceUrl) && text.includes("306 to 606"));
+});
