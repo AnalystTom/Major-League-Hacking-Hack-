@@ -6,7 +6,7 @@
   <title>Resurface</title>
   <meta name="description" content="Tutorials stuck in Watch Later. Bring the YouTube videos you saved and Resurface turns them into 30-second shorts, then installs the ones you keep in Claude Code, Codex, Cursor or Hermes.">
   <meta property="og:title" content="Resurface: you saved it, your agent never saw it">
-  <meta property="og:description" content="Your backlog as 30-second shorts. Join the waitlist to hear when Resurface opens.">
+  <meta property="og:description" content="Your backlog as 30-second shorts. Bring your saved videos, watch what's worth keeping, and send it to your coding agent.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <script>
     // Apply the chosen colour palette before first paint: ?palette= wins, then the last pick.
@@ -34,7 +34,8 @@
         <a href="#shorts">Shorts</a>
         <a href="#how">How it works</a>
       </nav>
-      <a class="btn btn-small" href="#join">Join the waitlist</a>
+      <a class="topnav-signin" href="/start#signin" data-signin-link>Sign in</a>
+      <a class="btn btn-small" href="/start" data-cta>Get started</a>
     </div>
   </header>
 
@@ -47,13 +48,10 @@
         <span class="line"><span class="kw" style="--i:3">Your</span> <span class="kw" style="--i:4">agent</span> <span class="kw" style="--i:5">never</span> <span class="kw" style="--i:6">saw</span> <span class="kw" style="--i:7">it.</span></span>
       </h1>
       <p class="lede">Resurface turns the bookmarks, Watch Later videos and conference talks you never got to into 30-second shorts. Keep the good ones and they're installed in your coding agent as skills.</p>
-      <form class="signup signup-hero" id="join" data-signup novalidate>
-        <label class="visually-hidden" for="hero-email">Email address</label>
-        <input id="hero-email" name="email" type="email" autocomplete="email" placeholder="Email address" required>
-        <input class="visually-hidden" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
-        <button type="submit" class="btn">Join the waitlist</button>
-        <p class="form-status" role="status" aria-live="polite"></p>
-      </form>
+      <div class="hero-cta" id="get-started">
+        <a class="btn" href="/start" data-cta>Get started, it's free</a>
+        <p>Create an account, paste the YouTube videos or X posts you saved, and watch them back as 30-second shorts.</p>
+      </div>
       <div class="works-with">
         <p>Sends to</p>
         <ul>
@@ -140,14 +138,14 @@
               <div class="f-vis repo" aria-hidden="true">
                 <div class="repo-file f-in" style="--d:.2s">
                   <p class="repo-tab">Skills</p>
-                  <pre>Skills aren't available yet.
-Join the waitlist for early access.</pre>
+                  <pre>Every short becomes a skill
+your coding agent can install.</pre>
                 </div>
               </div>
             </div>
 
             <!-- 4. Tasks: the agent runs them -->
-            <div class="scene" data-scene data-ms="5500" data-caption="Agent tasks are coming at launch. Join the waitlist for early access.">
+            <div class="scene" data-scene data-ms="5500" data-caption="Send the skills to your coding agent as one prompt.">
               <div class="f-info">
                 <p class="f-chip"><span class="logo logo-claude-code"></span>Your agent</p>
                 <p class="f-head">Skills become tasks.</p>
@@ -185,9 +183,9 @@ Join the waitlist for early access.</pre>
     <section class="feed" id="shorts" aria-labelledby="feed-title">
       <div class="section-head">
         <h2 id="feed-title">Your backlog, as shorts</h2>
-        <p>Shorts aren't available yet. Join the waitlist and we'll email you when Resurface opens.</p>
+        <p>Sign up, paste the videos you saved, and watch the part worth keeping.</p>
       </div>
-      <div class="nudge"><a class="btn" href="#join">Join the waitlist</a></div>
+      <div class="nudge"><a class="btn" href="/start" data-cta>Get started</a></div>
     </section>
 
     <!-- ============ How it works ============ -->
@@ -219,7 +217,7 @@ Join the waitlist for early access.</pre>
 
   <footer class="footer">
     <p>Resurface. Built at AI Engineer NYC 2026.</p>
-    <a href="#join">Join the waitlist</a>
+    <a href="/start" data-cta>Get started</a>
   </footer>
 
   <aside class="palette-picker" data-palette-picker aria-label="Colour palette" hidden>
