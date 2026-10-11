@@ -1,10 +1,10 @@
-// Onboarding: account -> project brief -> saved links -> processing. Each step saves to TigerData
+// Onboarding: account -> saved links -> processing, then the reel. Each step saves to TigerData
 // through the API, so leaving and coming back resumes at the first unfinished step.
 
 import { api } from "./api.js";
 import { followImports, PROCESSOR, renderUnits } from "./units.js";
 
-const ORDER = ["account", "project", "sources", "processing"];
+const ORDER = ["account", "sources", "processing"];
 const root = document.querySelector("[data-onboard]");
 const $ = (sel) => root.querySelector(sel);
 let state = null;
@@ -81,35 +81,7 @@ $("[data-switch]").addEventListener("click", () => {
   $(`[data-form="${toLogin ? "login" : "signup"}"] input[type=email]`).focus();
 });
 
-// ---------- 2. Project ----------
-
-const projectForm = onSubmit("project", async (data) => {
-  const { project } = await api("/api/project", {
-    method: "PUT",
-    body: { name: data.get("name"), goal: data.get("goal"), tools: data.get("tools"), agents: data.getAll("agents") },
-  });
-  next({ ...state, project, step: state.imports > 0 ? "done" : "sources" });
-});
-
-$("[data-tool-suggest]").addEventListener("click", (e) => {
-  const b = e.target.closest("button");
-  if (!b) return;
-  const input = projectForm.elements.tools;
-  const tools = input.value.split(",").map((t) => t.trim()).filter(Boolean);
-  if (!tools.includes(b.textContent)) tools.push(b.textContent);
-  input.value = tools.join(", ");
-  b.setAttribute("aria-pressed", "true");
-});
-
-function fillProject(project) {
-  if (!project) return;
-  projectForm.elements.name.value = project.name ?? "";
-  projectForm.elements.goal.value = project.goal ?? "";
-  projectForm.elements.tools.value = project.tools.join(", ");
-  projectForm.querySelectorAll('input[name="agents"]').forEach((c) => (c.checked = project.agents.includes(c.value)));
-}
-
-// ---------- 3. Sources ----------
+// ---------- 2. Videos ----------
 
 onSubmit("sources", async (data, form) => {
   const links = String(data.get("links") || "").split(/\s+/).filter(Boolean);
@@ -122,7 +94,7 @@ onSubmit("sources", async (data, form) => {
   show("processing");
 });
 
-// ---------- 4. Processing ----------
+// ---------- 3. Processing ----------
 
 let following = false;
 function startFollowing() {
@@ -142,14 +114,10 @@ function startFollowing() {
   try {
     state = await api("/api/me");
   } catch (err) {
-    if (err.status !== 401) $("[data-loading]").textContent = err.message;
-    else show("account");
+    $("[data-loading]").textContent = err.message;
     return;
   }
-  fillProject(state.project);
-  // #project lets a signed-in user come back to edit their brief from the home page.
-  const asked = location.hash.slice(1);
-  if (asked === "project" || asked === "sources") return show(asked);
+  if (!state.user) return show("account");
   if (state.step === "done") return location.assign("/app");
   show(state.step);
 })();

@@ -227,18 +227,18 @@ Browser ──GET /api/imports, /api/feed?scope=mine (polled)──▶ web Worke
 
 ### Web Worker `resurface` (`web/`, same origin as the page)
 
-Static assets serve everything except `/api/*` and `/media/*`: the landing page, `/start` (onboarding: account → project brief → saved links → processing), and `/app` (the signed-in home with the project, links, and reel). Every API response is JSON with `cache-control: no-store`. Every mutation must be `application/json`, which, with the `SameSite=Lax` session cookie, blocks cross-site form posts (`415` otherwise). A missing database connection or query error returns `503` with a safe message; details go to Worker logs only. The database comes from the `HYPERDRIVE` binding when present, otherwise `DATABASE_URL`.
+Static assets serve everything except `/api/*` and `/media/*`: the landing page, `/start` (onboarding: account → saved links → processing), and `/app` (the signed-in home with links and the reel). Project briefs are optional API input and have no onboarding screen. Every API response is JSON with `cache-control: no-store`. Every mutation must be `application/json`, which, with the `SameSite=Lax` session cookie, blocks cross-site form posts (`415` otherwise). A missing database connection or query error returns `503` with a safe message; details go to Worker logs only. The database comes from the `HYPERDRIVE` binding when present, otherwise `DATABASE_URL`.
 
 | Route | Auth | Request → response |
 | --- | --- | --- |
 | `POST /api/auth/signup` | none | `{ email, password, name? }` → `201` onboarding state and session cookie. Password ≥ 10 characters, PBKDF2-SHA256. `409` if the email exists. |
 | `POST /api/auth/login` | none | `{ email, password }` → `200` onboarding state and session cookie. Unknown email and wrong password both get `401`. |
 | `POST /api/auth/logout` | none | Ends the session and clears the cookie. |
-| `GET /api/me` | session | `{ user, project, imports, step }`, where `step` is `project`, `sources`, or `done`. |
+| `GET /api/me` | optional session | Signed in: `{ user, project, imports, step }`, where `step` is `sources` or `done`; signed out: `{ user: null, step: "account" }`. |
 | `PUT /api/project` | session | `{ name, goal?, tools, agents }` → `{ project }`, saved as the next `project_contexts` version. |
-| `POST /api/imports` | session + project | `{ links: string[] \| string, company?: honeypot }` → `201 { units, processor }`. `409` without a project brief. |
+| `POST /api/imports` | session | `{ links: string[] \| string, company?: honeypot }` → `201 { units, processor }`. The project brief is optional. |
 | `GET /api/imports` | session | `{ units }`: the user's 50 most recent imports, newest first. |
-| `GET /api/feed?scope=mine` | session | `{ items }`: the user's ready shorts for their current project, as in the [feed read contract](#feed-read-contract). |
+| `GET /api/feed?scope=mine` | session | `{ items }`: the user's ready shorts for their current project, or generic shorts without a project, as in the [feed read contract](#feed-read-contract). |
 | `GET /api/feed` | none | `{ items }`: the public curated feed (requires `feed_order`). |
 | `GET`/`HEAD /media/<key>` | none | `200` or `206` with `accept-ranges`, `content-range`, `etag`, and `cache-control: public, max-age=3600`; `416` past the end; `404` for an unknown or disallowed key; `503` without the R2 binding. |
 
@@ -246,7 +246,7 @@ Signed-out requests to session routes get `401`. Rate limits: sign-up and sign-i
 
 **Import rules.** Each link must be a single YouTube video (`youtube.com/watch`, `youtu.be`, `/shorts/`, `/live/`, `/embed/` on `www`, `m`, or `music` hosts). It is stored as the canonical `https://www.youtube.com/watch?v=<id>` plus `start_seconds` parsed from `t` or `start` (`90`, `90s`, `1m30s`, `1h2m3s`). The submitted URL is kept in the database but never returned. The same video and start time within one request is one unit. Units are shared across users: the newest non-failed unit for that video and start time is reused, and `user_imports` records who imported it with which project version. Each unit is sent to the processor the first time a given user imports it, even when extraction is reused. Errors: `400` for invalid JSON, no links, more than 10 links, a link over 2,048 characters, or any invalid link (with `invalid: [{ link, error }]` naming each); `413` for a body over 32 KB. A filled honeypot gets `200 { units: [], processor: "not_needed" }` and stores nothing. `processor` is `requested`, `not_needed`, `not_configured` (no `PROCESSOR_URL`), or `unavailable` (error, timeout, or non-2xx).
 
-**Unit shape.** `{ id, source_url, start_seconds, title, stage, settled, error }`. Only artifacts digested for the user's project count, so one user never sees another's digest. `stage` collapses the unit's records into one state. `settled` means nothing more happens without a person. When a unit feeds several artifacts, the one furthest along is reported.
+**Unit shape.** `{ id, source_url, start_seconds, title, stage, settled, error }`. Only artifacts digested for the user's project count; users without a project see generic artifacts only. `stage` collapses the unit's records into one state. `settled` means nothing more happens without a person. When a unit feeds several artifacts, the one furthest along is reported.
 
 | `stage` | Derived from | `settled` |
 | --- | --- | --- |
@@ -306,8 +306,8 @@ categorization instruction. It accepts 1–20 links and a 30–3,600 second wind
 Gemini extracts source evidence; `OPENAI_API_KEY` enables digestion (otherwise it
 reports skipped). `GEMINI_MODEL` and `OPENAI_MODEL` select the configured models.
 `DATABASE_URL` selects TigerData storage; without it, results remain in memory.
-Jobs are process-local and are lost on restart. From `server/`, the CLI uses `npm run ingest --
-"<request>" <youtube-url>...` with the same provider and project configuration.
+Jobs are process-local and are lost on restart. From `server/`, the CLI uses
+`npm run ingest -- "<request>" <youtube-url>...` with the same provider and project configuration.
 
 This backend does not implement the web Worker's `PROCESSOR_URL` contract: it
 accepts URLs, rather than existing `unit_ids` and a per-user project, and does not

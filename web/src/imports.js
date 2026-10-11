@@ -88,8 +88,9 @@ export async function userUnitIds(sql, userId, limit = 50) {
 }
 
 /**
- * Each unit with the artifacts it fed, their newest video result, and any exclusion reasons. With a
- * project id, only artifacts digested for that project count, so one user never sees another's digest.
+ * Each unit with the artifacts it fed, their newest video result, and any exclusion reasons. Only
+ * artifacts digested for this project count (no project: generic digests), so one user never sees a
+ * digest made for someone else's project.
  */
 export async function readUnits(sql, ids, projectId = null) {
   if (ids.length === 0) return [];
@@ -109,7 +110,7 @@ export async function readUnits(sql, ids, projectId = null) {
         ) ORDER BY a.created_at)
         FROM artifacts a
         WHERE u.id = ANY (a.source_ids)
-          AND (${projectId}::uuid IS NULL OR a.project_context_id = ${projectId}::uuid)), '[]') AS artifacts
+          AND a.project_context_id IS NOT DISTINCT FROM ${projectId}::uuid), '[]') AS artifacts
     FROM ingested_units u
     WHERE u.id = ANY (string_to_array(${list}, ',')::uuid[])
     ORDER BY array_position(string_to_array(${list}, ',')::uuid[], u.id)`;
