@@ -14,7 +14,7 @@ const pool = process.env.DATABASE_URL ? new pg.Pool({ connectionString: process.
 const store: Store = pool ? new PgStore(pool) : new MemoryStore();
 const ctx = JSON.parse(await readFile(process.env.PROJECT_CONTEXT ?? "config/project-context.placeholder.json", "utf8"));
 
-const units = await ingestLinks(links, { geminiKey: need("GEMINI_API_KEY"), store });
+const units = await ingestLinks(links, { geminiKey: need("GEMINI_API_KEY"), geminiModel: process.env.GEMINI_MODEL, windowSeconds: process.env.WINDOW_SECONDS ? Number(process.env.WINDOW_SECONDS) : undefined, store });
 for (const u of units) console.log(`${u.status.padEnd(7)} ${u.sourceUrl} ${u.error ?? ""}`);
 const ready = units.filter((u) => u.status === "ready");
 const digest = await runDigestion({ apiKey: need("OPENAI_API_KEY"), model: process.env.OPENAI_MODEL, units: ready, request, context: ctx });

@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { randomUUID } from "node:crypto";
+import { MAX_WINDOW_SECONDS, MIN_WINDOW_SECONDS } from "./extract/gemini.ts";
 import { ingestLink, type IngestOptions } from "./pipeline.ts";
 import { runDigestion } from "./digest/run.ts";
 import type { ProjectContext } from "./digest/prompt.ts";
@@ -55,8 +56,8 @@ async function readJson(req: IncomingMessage): Promise<unknown> {
 export function createApi(o: ApiOptions): Server {
   const jobs = new Map<string, ImportJob>();
 
-  async function run(job: ImportJob, links: string[]) {
-    await Promise.all(links.map(async (l, i) => { job.units[i] = await ingestLink(l, o, (u) => { job.units[i] = u; }); }));
+  async function run(job: ImportJob, links: string[], windowSeconds: number | undefined) {
+    await Promise.all(links.map(async (l, i) => { job.units[i] = await ingestLink(l, { ...o, windowSeconds: windowSeconds ?? o.windowSeconds }, (u) => { job.units[i] = u; }); }));
     const ready = job.units.filter((u) => u.status === "ready");
     if (!o.openaiKey) { job.digest = { ...EMPTY_DIGEST, status: "skipped", error: "OPENAI_API_KEY not configured" }; return; }
     if (ready.length === 0) { job.digest = { ...EMPTY_DIGEST, status: "skipped", error: "no successfully extracted sources" }; return; }
@@ -83,6 +84,9 @@ export function createApi(o: ApiOptions): Server {
         if (!Array.isArray(body.links) || body.links.length === 0 || body.links.length > MAX_LINKS || !body.links.every((l) => typeof l === "string"))
           return send(400, { error: `links must be 1-${MAX_LINKS} strings` });
         if (typeof body.request !== "string" || !body.request.trim()) return send(400, { error: "request (Digestion Prompt text) is required" });
+        const ws = (body as { window_seconds?: unknown }).window_seconds;
+        if (ws !== undefined && (!Number.isInteger(ws) || (ws as number) < MIN_WINDOW_SECONDS || (ws as number) > MAX_WINDOW_SECONDS))
+          return send(400, { error: `window_seconds must be an integer ${MIN_WINDOW_SECONDS}-${MAX_WINDOW_SECONDS}` });
         const links = body.links as string[];
         const job: ImportJob = {
           id: randomUUID(), request: body.request,
@@ -90,7 +94,7 @@ export function createApi(o: ApiOptions): Server {
           digest: { ...EMPTY_DIGEST, status: "pending" },
         };
         jobs.set(job.id, job);
-        void run(job, links);
+        void run(job, links, ws as number | undefined);
         return send(202, view(job));
       }
       const m = /^\/imports\/([\w-]+)$/.exec(url.pathname);

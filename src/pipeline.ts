@@ -9,6 +9,7 @@ export interface IngestOptions {
   geminiKey: string;
   store: Store;
   windowSeconds?: number;
+  geminiModel?: string;
   fetchImpl?: typeof fetch;
   retries?: number;
 }
@@ -17,7 +18,7 @@ export interface IngestOptions {
 export async function ingestLink(link: string, o: IngestOptions, onUpdate?: (u: IngestedUnit) => void): Promise<IngestedUnit> {
   const base: IngestedUnit = {
     id: randomUUID(), submittedUrl: link, sourceUrl: link, startSeconds: null, title: null, transcript: null,
-    extractionMethod: `gemini:${GEMINI_MODEL}`, extractedAt: null, status: "pending", error: null,
+    extractionMethod: `gemini:${o.geminiModel ?? GEMINI_MODEL}`, extractedAt: null, status: "pending", error: null,
   };
   let unit = base;
   try {
@@ -26,7 +27,7 @@ export async function ingestLink(link: string, o: IngestOptions, onUpdate?: (u: 
     await o.store.saveUnit(unit);
     onUpdate?.(unit);
     const window = windowFor(p.startSeconds, o.windowSeconds);
-    const { extraction } = await extractWithGemini({ apiKey: o.geminiKey, sourceUrl: p.sourceUrl, window, fetchImpl: o.fetchImpl, retries: o.retries });
+    const { extraction } = await extractWithGemini({ apiKey: o.geminiKey, sourceUrl: p.sourceUrl, window, model: o.geminiModel, fetchImpl: o.fetchImpl, retries: o.retries });
     unit = applyValidation(unit, validateExtraction(extraction, { sourceUrl: p.sourceUrl, window }), extraction, window);
   } catch (e) {
     unit = { ...unit, status: "failed", error: (e as Error).message, extractedAt: new Date() };

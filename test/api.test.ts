@@ -61,3 +61,25 @@ test("API returns extracted evidence and stores digested artifacts", async () =>
   assert.equal(store.artifacts.length, 1);
   } finally { server.close(); }
 });
+
+test("window_seconds is validated and applied per import", async () => {
+  const store = new MemoryStore();
+  const server = createApi({ geminiKey: "k", store, context: { name: "p", goal: null, facts: [] }, fetchImpl: ok as typeof fetch, retries: 0 });
+  await new Promise<void>((r) => server.listen(0, r));
+  try {
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const post = (window_seconds: number) => fetch(`${base}/imports`, { method: "POST", body: JSON.stringify({ links: ["https://www.youtube.com/watch?v=VQy50fuxI34"], request: "r", window_seconds }) });
+    assert.equal((await post(3601)).status, 400);
+    assert.equal((await post(10)).status, 400);
+    const res = await post(3600);
+    assert.equal(res.status, 202);
+    const { id } = await res.json();
+    let body: any;
+    for (let i = 0; i < 50; i++) {
+      body = await (await fetch(`${base}/imports/${id}`)).json();
+      if (body.links[0].status === "ready" || body.links[0].status === "failed") break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    assert.deepEqual(body.links[0].extraction.window, [0, 3600]);
+  } finally { server.close(); }
+});

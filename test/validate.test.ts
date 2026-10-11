@@ -28,3 +28,15 @@ test("extraction prompt names the video and window so the model can echo them", 
   const text = body.contents[0].parts[1].text!;
   assert.ok(text.includes(req.sourceUrl) && text.includes("306 to 606"));
 });
+
+import { windowFor, MAX_WINDOW_SECONDS } from "../src/extract/gemini.ts";
+test("window is bounded to 1 hour and starts at the selected time", () => {
+  assert.deepEqual(windowFor(306), [306, 606]);
+  assert.deepEqual(windowFor(null, MAX_WINDOW_SECONDS), [0, 3600]);
+  assert.throws(() => windowFor(0, 3601));
+  assert.throws(() => windowFor(0, 5));
+});
+test("output budget scales with window", () => {
+  assert.equal(buildRequestBody(req.sourceUrl, [0, 300]).generationConfig.maxOutputTokens, 2000);
+  assert.equal(buildRequestBody(req.sourceUrl, [0, 3600]).generationConfig.maxOutputTokens, 16000);
+});
