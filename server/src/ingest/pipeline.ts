@@ -11,8 +11,8 @@ import type { IngestedUnit, StoredArtifact } from "./types.js";
 
 export interface IngestOptions {
   geminiKey: string;
-  /** X API bearer token; without it X posts fail with a clear error instead of being skipped. */
-  xBearerToken?: string;
+  /** twitterapi.io key; without it X posts fail with a clear error instead of being skipped. */
+  twitterApiKey?: string;
   store: Store;
   windowSeconds?: number;
   geminiModel?: string;
@@ -44,14 +44,14 @@ export async function extractUnit(unit: IngestedUnit, o: IngestOptions): Promise
   return out;
 }
 
-/** X posts are read from the X API as text; no model is involved in extraction. */
+/** X posts are read from twitterapi.io as text; no model is involved in extraction. */
 async function extractXPostUnit(unit: IngestedUnit, o: IngestOptions): Promise<IngestedUnit> {
   let out: IngestedUnit = { ...unit, extractionMethod: X_POST_METHOD, extractedAt: new Date() };
   try {
-    if (!o.xBearerToken) throw new Error("X_BEARER_TOKEN is not configured");
+    if (!o.twitterApiKey) throw new Error("TWITTERAPI_IO_KEY is not configured");
     const postId = /\/status\/(\d+)$/.exec(unit.sourceUrl)?.[1];
     if (!postId) throw new Error("stored source_url is not an X post");
-    const { title, transcript } = await extractXPost({ bearerToken: o.xBearerToken, postId, fetchImpl: o.fetchImpl });
+    const { title, transcript } = await extractXPost({ apiKey: o.twitterApiKey, postId, fetchImpl: o.fetchImpl });
     out = { ...out, title, transcript, status: "ready", error: null, rejectedItems: [] };
   } catch (e) {
     out = { ...out, status: "failed", error: (e as Error).message };
