@@ -68,6 +68,24 @@ npx wrangler secret put PROCESSOR_TOKEN
 For local dev, put the same keys in `web/.dev.vars` (gitignored). For production, a Hyperdrive config
 bound as `HYPERDRIVE` is preferred over `DATABASE_URL` (pooled connections); `src/db.js` uses it when present.
 
+## Local dev with the simulated processor
+
+`web/scripts/dev-processor.mjs` stands in for the processor so the whole journey can be walked locally.
+It refuses any database that isn't on this machine, labels every record `[Simulated]`, points every short
+at one test clip, and approves clips itself in place of a teammate.
+
+```
+createdb resurface_dev && psql -d resurface_dev -f db/migrations/001_shared_schema.sql
+# web/.dev.vars (gitignored):
+#   DATABASE_URL=postgres://you@127.0.0.1:5432/resurface_dev
+#   PROCESSOR_URL=http://127.0.0.1:8799/process
+cd web
+npx wrangler r2 object put resurface-media/videos/dev/simulation/short.mp4 --file <any 9:16 mp4> --local
+npx wrangler r2 object put resurface-media/captions/dev/simulation/short.vtt --file <any .vtt> --local
+DATABASE_URL=postgres://you@127.0.0.1:5432/resurface_dev FAIL_IDS=dQw4w9WgXcQ node scripts/dev-processor.mjs
+npm run dev     # http://localhost:8787
+```
+
 ## Known gaps
 
 - No processor exists yet: links queue in TigerData and show `Queued` until one is connected.

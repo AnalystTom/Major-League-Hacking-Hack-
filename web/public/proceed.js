@@ -2,6 +2,7 @@
 // approved, rendered shorts to the reel. The unit ids live in ?units= so a refresh picks up where it was.
 
 const POLL_MS = 4000;
+const REVIEW_POLL_MS = 15000;
 
 const STAGE = {
   queued: "Queued",
@@ -90,9 +91,11 @@ export function createProceed({ form, run, reel }) {
       reel.render(items);
       const waiting = units.some((u) => !u.settled);
       const inReview = units.some((u) => u.stage === "in_review");
-      empty.hidden = reel.count > 0 || waiting;
+      empty.hidden = reel.count > 0 || waiting || inReview;
       recheck.hidden = waiting || !inReview;
-      if (waiting) timer = setTimeout(refresh, document.hidden ? POLL_MS * 4 : POLL_MS);
+      // Approval can land any time, so keep checking slowly while a clip awaits review.
+      const delay = waiting ? POLL_MS : inReview ? REVIEW_POLL_MS : null;
+      if (delay) timer = setTimeout(refresh, document.hidden ? delay * 4 : delay);
     } catch (err) {
       // A bad id list won't fix itself; anything else is worth another try.
       if (err.status === 400) return void (note.textContent = "That link to an import isn't valid. Paste your links again.");

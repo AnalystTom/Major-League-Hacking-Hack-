@@ -143,6 +143,7 @@ button { font: inherit; color: inherit; }
 }
 .btn:hover { transform: translateY(-2px); box-shadow: inset 0 -3px 0 rgba(0, 0, 0, .16), 0 10px 22px -10px var(--accent); }
 .btn:active { transform: translateY(0); box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .16); }
+.btn[hidden] { display: none; }
 .btn:disabled { opacity: .55; cursor: default; transform: none; box-shadow: none; }
 .btn-small { font-size: .9375rem; padding: 11px 16px; border-radius: 10px; }
 
@@ -581,7 +582,13 @@ button { font: inherit; color: inherit; }
   container-type: inline-size; color: var(--on-night); overflow: hidden;
 }
 .reel-item video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
-.reel-item video::cue { font-family: var(--sans); font-size: 5cqi; background: rgba(0, 0, 0, .7); }
+.reel-caption {
+  position: absolute; z-index: 2; top: 50%; left: 7%; right: 7%;
+  text-align: center; white-space: pre-line; pointer-events: none;
+  font-family: var(--display); font-weight: 800; font-size: clamp(1rem, 5.4cqi, 1.375rem); line-height: 1.25;
+  color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .9), 0 0 14px rgba(0, 0, 0, .6);
+}
+.reel-caption:empty { display: none; }
 .reel-progress { position: absolute; z-index: 2; top: 12px; left: 14px; right: 14px; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, .22); overflow: hidden; }
 .reel-progress i { display: block; height: 100%; background: var(--accent); transform: scaleX(0); transform-origin: left; }
 .reel-overlay {

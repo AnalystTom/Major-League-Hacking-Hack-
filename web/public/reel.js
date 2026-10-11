@@ -71,8 +71,16 @@ export function createReel(root) {
       crossorigin: item.video.captions_url && /^https?:/.test(item.video.url) ? "anonymous" : null,
     });
     video.muted = true;
+    // The browser times the WebVTT cues; the reel draws them itself, above the title and buttons and
+    // wrapped to the frame, which native cue rendering won't reliably do in a 9:16 crop.
+    const caption = el("p", { class: "reel-caption", "aria-hidden": "true" });
     if (item.video.captions_url) {
-      video.append(el("track", { kind: "captions", srclang: "en", label: "English", src: item.video.captions_url, default: true }));
+      const track = el("track", { kind: "captions", srclang: "en", label: "English", src: item.video.captions_url, default: true });
+      video.append(track);
+      track.track.mode = "hidden";
+      track.track.addEventListener("cuechange", () => {
+        caption.textContent = [...(track.track.activeCues ?? [])].map((c) => c.text).join("\n");
+      });
     }
 
     const progress = el("i");
@@ -99,6 +107,7 @@ export function createReel(root) {
     const slide = el("article", { class: "reel-item", "data-index": String(index), "aria-label": item.name },
       el("div", { class: "reel-progress" }, progress),
       video,
+      caption,
       failed,
       el("div", { class: "reel-overlay" },
         el("div", { class: "reel-tags" },
