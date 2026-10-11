@@ -1,5 +1,7 @@
 # Resurface v0 — Draft Spec
 
+Earlier draft retained for reference. See the [project-actions spec](project-actions-spec.md) for the latest direction, journeys, and workstreams.
+
 Status: draft for discussion. Only decisions marked confirmed are agreed. Recommendations and contracts below are proposed. No implementation is authorized by this document.
 
 ## Goal
@@ -99,7 +101,7 @@ Agree the shared contracts before parallel work begins. Each stream owns separat
 
 | Stream | Owns | Input | Output | Done when |
 | --- | --- | --- | --- | --- |
-| 1. Sources and evidence | Ingestion scripts, source extraction, categorization, evidence records, TigerData storage and read endpoints | Supplied URL manifest | Reviewed technique records with source references | Every usable technique has retrieved evidence; blocked sources have explicit errors. | 
+| 1. Sources and evidence | Ingestion scripts, source extraction, categorization, evidence records, TigerData storage and read endpoints | Supplied URL manifest | Reviewed technique records with source references | Every usable technique has retrieved evidence; blocked sources have explicit errors. |
 | 2. Motion shorts | Storyboard and animation generation, rendering, narration/captions if chosen, media publication and clip metadata | Reviewed technique records | Actual video files and ready/failed clip records | A real clip plays, its explanation matches its evidence, and all media metadata comes from the render. |
 
 
