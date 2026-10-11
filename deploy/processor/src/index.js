@@ -89,7 +89,9 @@ export class Processor extends Container {
 async function applySettings(processor, env) {
   try {
     await processor.useSettings(settingsFrom(env));
-  } catch {}
+  } catch (error) {
+    console.warn(`processor settings not applied: ${error?.message ?? error}`);
+  }
 }
 
 // Only callers holding the processor's token may wake it: anyone else could keep it awake and run up the bill.
