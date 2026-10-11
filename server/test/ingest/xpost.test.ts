@@ -1,105 +1,45 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
-import { processUnits } from "../../src/ingest/processor.js";
-import { MemoryStore } from "../../src/ingest/store.js";
-import { mockFetch } from "./helpers.js";
-import type { IngestedUnit } from "../../src/ingest/types.js";
+process.env.TWITTERAPI_MIN_INTERVAL_MS = "0";
+const { extractXPost } = await import("../../src/ingest/extract/xpost.js");
 
-process.env.TWITTERAPI_MIN_INTERVAL_MS = "0"; // no pacing in tests
-
-const POST = "1850000000000000001";
-
-function xUnit(): IngestedUnit {
-  return {
-    id: randomUUID(), submittedUrl: `https://x.com/someone/status/${POST}?s=20`, sourceUrl: `https://x.com/i/status/${POST}`, startSeconds: null,
-    title: null, contentType: "x_post", transcript: null, extractionMethod: null, extractedAt: null, status: "pending", error: null,
-  };
-}
-
-/** The shared mock plus a twitterapi.io route; records the API key it was called with. */
-function withX(reply: () => Response) {
-  const { impl, calls } = mockFetch();
-  const x = { calls: 0, auth: "" };
-  const fetchImpl = (async (url: string, init?: { headers?: Record<string, string> }) => {
-    if (String(url).startsWith("https://api.twitterapi.io/twitter/tweets")) {
-      x.calls++;
-      x.auth = init?.headers?.["x-api-key"] ?? "";
-      assert.ok(String(url).endsWith(`tweet_ids=${POST}`));
-      return reply();
-    }
-    return (impl as unknown as typeof fetch)(url, init as RequestInit);
+const tweet = (text: string) => ({ status: "success", tweets: [{ id: "42", text, createdAt: "Sun Sep 27 14:29:42 +0000 2026", author: { userName: "0xMovez", name: "Movez" } }] });
+const routes = (map: Record<string, { status?: number; body: unknown }>) => {
+  const seen: string[] = [];
+  const f = (async (url: string) => {
+    seen.push(url);
+    const key = Object.keys(map).find((k) => url.includes(k))!;
+    const r = map[key];
+    return new Response(JSON.stringify(r.body), { status: r.status ?? 200 });
   }) as unknown as typeof fetch;
-  return { fetchImpl, x, calls };
-}
+  return { f, seen };
+};
 
-const opts = (store: MemoryStore, fetchImpl: typeof fetch, twitterApiKey?: string) =>
-  ({ geminiKey: "k", openaiKey: "o", twitterApiKey, store, fetchImpl, retries: 0, pollMs: 1, waitTimeoutMs: 500 });
-
-test("an X post is read from twitterapi.io, then digested like any other unit, without Gemini", async () => {
-  const store = new MemoryStore();
-  const unit = xUnit();
-  await store.saveUnit(unit);
-  const { fetchImpl, x, calls } = withX(() => Response.json({
-    status: "success", message: "success",
-    tweets: [{ id: POST, text: "Use evals before you ship an agent.\nSeriously.", createdAt: "Wed Sep 30 10:00:00 +0000 2026",
-      author: { userName: "someone", name: "Some One" }, quoted_tweet: { text: "Agents fail quietly.", author: { userName: "other" } } }],
-  }));
-  const summary = await processUnits([unit.id], opts(store, fetchImpl, "tok"));
-
-  const saved = (await store.getUnits([unit.id]))[0];
-  assert.equal(saved.status, "ready");
-  assert.equal(x.auth, "tok");
-  assert.equal(calls.gemini, 0);
-  assert.equal(saved.title, "@someone: Use evals before you ship an agent. Seriously.");
-  assert.deepEqual(saved.transcript?.window, [0, 0]);
-  assert.equal(saved.transcript?.evidence_items[0].observed_spoken_content, "Use evals before you ship an agent.\nSeriously.\n\nQuoted post by @other: Agents fail quietly.");
-  assert.match(saved.transcript?.overview ?? "", /Some One \(@someone\) on 2026-09-30/);
-  assert.equal(summary.digested, 1);
-  assert.equal(store.artifacts[0].sources[0].content_type, "x_post");
+test("a post that is only a link to an X Article reads the article's title and body", async () => {
+  const { f, seen } = routes({
+    "/twitter/tweets": { body: tweet("https://t.co/4qTQfdoerp") },
+    "/twitter/article": { body: { status: "success", article: { title: "How to build motion design studio ", preview_text: "Most people…", contents: [{ type: "unstyled", text: "Most people end up with the same video." }, { type: "header-two", text: "Give it a reference" }, { type: "unstyled", text: "" }] } } },
+  });
+  const r = await extractXPost({ apiKey: "k", postId: "42", fetchImpl: f });
+  assert.equal(seen.length, 2);
+  assert.match(seen[1], /\/twitter\/article\?tweet_id=42/);
+  const body = r.transcript.evidence_items[0].observed_spoken_content;
+  assert.equal(body, "Article: How to build motion design studio\n\nMost people end up with the same video.\n\nGive it a reference");
+  assert.equal(r.title, "@0xMovez: How to build motion design studio");
+  assert.match(r.transcript.overview!, /^X Article by Movez \(@0xMovez\) on 2026-09-27/);
 });
 
-test("X posts fail with the real reason: missing key, unavailable post, API error", async () => {
-  const cases: [string | undefined, () => Response, RegExp][] = [
-    [undefined, () => Response.json({}), /TWITTERAPI_IO_KEY is not configured/],
-    ["tok", () => Response.json({ status: "success", message: "success", tweets: [] }), /X post unavailable/],
-    ["tok", () => Response.json({ status: "error", message: "tweet not found" }), /twitterapi.io error: tweet not found/],
-    ["bad", () => new Response("Unauthorized", { status: 401 }), /twitterapi.io HTTP 401/],
-  ];
-  for (const [token, reply, error] of cases) {
-    const store = new MemoryStore();
-    const unit = xUnit();
-    await store.saveUnit(unit);
-    const { fetchImpl } = withX(reply);
-    await processUnits([unit.id], opts(store, fetchImpl, token));
-    const saved = (await store.getUnits([unit.id]))[0];
-    assert.equal(saved.status, "failed");
-    assert.match(saved.error ?? "", error);
-    assert.equal(store.artifacts.length, 0);
-  }
+test("an ordinary post is read as before, with no article request", async () => {
+  const { f, seen } = routes({ "/twitter/tweets": { body: tweet("Write the failing check first. https://t.co/x") } });
+  const r = await extractXPost({ apiKey: "k", postId: "42", fetchImpl: f });
+  assert.equal(seen.length, 1);
+  assert.equal(r.transcript.evidence_items[0].observed_spoken_content, "Write the failing check first. https://t.co/x");
+  assert.match(r.transcript.overview!, /^X post by/);
 });
 
-test("a 429 from twitterapi.io is retried and the post is then read", async () => {
-  const store = new MemoryStore();
-  const unit = xUnit();
-  await store.saveUnit(unit);
-  let n = 0;
-  const { fetchImpl, x } = withX(() => n++ < 2
-    ? new Response(JSON.stringify({ error: "Too Many Requests" }), { status: 429 })
-    : Response.json({ status: "success", message: "success", tweets: [{ id: POST, text: "Hello", author: { userName: "someone" } }] }));
-  await processUnits([unit.id], opts(store, fetchImpl, "tok"));
-  assert.equal((await store.getUnits([unit.id]))[0].status, "ready");
-  assert.equal(x.calls, 3);
-});
-
-test("a 429 that never clears fails with the real error after the retries", async () => {
-  const store = new MemoryStore();
-  const unit = xUnit();
-  await store.saveUnit(unit);
-  const { fetchImpl, x } = withX(() => new Response("Too Many Requests", { status: 429 }));
-  await processUnits([unit.id], opts(store, fetchImpl, "tok"));
-  const saved = (await store.getUnits([unit.id]))[0];
-  assert.equal(saved.status, "failed");
-  assert.match(saved.error ?? "", /twitterapi.io HTTP 429/);
-  assert.equal(x.calls, 4);
+test("a link-only post without an article keeps the link, and article errors surface", async () => {
+  const none = routes({ "/twitter/tweets": { body: tweet("https://t.co/abc") }, "/twitter/article": { status: 404, body: { status: "error", msg: "not found" } } });
+  assert.equal((await extractXPost({ apiKey: "k", postId: "42", fetchImpl: none.f })).transcript.evidence_items[0].observed_spoken_content, "https://t.co/abc");
+  const broken = routes({ "/twitter/tweets": { body: tweet("https://t.co/abc") }, "/twitter/article": { status: 500, body: { msg: "boom" } } });
+  await assert.rejects(extractXPost({ apiKey: "k", postId: "42", fetchImpl: broken.f }), /twitterapi\.io article/);
 });
