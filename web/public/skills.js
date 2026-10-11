@@ -6,7 +6,7 @@ import { el } from "./dom.js";
 
 const AGENT_KEY = "resurface-agent";
 
-async function copyText(text) {
+export async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text);
     return true;
@@ -23,7 +23,7 @@ async function copyText(text) {
   }
 }
 
-function download(name, text) {
+export function download(name, text) {
   const url = URL.createObjectURL(new Blob([text], { type: "text/markdown;charset=utf-8" }));
   const a = el("a", { href: url, download: name });
   document.body.append(a);
@@ -67,7 +67,8 @@ export function createSkills({ skillsList, tasksList, picker, skillsStatus, task
     );
     const li = el("li", { class: "skill", id: skillAnchor(s.artifact.id, s.artifact.version), "data-status": s.status }, head);
     if (s.status !== "ready") {
-      li.append(el("p", { class: "skill-state", text: s.status === "failed" ? `Couldn't write this skill. ${s.error || "Reason unknown."}` : SKILL_STATE[s.status] ?? s.status }));
+      const failed = s.retrying ? `Couldn't write this skill yet; trying again in a few minutes. ${s.error || ""}` : `Couldn't write this skill. ${s.error || "Reason unknown."}`;
+      li.append(el("p", { class: "skill-state", text: s.status === "failed" ? failed.trim() : SKILL_STATE[s.status] ?? s.status }));
       return li;
     }
     const file = skillFile(s, agent);
@@ -96,7 +97,7 @@ export function createSkills({ skillsList, tasksList, picker, skillsStatus, task
   function taskCard(t, s) {
     const evidence = t.evidence.map((e) => {
       const link = evidenceLink(e, s.videos);
-      return el("li", {}, el("q", { text: e.passage }),
+      return el("li", {}, el("p", { class: "task-passage", text: e.passage }),
         link ? el("a", { href: link.url, target: "_blank", rel: "noopener noreferrer", text: link.label }) : null);
     });
     return el("li", { class: "task" },

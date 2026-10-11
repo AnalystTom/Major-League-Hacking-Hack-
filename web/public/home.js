@@ -4,6 +4,7 @@
 
 import { api } from "./api.js";
 import { createReel } from "./reel.js";
+import { createHandoff } from "./handoff.js";
 import { createSkills } from "./skills.js";
 import { FAILED_STAGES, followImports, PROCESSOR, renderUnits } from "./units.js";
 
@@ -16,6 +17,7 @@ const skills = createSkills({
   skillsStatus: $("[data-skills-status]"), tasksStatus: $("[data-tasks-status]"),
 });
 const form = $("[data-add-template]").content.firstElementChild.cloneNode(true);
+const handoff = createHandoff($("[data-handoff-section]"), $("[data-agent]"));
 let follower = null;
 
 
@@ -89,6 +91,8 @@ function showSkills(list) {
   $('[data-open-skills="tasks"]').hidden = c.tasks === 0;
   $("[data-skills-empty]").hidden = list.length > 0;
   $("[data-tasks-empty]").hidden = c.tasks > 0;
+  $('[data-open-skills="agent"]').hidden = c.skills === 0;
+  handoff.update(list);
   openPendingSkill();
 }
 
@@ -97,7 +101,7 @@ function openSkills(target) {
   // location.replace (not replaceState) so .skill:target applies, without adding a history entry.
   if (target?.startsWith("skill-")) location.replace(`#${target}`);
   const el = target && document.getElementById(target);
-  (el ?? skillsSheet.querySelector(target === "tasks-title" ? "#tasks-title" : "#skills-title"))?.scrollIntoView({ block: "start" });
+  (el ?? skillsSheet.querySelector(target === "tasks-title" || target === "agent-title" ? `#${target}` : "#skills-title"))?.scrollIntoView({ block: "start" });
 }
 
 // A short's "View skill & tasks" link (#skill-<id>-<version>) opens the sheet at that card; the hash makes
@@ -113,7 +117,7 @@ document.addEventListener("click", (e) => {
   openSkills(a.getAttribute("href").slice(1));
 });
 document.querySelectorAll("[data-open-skills]").forEach((b) =>
-  b.addEventListener("click", () => openSkills(b.dataset.openSkills === "tasks" ? "tasks-title" : null)));
+  b.addEventListener("click", () => openSkills({ tasks: "tasks-title", agent: "agent-title" }[b.dataset.openSkills] ?? null)));
 $("[data-close-skills]").addEventListener("click", () => skillsSheet.close());
 skillsSheet.addEventListener("close", () => {
   if (location.hash.startsWith("#skill-")) history.replaceState(null, "", location.pathname);

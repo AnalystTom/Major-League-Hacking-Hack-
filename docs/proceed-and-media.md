@@ -30,7 +30,15 @@ Processor: Gemini extraction → Digestion Prompt (OpenAI) → artifacts
            → skill + up to 3 tasks (OpenAI)             ──▶ skill_results, action_items
            → script (OpenAI) → narration (Gemini TTS) → ffmpeg ──PUT mp4, vtt, m4a──▶ R2 ──▶ video_results
 Browser ──GET /api/imports, /api/feed?scope=mine, /api/skills (every 4 s while anything moves)──▶ Worker ──▶ TigerData
+        ──POST /api/handoffs {skill_ids}──▶ Worker ──INSERT agent_briefs──▶ TigerData
+                                  └──POST …/api/ingest/handoff {brief_id}──▶ Processor
+Processor: merge the picked skills → Handoff refinement (OpenAI) → prompt per agent and mode ──▶ agent_briefs
+Browser ──GET /api/handoffs/:id (every 3 s until ready)──▶ Worker   then copy or download the prompt into the agent
         ──GET /media/videos/…mp4 (Range)──▶ Worker ──▶ R2
+        ──POST /api/handoffs {skill_ids}──▶ Worker ──INSERT agent_briefs──▶ TigerData
+                                  └──POST …/api/ingest/handoff {brief_id}──▶ Processor
+Processor: merge the picked skills → Handoff refinement → prompt per agent and mode ──UPDATE agent_briefs──▶ TigerData
+Browser ──GET /api/handoffs/:id (every 3 s until ready)──▶ Worker   then copy/download the prompt into Codex
 ```
 
 ## Endpoints (web Worker, same origin as the page)
@@ -48,6 +56,8 @@ Every mutation must be `application/json`; with the `SameSite=Lax` session cooki
 | `GET /api/feed?scope=mine` | The user's shorts: artifacts they can see (below) whose artifact and video are both `ready`. |
 | `GET /api/skills` | The newest skill per visible ready artifact: `{ id, status, error, artifact, name, description, markdown, videos, action_items }`. Tasks carry `task`, `prerequisites`, `steps`, `completion_check` and `evidence`. |
 | `GET /api/feed` | The public curated feed (needs `feed_order`); no account. |
+| `POST /api/handoffs` `{ skill_ids }` | Queues one agent prompt for 1-12 of the user's ready skills (reused for the same skill revisions) and asks the processor to write it. Returns `{ brief, processor }`. |
+| `GET /api/handoffs/:id`, `GET /api/handoffs/latest` | The brief: `status`, actual `error`, title, summary, themes, tensions, actions, and `prompts` per agent (`claude`, `codex`, `cursor`, `hermes`) and mode (`review`, `apply`) once ready. |
 | `GET /media/<key>` | Streams `videos/`, `captions/` or `posters/` objects from R2 with byte ranges (Safari and seeking need them). Narration under `audio/` is stored but not served. |
 
 The page polls the three read routes every 4 s while a link is moving or a skill is being written. When a short

@@ -38,6 +38,9 @@ test("a skill that isn't ready shows no markdown or tasks, and only a failure sh
   assert.deepEqual(running.action_items, []);
   assert.equal(running.error, null);
   assert.equal(serializeSkill(row({ status: "failed", error: "OpenAI HTTP 500", skill_markdown: null })).error, "OpenAI HTTP 500");
+  assert.equal(serializeSkill(row({ status: "failed", error: "x", attempts: 1, skill_markdown: null })).retrying, true);
+  assert.equal(serializeSkill(row({ status: "failed", error: "x", attempts: 3, skill_markdown: null })).retrying, false);
+  assert.equal(serializeSkill(row({ status: "running", attempts: 1 })).retrying, false);
 });
 
 test("each agent gets its own path; Cursor gets rule frontmatter", () => {
@@ -126,6 +129,7 @@ test("shared skill helpers: anchor ids, writing states, and one front-matter pat
   const { skillAnchor, skillWriting, FRONTMATTER } = await import("../public/agents.js");
   assert.equal(skillAnchor("a1", 2), "skill-a1-2");
   assert.deepEqual(["pending", "running", "ready", "failed"].map((status) => skillWriting({ status })), [true, true, false, false]);
+  assert.equal(skillWriting({ status: "failed", retrying: true }), true, "a skill being retried keeps the page polling");
   const md = "---\nname: x\ndescription: y\n---\nBody";
   assert.equal(md.replace(FRONTMATTER, ""), "Body");
   assert.deepEqual(frontmatter(md), { name: "x", description: "y" });

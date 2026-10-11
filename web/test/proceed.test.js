@@ -70,6 +70,9 @@ test("describeUnit reports the furthest real stage", () => {
   assert.equal(describeUnit(unit({ exclusions: ["Off topic."] })).stage, "not_selected");
   assert.equal(describeUnit(unit({ artifacts: [art({})] })).stage, "rendering");
   assert.equal(describeUnit(unit({ artifacts: [art({ video: { status: "failed", error: "ffmpeg exit 1" } })] })).error, "ffmpeg exit 1");
+  const retrying = describeUnit(unit({ artifacts: [art({ video: { status: "failed", error: "Gemini HTTP 503", attempts: 1 } })] }));
+  assert.deepEqual([retrying.stage, retrying.settled, retrying.error], ["render_retrying", false, "Gemini HTTP 503"]);
+  assert.equal(describeUnit(unit({ artifacts: [art({ video: { status: "failed", error: "x", attempts: 3 } })] })).stage, "render_failed");
   for (const artifactReview of [undefined, "pending", "approved", "rejected"]) {
     for (const videoReview of [undefined, "pending", "approved", "rejected"]) {
       const result = describeUnit(unit({ artifacts: [art({

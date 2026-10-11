@@ -110,7 +110,7 @@ export async function readUnits(sql, ids, visible = ids) {
           'id', a.id, 'version', a.version, 'name', a.name,
           'ingestion_status', a.ingestion_status, 'error', a.error,
           'video', (
-            SELECT json_build_object('status', v.status, 'error', v.error)
+            SELECT json_build_object('status', v.status, 'error', v.error, 'attempts', v.attempts)
             FROM video_results v
             WHERE v.artifact_id = a.id AND v.artifact_version = a.version
             ORDER BY v.created_at DESC, v.id DESC LIMIT 1)
@@ -123,6 +123,10 @@ export async function readUnits(sql, ids, visible = ids) {
     ORDER BY array_position(string_to_array(${list}, ',')::uuid[], u.id)`;
   return rows.map((row) => describeUnit(row));
 }
+
+/** The processor's MAX_OUTPUT_ATTEMPTS (server/src/outputs/store.ts): a failed skill or short with attempts left is retried. */
+export const MAX_OUTPUT_ATTEMPTS = 3;
+export const willRetry = (r) => r?.status === "failed" && Number.isInteger(r.attempts) && r.attempts < MAX_OUTPUT_ATTEMPTS;
 
 /**
  * Collapses a unit's records into the one stage the page shows. `settled` means nothing more will
@@ -160,9 +164,10 @@ export function describeUnit(row, now = new Date()) {
     if (a.ingestion_status === "failed") return at("failed", true, a.error ?? null);
     if (a.ingestion_status !== "ready") return at("digesting", false);
     if (!v || v.status === "pending" || v.status === "running") return at("rendering", false);
+    if (willRetry(v)) return at("render_retrying", false, v.error ?? null);
     if (v.status === "failed") return at("render_failed", true, v.error ?? null);
     return at("ready", true);
   });
-  const rank = ["failed", "render_failed", "digesting", "rendering", "ready"];
+  const rank = ["failed", "render_failed", "digesting", "render_retrying", "rendering", "ready"];
   return stages.reduce((best, s) => (rank.indexOf(s.stage) > rank.indexOf(best.stage) ? s : best));
 }

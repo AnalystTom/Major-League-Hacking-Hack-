@@ -6,7 +6,7 @@ import type { OpenAIOptions } from "./types.js";
 /** model is OPENAI_MODEL, else the digest default. The output cap is the digest's, counting hidden reasoning. */
 export interface ChatJsonOptions extends OpenAIOptions {
   /** Which output this call is for, recorded with its token usage. */
-  step: Extract<Usage["step"], "skill" | "script">;
+  step: Extract<Usage["step"], "skill" | "script" | "handoff">;
   /** The artifact it's for. */
   ref?: string;
   system: string;

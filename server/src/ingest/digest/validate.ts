@@ -20,10 +20,12 @@ function resolveRefs(raw: unknown, units: IngestedUnit[]): unknown {
   };
 }
 
-/** Validates shape, referenced ids and that cited timestamps lie within a contributing unit's window. */
+/** Validates shape, referenced ids, and that cited timestamps overlap evidence extracted from a contributing unit. */
 export function validateDigest(raw: unknown, units: IngestedUnit[]): DigestOutput {
   const out = DigestOutput.parse(resolveRefs(raw, units));
   const byId = new Map(units.map((u) => [u.id, u]));
+  // The model only knows units by ref, so errors it is shown on a retry name the ref.
+  const refOf = new Map(units.map((u, i) => [u.id, unitRef(i)]));
   const need = (id: string, where: string) => {
     const u = byId.get(id);
     if (!u) throw new Error(`${where} cites "${id}", which is not one of the supplied units (valid refs: ${units.map((_, i) => unitRef(i)).join(", ")})`);
@@ -36,7 +38,12 @@ export function validateDigest(raw: unknown, units: IngestedUnit[]): DigestOutpu
       const u = need(ev.source_id, `evidence in "${a.name}"`);
       if (!a.source_ids.includes(ev.source_id)) throw new Error(`evidence in "${a.name}" cites a unit not in its source_ids`);
       const [lo, hi] = u.transcript!.window;
-      if (ev.start_seconds < lo || ev.end_seconds > hi) throw new Error(`evidence in "${a.name}" is outside unit ${ev.source_id}'s window`);
+      if (ev.start_seconds < lo || ev.end_seconds > hi) throw new Error(`evidence in "${a.name}" is outside unit ${refOf.get(ev.source_id)}'s window`);
+      // Inside the window isn't enough: the moment must be one extraction actually reported.
+      const items = u.transcript!.evidence_items ?? [];
+      if (!items.some((x) => x.start_seconds <= ev.end_seconds && ev.start_seconds <= x.end_seconds)) {
+        throw new Error(`evidence in "${a.name}" cites ${ev.start_seconds}-${ev.end_seconds}s of ${refOf.get(ev.source_id)}, where nothing was extracted`);
+      }
     }
   }
   for (const e of out.exclusions) {

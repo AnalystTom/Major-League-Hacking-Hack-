@@ -35,6 +35,7 @@
       </details>
       <button type="button" class="topbar-pill" data-open-skills="skills" hidden>Skills <b data-count="skills"></b></button>
       <button type="button" class="topbar-pill topbar-tasks" data-open-skills="tasks" hidden>Tasks <b data-count="tasks"></b></button>
+      <button type="button" class="topbar-pill" data-open-skills="agent" hidden>Send to agent</button>
       <button type="button" class="btn btn-small add-open" data-open-add aria-label="Add videos" hidden><span aria-hidden="true">+</span><span class="add-label">Add videos</span></button>
       <button type="button" class="btn btn-small btn-quiet-top" data-signout>Sign out</button>
     </div>
@@ -98,6 +99,46 @@
       <p class="form-status" role="status" aria-live="polite" data-tasks-status></p>
       <ol class="tasks" data-tasks></ol>
       <p class="journey-empty" data-tasks-empty>Tasks come from ready skills. A skill gets up to three, or none when its sources don't support one.</p>
+    </section>
+
+    <section class="journey-section" aria-labelledby="agent-title" data-handoff-section hidden>
+      <div class="journey-section-head">
+        <div>
+          <h2 id="agent-title">Send to your agent</h2>
+          <p class="hint">Pick the skills to hand over. Resurface merges them into one prompt for the agent chosen under Skills: install the skills, review your recent work, and find where the lessons apply.</p>
+        </div>
+      </div>
+      <div class="handoff">
+        <div class="handoff-form">
+          <fieldset class="handoff-field">
+            <legend>Skills to send</legend>
+            <ul class="handoff-skills" data-handoff-skills></ul>
+          </fieldset>
+          <fieldset class="handoff-field">
+            <legend>What should your agent do?</legend>
+            <label class="handoff-mode"><input type="radio" name="handoff-mode" value="review" checked>
+              <span><b>Find where it applies</b><small>Installs the skills, reviews your recent work, and reports. No code changes.</small></span></label>
+            <label class="handoff-mode"><input type="radio" name="handoff-mode" value="apply">
+              <span><b>Apply the first task that fits</b><small>Makes the smallest change and runs its check. Doesn't commit.</small></span></label>
+          </fieldset>
+          <button type="button" class="btn" data-handoff-write disabled>Write the prompt</button>
+          <p class="form-status" role="status" aria-live="polite" data-handoff-status></p>
+        </div>
+        <article class="handoff-result" data-handoff-result hidden>
+          <p class="skill-from">Prompt for <span data-handoff-agent></span></p>
+          <h3 data-handoff-title></h3>
+          <p class="skill-desc" data-handoff-summary></p>
+          <div class="task-block"><p class="task-label">Themes across your videos</p><ul data-handoff-themes></ul></div>
+          <div class="task-block task-check" data-handoff-tensions hidden><p></p></div>
+          <div class="task-block"><p class="task-label">Where it asks your agent to look, in order</p><ol data-handoff-actions></ol></div>
+          <div class="skill-actions">
+            <button type="button" class="btn btn-small" data-handoff-copy>Copy</button>
+            <button type="button" class="btn-line" data-handoff-download>Download</button>
+          </div>
+          <p class="handoff-run" data-handoff-run></p>
+          <details class="task-evidence"><summary>Read the whole prompt</summary><pre class="skill-md"><code data-handoff-prompt></code></pre></details>
+        </article>
+      </div>
     </section>
   </dialog>
 

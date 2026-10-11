@@ -2,6 +2,7 @@
 // is separate from the video: a skill can be ready while its short is still rendering, or after it failed.
 
 import { FRONTMATTER } from "../public/agents.js";
+import { willRetry } from "./imports.js";
 
 /**
  * The newest skill result per ready artifact revision built only from these units (all of the user's imports),
@@ -15,7 +16,7 @@ export async function readSkills(sql, unitIds) {
     SELECT * FROM (
       SELECT DISTINCT ON (a.id, a.version)
         a.id AS artifact_id, a.version AS artifact_version, a.name AS artifact_name, a.category, a.created_at,
-        s.id, s.status, s.error, s.skill_markdown,
+        s.id, s.status, s.error, s.attempts, s.skill_markdown,
         COALESCE((
           SELECT json_agg(json_build_object(
             'id', i.id, 'task', i.task, 'prerequisites', i.prerequisites, 'steps', i.steps,
@@ -58,6 +59,8 @@ const text = (v) => (typeof v === "string" ? v : "");
 const strings = (v) => (Array.isArray(v) ? v.filter((s) => typeof s === "string" && s.trim()) : []);
 
 export function serializeSkill(row) {
+  // A failed skill with attempts left is written again by the processor's sweep.
+  const retrying = willRetry(row);
   const ready = row.status === "ready" && typeof row.skill_markdown === "string";
   const { name, description } = ready ? frontmatter(row.skill_markdown) : { name: null, description: null };
   // The artifact's sources: YouTube videos and X posts, only in their canonical forms.
@@ -66,6 +69,7 @@ export function serializeSkill(row) {
     id: row.id,
     status: row.status,
     error: row.status === "failed" ? row.error ?? null : null,
+    retrying,
     artifact: { id: row.artifact_id, version: row.artifact_version, name: row.artifact_name, category: row.category ?? null },
     name,
     description,

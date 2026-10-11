@@ -1,4 +1,4 @@
-// Integration test: needs db/migrations 001-005 applied. Run with TEST_DATABASE_URL=postgres://... npm test.
+// Integration test: needs db/migrations 001-009 applied. Run with TEST_DATABASE_URL=postgres://... npm test.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -70,6 +70,25 @@ test("outputs, stale claims and digest retries against the shared schema", { ski
     const v = (await pool.query(`SELECT status, music_ref, duration_seconds FROM video_results WHERE id = $1`, [videoClaim.id])).rows[0];
     assert.deepEqual(v, { status: "ready", music_ref: null, duration_seconds: "34.50" });
     assert.equal(await outputs.claim("video", art), null, "a ready video isn't redone");
+
+    // A failed skill waits RETRY_AFTER_MINUTES x attempts, is retried, and stops after MAX_OUTPUT_ATTEMPTS.
+    const b = (await pool.query(
+      `INSERT INTO artifacts (name, source_url, source_ids, sources, processed_text, category, evidence, digestion_prompt_id, ingestion_status)
+       VALUES ('Retry me', 'https://www.youtube.com/watch?v=VQy50fuxI34', $1, '[]', 'text', 'Evals', '[]', $2, 'ready') RETURNING id, version`,
+      [[ready], made.prompt])).rows[0];
+    made.artifacts.push(b.id);
+    const retry = { ...art, id: b.id, version: b.version };
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const c = (await outputs.claim("skill", retry))!;
+      assert.ok(c, `attempt ${attempt} is claimed`);
+      assert.ok(await outputs.fail("skill", c, `boom ${attempt}`));
+      assert.equal(await outputs.claim("skill", retry), null, "not retried straight away");
+      await pool.query(`UPDATE skill_results SET updated_at = now() - interval '1 hour' WHERE id = $1`, [c.id]);
+    }
+    const last = (await pool.query(`SELECT status, attempts, error FROM skill_results WHERE artifact_id = $1`, [b.id])).rows[0];
+    assert.deepEqual(last, { status: "failed", attempts: 3, error: "boom 3" });
+    assert.equal(await outputs.claim("skill", retry), null, "no fourth attempt");
+    assert.ok(!(await outputs.artifactsNeeding("skill", 500)).some((x) => x.id === b.id));
   } finally {
     for (const id of made.artifacts) {
       await pool.query(`DELETE FROM action_items WHERE skill_result_id IN (SELECT id FROM skill_results WHERE artifact_id = $1)`, [id]);
