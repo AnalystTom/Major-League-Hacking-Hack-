@@ -5,6 +5,7 @@ import { describeUnit, parseImport, parseUnitIds } from "../src/imports.js";
 import { isMediaKey, parseRange, resolveMediaRef } from "../src/media.js";
 import { serializeItem } from "../src/feed.js";
 import { requestProcessing } from "../src/processor.js";
+import { followImports } from "../public/units.js";
 
 const ID = "6f1c2a52-8d0e-4f3b-9a51-0c6d2e7b9a10";
 
@@ -56,7 +57,7 @@ test("parseUnitIds accepts only uuid lists", () => {
 
 test("describeUnit reports the furthest real stage", () => {
   const unit = (over) => ({ id: ID, source_url: "u", status: "ready", artifacts: [], exclusions: [], ...over });
-  const art = (over) => ({ ingestion_status: "ready", review_status: "approved", video: null, ...over });
+  const art = (over) => ({ ingestion_status: "ready", video: null, ...over });
 
   assert.equal(describeUnit(unit({ status: "pending" })).stage, "queued");
   assert.equal(describeUnit(unit({ status: "running" })).stage, "fetching");
@@ -68,14 +69,22 @@ test("describeUnit reports the furthest real stage", () => {
   assert.equal(describeUnit(unit({ exclusions: ["Off topic."] })).stage, "not_selected");
   assert.equal(describeUnit(unit({ artifacts: [art({})] })).stage, "rendering");
   assert.equal(describeUnit(unit({ artifacts: [art({ video: { status: "failed", error: "ffmpeg exit 1" } })] })).error, "ffmpeg exit 1");
-  assert.equal(describeUnit(unit({ artifacts: [art({ video: { status: "ready", review_status: "pending" } })] })).stage, "in_review");
-  assert.equal(
-    describeUnit(unit({ artifacts: [art({ review_status: "pending", video: { status: "ready", review_status: "approved" } })] })).stage,
-    "in_review"
-  );
+  for (const artifactReview of [undefined, "pending", "approved", "rejected"]) {
+    for (const videoReview of [undefined, "pending", "approved", "rejected"]) {
+      const result = describeUnit(unit({ artifacts: [art({
+        review_status: artifactReview, video: { status: "ready", review_status: videoReview },
+      })] }));
+      assert.equal(result.stage, "ready");
+      assert.equal(result.settled, true);
+    }
+  }
+  assert.equal(describeUnit(unit({ artifacts: [art({
+    ingestion_status: "running", video: { status: "ready" },
+  })] })).stage, "digesting");
+  assert.equal(describeUnit(unit({ artifacts: [art({ video: { status: "running" } })] })).stage, "rendering");
   const ready = describeUnit(unit({ artifacts: [
     art({ ingestion_status: "failed" }),
-    art({ video: { status: "ready", review_status: "approved" } }),
+    art({ video: { status: "ready" } }),
   ] }));
   assert.equal(ready.stage, "ready");
   assert.equal(ready.settled, true);
@@ -132,4 +141,29 @@ test("requestProcessing reports what actually happened", async () => {
   assert.equal(await requestProcessing({ PROCESSOR_URL: "https://p.dev/process", PROCESSOR_TOKEN: "t" }, [ID], spy, project), "requested");
   assert.equal(sent.init.headers.authorization, "Bearer t");
   assert.deepEqual(JSON.parse(sent.init.body), { unit_ids: [ID], project });
+});
+
+
+test("final progress is read before the feed so a just-rendered clip is not missed", async (t) => {
+  const calls = [];
+  let release;
+  const progress = new Promise((resolve) => { release = resolve; });
+  t.mock.method(globalThis, "fetch", async (url) => {
+    calls.push(url);
+    if (url === "/api/imports") {
+      await progress;
+      return Response.json({ units: [{ stage: "ready", settled: true }] });
+    }
+    return Response.json({ items: [] });
+  });
+  let done;
+  const finished = new Promise((resolve) => { done = resolve; });
+  followImports({ onUnits: () => {}, onItems: done, onError: done });
+  try {
+    assert.deepEqual(calls, ["/api/imports"]);
+  } finally {
+    release();
+    await finished;
+  }
+  assert.deepEqual(calls, ["/api/imports", "/api/feed?scope=mine"]);
 });

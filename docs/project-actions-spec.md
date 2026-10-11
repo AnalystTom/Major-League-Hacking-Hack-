@@ -38,7 +38,7 @@ Prepare a small collection of actual videos/clips for the demo and label prepare
 
 ## Categories
 
-Digestion Prompt derives categories from the successfully extracted collection and the user's prompt. A source can support several topics; related sources may form one artifact. Category names are free text, not an enum. Show only categories with ready, reviewed clips and compute counts from those records. Unsupported material retains its actual exclusion reason.
+Digestion Prompt derives categories from the successfully extracted collection and the user's prompt. A source can support several topics; related sources may form one artifact. Category names are free text, not an enum. Show only categories with ready clips and compute counts from those records. Unsupported material retains its actual exclusion reason.
 
 ## Visual flow
 
@@ -89,7 +89,7 @@ The prompt guides recommendation selection as well as grouping. Workflow 1 produ
 | Workflow | Owns | Input | Output | Independent completion check |
 | --- | --- | --- | --- | --- |
 | 1. Ingestion | Import UI/API, Gemini extraction and source review, Digestion Prompt, grouping/categories, TigerData schema and contracts | Individual YouTube links, prompt, and authorized project context | Per-source units/errors and reviewed final artifacts | A real video yields usable extracted content and a traceable artifact; unread sources retain actual errors. |
-| 2. Video and feed | Opus timed scripts and animation, narration/music/captions, isolated rendering, video results, Cloudflare feed/player and CTAs | Versioned ingestion artifacts with ready processing and approved review | Actual media, video records, and the feed response defined below | A generated clip plays with voice/music/captions on the deployed page using backend data; CTAs reflect actual skill readiness. |
+| 2. Video and feed | Opus timed scripts and animation, narration/music/captions, isolated rendering, video results, Cloudflare feed/player and CTAs | Versioned ingestion artifacts with ready processing | Actual media, video records, and the feed response defined below | A generated clip plays with voice/music/captions on the deployed page using backend data; CTAs reflect actual skill readiness. |
 | 3. Skills and actions | Skill generation, project action items, skill review/export, Codex delivery adapter and receipts | Ready ingestion records and project context | Processed skills, action items, actual handoff/result records | A real artifact produces a reviewable skill and executable task that can be used in Codex without any video being generated. |
 
 Workflow 1 owns schema migrations, ingestion writes, and the import screen/module. Workflow 2 owns the feed/player, media pipeline, and deployment wiring; it mounts the import module through an agreed route without rewriting it. Workflow 3 owns skill generation and delivery code and does not edit either screen. Agree exact file ownership before parallel work. Each workflow updates only its own output records, avoiding replacement of another workflow's work.
@@ -123,7 +123,7 @@ The final artifact represents one processed topic, potentially assembled from se
 
 These field names are the proposed shared interface, not invented example data. Separate related output records avoid concurrent writers overwriting each other:
 
-Processing states are `pending`, `running`, `ready`, and `failed`; review states are `pending`, `approved`, and `rejected`, with actual reviewer feedback. Status records can exist before output content. Consumption requires a matching input version, `ready` processing, and `approved` review. Do not mark a unit ready merely because its page metadata was retrieved: the pipeline needs usable source content.
+Processing states are `pending`, `running`, `ready`, and `failed`; review states are `pending`, `approved`, and `rejected`, with actual reviewer feedback. Status records can exist before output content. Consumption requires a matching input version and `ready` processing. Historical review fields remain for compatibility; no teammate or manual approval gates ingestion, playback, or skill readiness. Do not mark a unit ready merely because its page metadata was retrieved: the pipeline needs usable source content.
 
 - **Video result:** the `video_results` record defined in workstream 2 below. The artifact's `video` is a joined response field, not a second copy of media metadata.
 - **Skill result:** artifact ID/version, project-context version, `skill_markdown`, project `action_items`, supporting references, generation/review status, actual error.
@@ -140,7 +140,7 @@ Later candidates: X threads, linked pages, GitHub READMEs/docs/skills, newslette
 
 ### Input contract
 
-Read one immutable artifact revision from TigerData. Only consume `ingestion_status = ready` and `review_status = approved`. Workstream 2 does not rewrite ingestion or skill records.
+Read one immutable artifact revision from TigerData. Only consume `ingestion_status = ready`. Workstream 2 does not rewrite ingestion or skill records.
 
 | Input field | Use |
 | --- | --- |
@@ -159,13 +159,13 @@ The backend resolves references and verifies readiness before generation. Model 
 2. Opus turns `processed_text` into a timed script and animation code using a stored prompt revision. Target a 30–45 second vertical video.
 3. Generate narration from the script and choose an actual licensed music track. Measure the audio and revise scene timing and captions to match it.
 4. Render in an isolated environment; store the actual animation code, video, captions, narration, and music files.
-5. Validate references, timing, playback, and audio before marking processing `ready`. Review remains `pending` until a teammate approves the rendered clip.
+5. Validate references, timing, playback, and audio before marking processing `ready`. Ready clips reach the reel automatically.
 
 `script` is JSON with a nonempty `scenes` array. Each scene contains `start_seconds`, `end_seconds`, `narration_text`, `on_screen_text`, `visual_instruction`, and `source_ids`. Speech or screen text may be empty when the scene does not use it; factual claims still require traceable source evidence. Scene times must be finite, nonnegative, ordered, and nonoverlapping, with `end_seconds > start_seconds`. Every `source_id` must belong to the input artifact. Final scene timing and caption cues must fit the measured render duration. Unsupported claims, unknown source IDs, or invalid timing cause a failure rather than publication.
 
 ### Output: `video_results`
 
-One video result per `(artifact_id, artifact_version)` in v0. Retry updates that record; a new approved artifact revision gets a separate record. Rerendering resets review to `pending` so an earlier approval cannot publish changed media.
+One video result per `(artifact_id, artifact_version)` in v0. Retry updates that record; a new ready artifact revision gets a separate record. Rerendering resets processing to `pending` until the changed media is validated again.
 
 | Columns | Type / requirement |
 | --- | --- |
@@ -180,13 +180,13 @@ One video result per `(artifact_id, artifact_version)` in v0. Retry updates that
 | `music_provenance` | Text; track identity/source and permission or license evidence |
 | `duration_seconds` | Numeric; measured positive duration, never the target duration |
 | `status` | `pending`, `running`, `ready`, or `failed` |
-| `review_status` | `pending`, `approved`, or `rejected` |
+| `review_status` | Historical metadata only; does not gate consumption |
 | `review_feedback` | Text or null; actual reviewer feedback |
 | `feed_order` | Integer or null; team-assigned demo order, required for inclusion in the feed |
 | `error` | Text or null; actual safe failure details |
 | `created_at`, `updated_at` | Timestamps maintained by the backend on actual writes |
 
-Processing `ready` requires valid script, prompt revision, nonempty code/media/asset references, music provenance, and positive measured duration. A storage reference alone is insufficient: the pipeline must verify the files exist and the final video plays with narration, music, and usable captions. Approval requires review of grounding, readability, pacing, audio balance, and duration. A failed step records `failed` and its actual error; it does not manufacture missing assets.
+Processing `ready` requires valid script, prompt revision, nonempty code/media/asset references, music provenance, and positive measured duration. A storage reference alone is insufficient: the pipeline must verify the files exist and the final video plays with narration, music, and usable captions. Processing validates grounding, readability, pacing, audio balance, and duration. A failed step records `failed` and its actual error; it does not manufacture missing assets.
 
 **Proposed migration changes, not applied:** add `animation_code_ref`; enforce one result per artifact revision; strengthen readiness checks against empty strings and nonpositive duration; and update `artifact_feed` to check project-context versions and expose the fields below. The shared artifact table must support immutable `(id, version)` revisions before this contract is implemented. The current branch migration uses `id` alone as its primary key, so that dependency needs correction by workstream 1.
 
@@ -195,9 +195,9 @@ Processing `ready` requires valid script, prompt revision, nonempty code/media/a
 `GET /api/feed` returns an `items` array; no ready clips returns `items: []`. Each item contains `id`, `version`, `name`, `category`, `source_url`, `sources`, `selection_reason`, and:
 
 - `video`: `id`, `url`, `captions_url`, `duration_seconds`, `feed_order`. `url` and `captions_url` are playable URLs resolved from `media_ref` and `caption_ref` at the Worker, never the stored references.
-- `skill`: null when no matching result exists; otherwise `id`, `status`, `review_status`. Workstream 3 serves the skill content and actions separately.
+- `skill`: null when no matching result exists; otherwise `id`, `status`. Workstream 3 serves the skill content and actions separately.
 
-Resolve storage references to authorized playable URLs at the backend boundary; never expose credentials or internal filesystem paths. Include an item only when the artifact and video are both ready and approved, the video matches the artifact revision and project context, and its video resolves to a servable URL. The public curated feed also requires `feed_order`; a signed-in user's feed (`?scope=mine`) shows their approved clips for their current project without one. Exclude superseded artifact revisions and artifacts whose project context is no longer current. Order by `feed_order` (nulls last), then `created_at`, then artifact `id`. Return at most one item per artifact revision; select the newest matching skill result by `created_at`, then `id` for ties, so the join cannot multiply feed rows. Exclude stale skill results, and enable skill/action CTAs only for matching ready, approved skills. Category counts come from this eligible set.
+Resolve storage references to authorized playable URLs at the backend boundary; never expose credentials or internal filesystem paths. Include an item only when the artifact and video are both ready, the video matches the artifact revision and project context, and its video resolves to a servable URL. The public curated feed also requires `feed_order`; a signed-in user's feed (`?scope=mine`) shows their ready clips for their current project without one. Exclude superseded artifact revisions and artifacts whose project context is no longer current. Order by `feed_order` (nulls last), then `created_at`, then artifact `id`. Return at most one item per artifact revision; select the newest matching skill result by `created_at`, then `id` for ties, so the join cannot multiply feed rows. Exclude stale skill results, and enable skill/action CTAs only for matching ready skills. Category counts come from this eligible set.
 
 **Implemented** in `web/src/feed.js`, with these gaps against the contract: it filters by `project_context_id` but not by version, superseded revisions are not excluded, stale skill results are not excluded, and the query reads the tables directly instead of the `artifact_feed` view. Workstream 1 owns the view's migration; workstream 2 owns the API serialization and player.
 
@@ -238,7 +238,7 @@ Static assets serve everything except `/api/*` and `/media/*`: the landing page,
 | `PUT /api/project` | session | `{ name, goal?, tools, agents }` → `{ project }`, saved as the next `project_contexts` version. |
 | `POST /api/imports` | session + project | `{ links: string[] \| string, company?: honeypot }` → `201 { units, processor }`. `409` without a project brief. |
 | `GET /api/imports` | session | `{ units }`: the user's 50 most recent imports, newest first. |
-| `GET /api/feed?scope=mine` | session | `{ items }`: the user's approved shorts for their current project, as in the [feed read contract](#feed-read-contract). |
+| `GET /api/feed?scope=mine` | session | `{ items }`: the user's ready shorts for their current project, as in the [feed read contract](#feed-read-contract). |
 | `GET /api/feed` | none | `{ items }`: the public curated feed (requires `feed_order`). |
 | `GET`/`HEAD /media/<key>` | none | `200` or `206` with `accept-ranges`, `content-range`, `etag`, and `cache-control: public, max-age=3600`; `416` past the end; `404` for an unknown or disallowed key; `503` without the R2 binding. |
 
@@ -257,13 +257,11 @@ Signed-out requests to session routes get `401`. Rate limits: sign-up and sign-i
 | `digesting` | unit `ready` with no artifacts or exclusions yet, or an artifact not yet `ready` | no |
 | `rendering` | artifact ready; no video result, or it is `pending`/`running` | no |
 | `render_failed` | video result `failed` (carries `error`) | yes |
-| `rejected` | artifact or video `review_status = rejected` | yes |
-| `in_review` | video `ready`, artifact and video not both approved | yes |
-| `ready` | artifact and video both `ready` and `approved`; it appears in the feed | yes |
+| `ready` | artifact and video both `ready`; it appears in the feed | yes |
 
 **Media references.** TigerData stores `r2:<key>` (resolved to `/media/<key>`) or an `https://` URL. Keys must match `videos|captions|posters/` followed by `[A-Za-z0-9._-]` path segments, with no `..`. Anything else is treated as unplayable, and its item is left out of the feed. The bucket stays private; no storage credentials reach the browser.
 
-**Schema.** `db/migrations/001_shared_schema.sql` defines the shared tables and `artifact_feed`; `db/migrations/002_accounts.sql` adds `users`, `sessions`, and `user_imports` without changing existing tables. Neither is confirmed applied to TigerData. The Worker writes `users`, `sessions`, `project_contexts`, `ingested_units`, and `user_imports`. Units, artifacts, exclusions, and video results are written by the processor, skill results by workstream 3, and review decisions by a teammate.
+**Schema.** `db/migrations/001_shared_schema.sql` defines the shared tables and `artifact_feed`; `db/migrations/002_accounts.sql` adds `users`, `sessions`, and `user_imports` without changing existing tables. `db/migrations/003_ready_feed.sql` updates existing feed views to use processing readiness alone. Live migration application is unverified. The Worker writes `users`, `sessions`, `project_contexts`, `ingested_units`, and `user_imports`. Units, artifacts, exclusions, and video results are written by the processor, skill results by workstream 3, without a teammate approval step.
 
 ### Processor contract (proposed; not built)
 
@@ -274,13 +272,13 @@ The web Worker sends `POST PROCESSOR_URL` with `authorization: Bearer PROCESSOR_
 3. Treat extraction as shared and digestion as per project. A unit may already be `ready` from another user's import: skip extraction and digest it for the requested project, unless an artifact for that unit and project already exists.
 4. Run extraction → Digestion Prompt → Opus timed script → narration, music, and render, writing each record and its actual error. Artifacts carry `project_context_id` and `project_context_version` from the request.
 5. Upload to R2 at `videos/<artifact_id>/<version>/short.mp4` (H.264 + AAC, 1080×1920, `-movflags +faststart`), `captions/<artifact_id>/<version>/short.vtt` (WebVTT), and optionally `posters/<artifact_id>/<version>/poster.jpg`.
-6. Store `media_ref = 'r2:videos/…'` and `caption_ref = 'r2:captions/…'`, and set `status = ready` only after verifying playback. Leave `review_status = pending` for a teammate.
+6. Store `media_ref = 'r2:videos/…'` and `caption_ref = 'r2:captions/…'`, and set `status = ready` only after verifying playback. The reel includes ready artifacts and videos immediately.
 
-`web/scripts/dev-processor.mjs` simulates this flow for local development only. It refuses non-local databases, labels its records `[Simulated]`, points every short at one test clip, and approves its own clips. It is not demo or production evidence.
+`web/scripts/dev-processor.mjs` simulates this flow for local development only. It refuses non-local databases, labels its records `[Simulated]`, points every short at one test clip, without a manual review step. It is not demo or production evidence.
 
 ### Page behaviour
 
-`/start` resumes at the first unfinished onboarding step from `/api/me`. During processing, and on `/app`, the page polls `/api/imports` and `/api/feed?scope=mine` every 4 seconds while any unit is unsettled, and every 15 seconds while a clip is `in_review`. Each unit shows its title or URL, its stage, and its actual error, or "Reason unknown." Approved clips go to the reel. On the landing page, signed-in visitors see **Open your feed** or **Finish setting up** instead of **Get started**.
+`/start` resumes at the first unfinished onboarding step from `/api/me`. During processing, and on `/app`, the page polls `/api/imports` and `/api/feed?scope=mine` every 4 seconds while any unit is unsettled. Each unit shows its title or URL, its stage, and its actual error, or "Reason unknown." Ready clips go to the reel. On the landing page, signed-in visitors see **Open your feed** or **Finish setting up** instead of **Get started**.
 
 ### API Worker `resurface-api` (`server/`, Hono; runs on Node or Workers)
 
@@ -340,10 +338,9 @@ These replace the answered 20-question backlog. Recommended answers remain propo
 2. **Where will production Nimble and Gemini credentials be configured?** Both supplied keys authenticated in isolated tests; neither is stored in repository or deployment configuration. Gemini returned model extraction for the selected windows; source review is pending.
 3. **Which provider is the motion/video API key for, and where is the existing Opus generation prompt?** Keep that credential separate from extraction and TTS.
 4. **Which narration voice/provider and music track?** Recommend Gemini TTS plus one licensed instrumental track; Kokoro is the open-source alternative.
-5. **Who reviews Digestion Prompt output and clips?** Recommend one teammate records approval/rejection with reasons and selects the demo set.
-6. **Which Codex destination and delivery route?** Recommend a reviewed skill/task export first; direct delivery needs a real acknowledgement. Confirm whether direct delivery must be in the live v0 demo.
-7. **Who builds and hosts the processor, and where?** The web Worker already calls `PROCESSOR_URL`; until it exists, imports wait as `queued`. Media storage is decided: Cloudflare R2 bucket `resurface-media`, served through `/media/` (see [proceed-and-media.md](proceed-and-media.md)).
-8. **Is rate limiting enough on sign-up?** Imports now require an account, but sign-up is open and rate-limited only per IP; each account can trigger paid extraction and rendering. Recommend adding Turnstile to sign-up before announcing the URL.
+5. **Which Codex destination and delivery route?** Recommend a reviewed skill/task export first; direct delivery needs a real acknowledgement. Confirm whether direct delivery must be in the live v0 demo.
+6. **Who builds and hosts the processor, and where?** The web Worker already calls `PROCESSOR_URL`; until it exists, imports wait as `queued`. Media storage is decided: Cloudflare R2 bucket `resurface-media`, served through `/media/` (see [proceed-and-media.md](proceed-and-media.md)).
+7. **Is rate limiting enough on sign-up?** Imports now require an account, but sign-up is open and rate-limited only per IP; each account can trigger paid extraction and rendering. Recommend adding Turnstile to sign-up before announcing the URL.
 
 ## Approval checkpoints and next work
 
@@ -354,7 +351,7 @@ Run each step past the owner before proceeding. Preparing this spec does not aut
 3. **Ingestion and digestion:** review the five candidate observations, refine extraction/few-shot examples, approve the project brief and Digestion Prompt, then validate and store real artifacts.
 4. **Workstream 2:** approve the Opus prompt, narration provider, and music track; build the processor against the contract above. Produce one real clip in R2, review it, and confirm it reaches the implemented feed and reel. Close the feed-contract gaps listed under the feed read contract.
 5. **Workstream 3:** agree one export/delivery route; generate reviewed skills and actions independently from the same artifact revision.
-6. **Verification and delivery:** test the approved user journey on big-machine-1, clean up owned test processes, and run ponytail-review before any approved commit/push. Ask separately before deployment.
+6. **Verification and delivery:** follow this repository's `AGENTS.md`: run the relevant package tests and verify frontend changes with local headless Playwright, clean up owned test processes, and run ponytail-review before any approved commit/push. Ask separately before deployment.
 
 ## Acceptance and verification
 
@@ -370,7 +367,7 @@ Run each step past the owner before proceeding. Preparing this spec does not aut
 - Workflow 3 can generate and export a real skill/action list without workflow 2 or any rendered video.
 - Separate output writes and artifact/context versions prevent stale results or one workflow overwriting another.
 - Delivery acknowledgement is distinct from completion and result verification.
-- Run Playwright on big-machine-1 in an isolated session; return the tested URL and evidence. If unavailable, report the limit without launching local test windows.
+- Run local headless Playwright in an isolated browser context for frontend changes; return the tested URL and evidence. This project has no remote-host verification requirement.
 - Clean up only sessions/servers created by the run and verify exit; preserve pre-existing sessions.
 - Run ponytail-review before commits/pushes; preserve hooks and unrelated changes.
 

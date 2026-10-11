@@ -541,7 +541,7 @@ button { font: inherit; color: inherit; }
 .units a { font-family: var(--mono); font-size: .8125rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .unit-stage { font-weight: 700; font-size: .875rem; color: var(--ink-soft); text-align: right; }
 .units li[data-stage="ready"] .unit-stage { color: var(--accent-ink); }
-.units li:is([data-stage="failed"], [data-stage="render_failed"], [data-stage="rejected"]) .unit-stage { color: var(--late); }
+.units li:is([data-stage="failed"], [data-stage="render_failed"]) .unit-stage { color: var(--late); }
 .units li:is([data-stage="queued"], [data-stage="fetching"], [data-stage="digesting"], [data-stage="rendering"]) .unit-stage::before {
   content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%;
   background: currentColor; vertical-align: .1em; animation: pulse 1.2s ease-in-out infinite;
