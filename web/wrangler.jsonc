@@ -19,7 +19,7 @@
   ],
   // TigerData: set DATABASE_URL with `npx wrangler secret put DATABASE_URL` (or in .dev.vars locally).
   // Optional: PROCESSOR_URL and PROCESSOR_TOKEN for the service that turns units into shorts.
-  // Kept so the existing waitlist signups stay reachable; no route writes to it any more.
+  // The landing page collects emails through /api/waitlist in the existing D1 database.
   "d1_databases": [
     {
       "binding": "DB",

@@ -2,6 +2,7 @@ import {
   cookieSecure, createSession, createUser, currentUser, endSession, login, parseLogin, parseSignup, sessionCookie,
 } from "./auth.js";
 import { connect } from "./db.js";
+import waitlist from "./waitlist.js";
 import { readFeed } from "./feed.js";
 import { createUnits, parseImport, readUnits, userUnitIds } from "./imports.js";
 import { serveMedia } from "./media.js";
@@ -127,6 +128,8 @@ async function api(request, env, url, sql) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+
+    if (url.pathname === "/api/waitlist") return waitlist.fetch(request, env);
 
     if (url.pathname.startsWith("/media/")) {
       let key;

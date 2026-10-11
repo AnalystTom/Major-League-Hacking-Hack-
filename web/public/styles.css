@@ -635,3 +635,23 @@ button { font: inherit; color: inherit; }
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important; }
 }
+
+/* ---------- Forms ---------- */
+
+.signup input[type="email"] {
+  font: inherit; font-size: 1.125rem; color: var(--ink);
+  background: var(--paper);
+  border: 2px solid var(--ink); border-radius: 12px;
+  padding: 0 18px; height: 60px; min-width: 0;
+}
+.signup input[type="email"]::placeholder { color: var(--ink-soft); opacity: .7; }
+.signup input[type="email"]:focus-visible { outline-offset: 2px; }
+
+.signup-hero {
+  margin-top: 34px;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px;
+  max-width: 38rem;
+}
+.signup-hero .btn { height: 60px; }
+.signup-hero .form-status { grid-column: 1 / -1; }
+@media (max-width: 640px) { .signup-hero { grid-template-columns: minmax(0, 1fr); } }

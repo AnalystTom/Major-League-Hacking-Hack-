@@ -1,6 +1,6 @@
 # Onboarding, processing, and where shorts live
 
-The landing page's **Get started** button opens `/start`: email and password, nothing else (`users`, `sessions`;
+The product onboarding at `/start` uses: email and password, nothing else (`users`, `sessions`;
 `db/migrations/002_accounts.sql`). Signing up or in goes straight to `/app`, where the whole workflow lives:
 
 1. **Paste links**: up to 10 YouTube links, the first thing on the page for a new account. Stored as
@@ -118,4 +118,10 @@ npm run dev     # http://localhost:8787
 - Bodies are capped at 32 KB and links at 2,048 characters. Consider Turnstile on sign-up before announcing the URL.
 - The API never returns `submitted_url`: a reused unit's original link belongs to whoever pasted it first.
 - Source links in the reel are only rendered when they're `http(s)`; they come from model output.
-- The D1 waitlist binding is kept so existing signups stay reachable; nothing writes to it.
+- The landing page currently collects emails through `/api/waitlist` in the existing D1 waitlist. Production uses the dedicated waitlist Worker; product onboarding remains available in the normal development configuration.
+
+## Waitlist deployment
+
+The landing page has an email form and **Join the waitlist** links. It shows success only after D1 accepts the signup; duplicate emails stay as one record. Existing waitlist rows are retained.
+
+Deploy with `npm run deploy:waitlist --prefix web`. `web/wrangler.waitlist.jsonc` targets the same `resurface` Worker and `resurface-waitlist` D1 database without requiring the product's TigerData or R2 setup. This Worker redirects `/start` and `/app` to the form and does not expose product APIs. The normal `web/wrangler.jsonc` retains the product backend for development and a later launch. Apply `web/migrations/0001_waitlist.sql` only if the table does not exist.

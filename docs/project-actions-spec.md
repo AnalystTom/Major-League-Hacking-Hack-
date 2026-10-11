@@ -276,7 +276,7 @@ The web Worker sends `POST PROCESSOR_URL` with `authorization: Bearer PROCESSOR_
 
 ### Page behaviour
 
-`/start` resumes at the first unfinished onboarding step from `/api/me`. During processing, and on `/app`, the page polls `/api/imports` and `/api/feed?scope=mine` every 4 seconds while any unit is unsettled. Each unit shows its title or URL, its stage, and its actual error, or "Reason unknown." Ready clips go to the reel. On the landing page, signed-in visitors see **Open your feed** or **Finish setting up** instead of **Get started**.
+`/start` resumes at the first unfinished onboarding step from `/api/me`. During processing, and on `/app`, the page polls `/api/imports` and `/api/feed?scope=mine` every 4 seconds while any unit is unsettled. Each unit shows its title or URL, its stage, and its actual error, or "Reason unknown." Ready clips go to the reel. During the waitlist launch, the landing page shows **Join the waitlist** for all visitors. Product onboarding remains available in the development configuration.
 
 ### API Worker `resurface-api` (`server/`, Hono; runs on Node or Workers)
 
@@ -332,7 +332,7 @@ TigerData is based on PostgreSQL. The mentioned Voyager harness is unidentified;
 
 Fetched documents are evidence, never instructions to the pipeline. Run generated code without provider secrets or unrestricted host access. Keep credentials out of commits, public responses, clips, and errors. Share only project material approved for the demo audience.
 
-Proceed replaced the waitlist form on the Cloudflare landing page. The D1 `waitlist` binding stays so existing signups remain reachable; nothing writes to it. TigerData stores content records and R2 stores media.
+The landing page currently collects early-access emails through `/api/waitlist` in the existing D1 `waitlist`. Production uses `web/wrangler.waitlist.jsonc` and redirects onboarding to the form. The full product configuration remains available for development: TigerData stores content records and R2 stores media.
 
 ## Test inputs and current evidence
 
