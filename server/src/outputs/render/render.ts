@@ -1,6 +1,7 @@
 // Workflow 2, basic renderer: script -> narration per scene -> measured timeline -> captions -> video -> R2.
 // No music yet: music_ref stays null until a licensed track is chosen.
 
+import { reasoningEffort } from "../../openaiEffort.js";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -48,7 +49,8 @@ export async function renderArtifact(a: ReadyArtifact, o: RenderOptions): Promis
     }));
     return {
       script: { scenes },
-      prompt_revision: `${SCRIPT_PROMPT_REVISION}; openai:${o.openaiModel ?? DEFAULT_DIGEST_MODEL}; tts:${o.ttsModel ?? TTS_MODEL}`,
+      // The model and reasoning effort that wrote the script, so a render shows how it was made.
+      prompt_revision: `${SCRIPT_PROMPT_REVISION}; openai:${o.openaiModel ?? DEFAULT_DIGEST_MODEL}${reasoningEffort() ? `/${reasoningEffort()}` : ""}; tts:${o.ttsModel ?? TTS_MODEL}`,
       media_ref, caption_ref, narration_ref, duration_seconds: out.duration,
     };
   } finally {
