@@ -24,8 +24,8 @@ test("Substack links are canonicalized; other hosts and non-posts are rejected",
 test("parsePost drops chrome, numbers sections and takes the title from the heading", () => {
   const r = parsePost(article());
   assert.equal(r.title, "Evals first");
-  assert.equal(r.transcript.sections.length, 9); // subtitle + 8 paragraphs; no image line, no comments
-  assert.deepEqual(r.transcript.sections.map((s) => s.index), [...Array(9).keys()]);
+  assert.equal(r.transcript.sections.length, 8); // the 8 paragraphs; no image line, short byline line or comments
+  assert.deepEqual(r.transcript.sections.map((s) => s.index), [...Array(8).keys()]);
   assert.ok(!r.transcript.sections.some((s) => /Comments here|hero/.test(s.text)));
 });
 
@@ -83,4 +83,59 @@ test("without a Nimble key the unit fails clearly and a paywalled post is not re
   assert.equal(b.status, "failed");
   assert.match(b.error!, /paywalled/);
   assert.equal((await store.listReadyUnits()).length, 0);
+});
+
+// Shaped like a real Nimble reply for a Substack post: logo heading, nav, byline, counters, image-only links.
+const body = (n: number) => Array.from({ length: n }, (_, i) => `**Point ${i}.** A harness is [the walls](https://x.dev/a) around a loop, with the sandbox and the gates that decide "done".`.repeat(2));
+const realPage = (paragraphs: string[], tail = "") => [
+  "[![Elevate](https://substackcdn.com/image/fetch/logo.png)](https://addyo.substack.com/)",
+  "# [![Elevate](https://substackcdn.com/image/fetch/logo.png)](https://addyo.substack.com/)",
+  "SubscribeSign in", "# Software Factories, Light and Dark", "### Loops, harnesses, factories.",
+  "[](https://substack.com/@addyosmani)", "[Addy Osmani](https://substack.com/@addyosmani)", "Jul 22, 2026", "115", "7", "10", "Share",
+  ...paragraphs, tail,
+].join("\n\n");
+
+test("the post title wins over the publication logo heading, and page chrome is dropped", () => {
+  const r = parsePost(realPage(body(6), "## Discussion about this post\n\nComments"));
+  assert.equal(r.title, "Software Factories, Light and Dark");
+  const text = r.transcript.sections.map((s) => s.text);
+  for (const junk of ["SubscribeSign in", "Share", "115", "Jul 22, 2026", "[](", "https://", "**"]) assert.ok(!text.some((t) => t === junk || t.includes(junk)), junk);
+  assert.ok(text.includes("Loops, harnesses, factories.".replace(/^/, "### ")) || text.some((t) => t.includes("Loops, harnesses")));
+  assert.match(text.find((t) => t.startsWith("Point 0."))!, /A harness is the walls around a loop/);
+});
+
+test("a paywalled post is rejected even when its free preview is long", () => {
+  const long = body(40);
+  assert.ok(long.join(" ").length > 2000);
+  assert.throws(() => parsePost(realPage(long, "## Subscribe to continue reading\n\nThis post is for paid subscribers")), /paywalled/);
+  assert.throws(() => parsePost(realPage(long), { paywall: "Upgrade to paid" }), /paywalled/);
+});
+
+test("parser fields win when present: title, subtitle, author and body list", () => {
+  const r = parsePost("# [![logo](x)](y)\n\nignored markdown", {
+    title: " The Real  Title ", subtitle: "A subtitle", author: "Addy Osmani",
+    body: [...body(4), "Share", "12", 7],
+  });
+  assert.equal(r.title, "The Real Title");
+  assert.equal(r.transcript.overview, "A subtitle By Addy Osmani.");
+  assert.equal(r.transcript.sections.length, 4);
+  assert.ok(r.transcript.sections.every((s) => !s.text.includes("](")));
+});
+
+test("an empty parser body falls back to the markdown; empty everything fails clearly", () => {
+  assert.equal(parsePost(realPage(body(6)), { body: [], paywall: null }).transcript.sections.length > 3, true);
+  assert.throws(() => parsePost("# [![logo](x)](y)\n\nSubscribeSign in", { body: [] }), /no readable post text/);
+});
+
+test("the Nimble request asks for the parser fields and a null paywall field does not reject", async () => {
+  let sent: any;
+  const fetchImpl = (async (_u: string, init: any) => {
+    sent = JSON.parse(init.body);
+    return Response.json({ status: "success", data: { markdown: realPage(body(6)), parsing: { title: "T", body: body(6), paywall: null } } });
+  }) as unknown as typeof fetch;
+  const r = await extractWithNimble({ apiKey: "k", sourceUrl: "https://a.substack.com/p/x", fetchImpl, retries: 0 });
+  assert.equal(r.title, "T");
+  assert.equal(sent.parse, true);
+  assert.deepEqual(Object.keys(sent.parser).sort(), ["author", "body", "paywall", "subtitle", "title"]);
+  assert.equal(sent.parser.body.type, "terminal_list");
 });

@@ -35,8 +35,12 @@ Only public `https://<publication>.substack.com/p/<slug>` links (and `open.subst
 params are dropped and the canonical post URL is the unit's `source_url`. Custom-domain newsletters and `substack.com/@user` / app share links
 are rejected with a message asking for the post address.
 
-Nimble (`POST https://sdk.nimbleway.com/v2/extract`, markdown) returns the rendered page. The post body (from the first `#` heading to the comments
-section) is split into numbered `sections` in `ingested_units.transcript` (`{ sections: [{ index, text }] }`, at most 80 sections of 1,500
-characters). Unlike videos and X posts, which cite `start_seconds`/`end_seconds` (X posts at second 0), digests cite a post by `evidence[].section`,
-and `validateDigest` requires that section to exist. A paywalled post, an empty page, a non-2xx page status, or a Nimble failure makes the unit
-`failed` with the actual reason; nothing is inferred from a paywall teaser. No schema migration is needed (`content_type` is free text).
+Nimble (`POST https://sdk.nimbleway.com/v2/extract`, `render: true`, markdown plus a CSS-selector `parser`, see `SUBSTACK_PARSER`) returns the rendered page.
+The parser supplies the post title, subtitle, author, the body blocks (`div.available-content div.body.markup > *`) and a `div.paywall` marker. The body
+becomes numbered `sections` in `ingested_units.transcript` (`{ overview?, sections: [{ index, text }] }`, at most 80 sections of 1,500 characters), as
+plain text: links, images, emphasis markers, buttons and counters are removed. If a selector returns nothing (Substack changed its markup), the cleaned
+markdown is used instead: the publication logo heading is skipped, the post's own `#` heading is the title, and the byline and comments are dropped.
+Unlike videos and X posts, which cite `start_seconds`/`end_seconds` (X posts at second 0), digests cite a post by `evidence[].section`,
+and `validateDigest` requires that section to exist. Any paywall signal (the parser marker, or "This post is for paid subscribers" and similar text)
+makes the unit `failed`, however long the free preview is. An empty page, a non-2xx page status, or a Nimble failure also fails the unit with the actual
+reason; nothing is inferred from a paywall teaser. No schema migration is needed (`content_type` is free text).
