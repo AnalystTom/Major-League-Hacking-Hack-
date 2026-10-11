@@ -33,3 +33,26 @@ test("OPENAI_REASONING_EFFORT is validated and only sent when set", () => {
   process.env.OPENAI_REASONING_EFFORT = "xhigh"; assert.deepEqual(effortField(), { reasoning_effort: "xhigh" });
   if (before === undefined) delete process.env.OPENAI_REASONING_EFFORT; else process.env.OPENAI_REASONING_EFFORT = before;
 });
+
+test("redaction removes configured secret values and quoted or JSON-style credentials", () => {
+  process.env.TEST_FAKE_API_KEY = "sk-live-abcdef123456";
+  const r = redact(`OpenAI said sk-live-abcdef123456 was bad; {"password":"hunter 2 two"} and token: 'abc def'`);
+  delete process.env.TEST_FAKE_API_KEY;
+  assert.ok(!r.includes("sk-live-abcdef123456"));
+  assert.ok(!r.includes("hunter"));
+  assert.ok(!r.includes("abc def"));
+  assert.match(r, /"password":<redacted>/);
+});
+
+test("IPv6 loopback stays a plain local connection", () => {
+  assert.equal(poolConfig("postgres://u:p@[::1]:5432/dev").ssl, undefined);
+});
+
+test("/health shows last_error only with the processor's token", async () => {
+  const { createApp } = await import("../src/app.js");
+  const app = createApp({ webOrigins: [], healthToken: "tok-123" });
+  recordError("processing failed", new Error("boom"));
+  assert.equal((await (await app.request("/health")).json()).last_error, undefined);
+  const withToken = await (await app.request("/health", { headers: { authorization: "Bearer tok-123" } })).json();
+  assert.match(withToken.last_error.message, /processing failed: boom/);
+});

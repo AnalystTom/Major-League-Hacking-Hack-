@@ -52,9 +52,11 @@ async function produceNow(kind: Kind, a: ReadyArtifact, o: OutputOptions) {
     } catch (e) {
       // A worker whose claim was taken over leaves the row to the one that took it.
       const recorded = !(e instanceof LostClaim) && (await o.outputs.fail(kind, claim, (e as Error).message));
+      recordError(`${kind} failed`, e);
       o.log?.(`${kind} ${recorded ? "failed" : "not recorded"} for artifact ${a.id} v${a.version}: ${(e as Error).message}`);
     }
   } catch (e) {
+    recordError(`${kind} claim failed`, e);
     o.log?.(`${kind} for artifact ${a.id} v${a.version} couldn't be claimed or recorded: ${(e as Error).message}`);
   } finally {
     inFlight.delete(key);

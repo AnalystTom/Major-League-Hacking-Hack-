@@ -4,7 +4,7 @@ import type pg from "pg";
 // sslmode=…, so a URL pasted without it failed every connection. Local databases keep plain connections.
 export function poolConfig(url: string): pg.PoolConfig {
   const host = (() => { try { return new URL(url).hostname; } catch { return ""; } })();
-  const local = ["localhost", "127.0.0.1", "::1", ""].includes(host);
+  const local = ["localhost", "127.0.0.1", "::1", "[::1]", ""].includes(host);
   return {
     connectionString: url,
     ...(local || /[?&]sslmode=/.test(url) ? {} : { ssl: true }),

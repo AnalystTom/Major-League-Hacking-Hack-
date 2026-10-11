@@ -10,15 +10,20 @@ export type AppConfig = {
   /** Browser origins allowed to call the API, e.g. the landing site. */
   webOrigins: string[];
   shorts?: Short[];
+  /** The processor's INGEST_TOKEN: /health includes last_error only for callers presenting it. */
+  healthToken?: string;
 };
 
-export function createApp({ webOrigins, shorts = SAMPLE_SHORTS }: AppConfig) {
+export function createApp({ webOrigins, shorts = SAMPLE_SHORTS, healthToken }: AppConfig) {
   const app = new Hono();
 
   app.use("/api/*", cors({ origin: webOrigins }));
 
   // busy: imports being processed plus skills and shorts running or queued; 0 means the process may sleep.
-  app.get("/health", (c) => c.json({ ok: true, busy: busyCount(), last_error: lastErrorSeen() }));
+  app.get("/health", (c) => {
+    const authorized = !!healthToken && c.req.header("authorization") === `Bearer ${healthToken}`;
+    return c.json(authorized ? { ok: true, busy: busyCount(), last_error: lastErrorSeen() } : { ok: true, busy: busyCount() });
+  });
 
   app.get("/api/agents", (c) =>
     c.json(Object.entries(AGENTS).map(([id, a]) => ({ id, name: a.name })))

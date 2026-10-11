@@ -7,7 +7,7 @@ const app = createApp({ webOrigins: ["https://site.example"] });
 test("health check", async () => {
   const res = await app.request("/health");
   assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { ok: true, busy: 0, last_error: null });
+  assert.deepEqual(await res.json(), { ok: true, busy: 0 }, "no last_error without the processor token");
 });
 
 test("lists the sample shorts", async () => {

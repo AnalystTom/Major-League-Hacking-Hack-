@@ -17,7 +17,7 @@ import { MemoryOutputStore, PgOutputStore } from "./outputs/store.js";
 import { createHandoffApp } from "./outputs/handoff-api.js";
 import { PgHandoffStore } from "./outputs/handoff-store.js";
 
-const app = createApp({ webOrigins: parseOrigins(process.env.WEB_ORIGINS) });
+const app = createApp({ webOrigins: parseOrigins(process.env.WEB_ORIGINS), healthToken: process.env.INGEST_TOKEN });
 setUsageSink((u) => console.log(`[usage] ${JSON.stringify(u)}`));
 
 // Ingestion (workflow 1) runs on Node only: it needs pg and requests that outlive a Worker's limits.

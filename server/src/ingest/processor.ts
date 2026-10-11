@@ -109,6 +109,7 @@ async function processNow(unitIds: string[], o: ProcessorOptions): Promise<Proce
     } catch (e) {
       const promptId = await o.store.registerPrompt(promptRevisionText(request), []).catch(() => null);
       await o.store.saveFailedArtifacts(needing, (e as Error).message, promptId);
+      recordError("digest failed", e);
       o.log?.(`digest failed for ${needing.length} unit(s): ${(e as Error).message}`);
     }
   } finally {

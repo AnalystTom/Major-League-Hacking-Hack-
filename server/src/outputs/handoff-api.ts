@@ -24,6 +24,7 @@ export async function runHandoff(briefId: string, o: HandoffOptions): Promise<"r
     claimed = await o.store.claim(briefId);
   } catch (e) {
     // Nothing was claimed, so the brief stays pending and the page can ask again.
+    recordError("handoff claim failed", e);
     o.log?.(`handoff ${briefId} couldn't be claimed: ${(e as Error).message}`);
     return "not_claimed";
   }
@@ -42,6 +43,7 @@ export async function runHandoff(briefId: string, o: HandoffOptions): Promise<"r
     o.log?.(`handoff ${briefId} ready (${skills.length} skills, ${brief.actions.length} actions)`);
     return "ready";
   } catch (e) {
+    recordError("handoff failed", e);
     await o.store.fail(claimed, (e as Error).message).catch(() => false);
     o.log?.(`handoff ${briefId} failed: ${(e as Error).message}`);
     return "failed";
