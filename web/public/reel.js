@@ -1,19 +1,10 @@
 // The reel: rendered shorts in a vertical, snap-scrolling column. One clip plays at a time, muted
 // until the viewer turns sound on. Every string from the API goes in through textContent.
 
-const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+import { skillAnchor } from "./agents.js";
+import { el } from "./dom.js";
 
-function el(tag, attrs = {}, ...children) {
-  const node = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === null || v === undefined || v === false) continue;
-    if (k === "text") node.textContent = v;
-    else if (k in node && typeof v !== "string") node[k] = v;
-    else node.setAttribute(k, v === true ? "" : v);
-  }
-  node.append(...children.filter(Boolean));
-  return node;
-}
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const SKILL_LABEL = {
   pending: "Skill queued",
@@ -121,9 +112,9 @@ export function createReel(root) {
           soundBtn,
           el("button", { type: "button", class: "reel-btn", "aria-expanded": "false", text: "View sources",
             onclick: (e) => { sheet.hidden = !sheet.hidden; e.currentTarget.setAttribute("aria-expanded", String(!sheet.hidden)); } }),
-          // The skill and its tasks sit below the reel; only a ready skill gets a way there.
+          // The skill and its tasks open in a sheet over the reel; only a ready skill gets a way there.
           item.skill?.status === "ready"
-            ? el("a", { class: "reel-btn", href: `#skill-${item.id}-${item.version}`, text: "View skill & tasks" })
+            ? el("a", { class: "reel-btn", href: `#${skillAnchor(item.id, item.version)}`, text: "View skill & tasks" })
             : null,
           el("button", { type: "button", class: "reel-btn", text: "Skip", onclick: () => go(1) })
         )

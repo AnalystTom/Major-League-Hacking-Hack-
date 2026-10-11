@@ -121,3 +121,12 @@ test("a ready short without a skill yet keeps a slow, bounded check going", asyn
   for (let i = 0; i < 20; i++) { t.mock.timers.tick(20_000); await flush(); }
   assert.equal(skillCalls, 16, "one first read, then 15 slow checks, then it stops");
 });
+
+test("shared skill helpers: anchor ids, writing states, and one front-matter pattern", async () => {
+  const { skillAnchor, skillWriting, FRONTMATTER } = await import("../public/agents.js");
+  assert.equal(skillAnchor("a1", 2), "skill-a1-2");
+  assert.deepEqual(["pending", "running", "ready", "failed"].map((status) => skillWriting({ status })), [true, true, false, false]);
+  const md = "---\nname: x\ndescription: y\n---\nBody";
+  assert.equal(md.replace(FRONTMATTER, ""), "Body");
+  assert.deepEqual(frontmatter(md), { name: "x", description: "y" });
+});

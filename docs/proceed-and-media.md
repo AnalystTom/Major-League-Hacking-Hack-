@@ -1,24 +1,35 @@
 # Onboarding, processing, and where shorts live
 
-The product onboarding at `/start` uses: email and password, nothing else (`users`, `sessions`;
-`db/migrations/002_accounts.sql`). Signing up or in goes straight to `/app`, where the whole workflow lives:
+**Status, 11 Oct 2026.** Production serves the waitlist (see the end of this page). Everything else here is
+built on `main` plus PRs #3 (processor outputs, Skills and Tasks) and #4 (full-screen reel), and runs in local
+dev. The processor's hosting is PR #5. Shorts reach production only when that's deployed and sign-up reopens.
 
-1. **Paste links**: up to 10 YouTube links, the first thing on the page for a new account. Stored as
-   `ingested_units` and linked to the user in `user_imports`.
-2. **Watch progress**: each link's real stage, updated every 4 seconds while anything is moving.
-3. **Watch shorts**: the reel beside the list fills in as shorts are rendered.
+## The journey
 
-There is no project or setup. Extraction and digests are shared: a video imported by several users is read and
-digested once (`project_context_id` stays null), and everyone who imported it sees the same short.
-Signed-in visitors see "Open your feed" on the landing page.
+1. **Sign up** at `/start`: email and password, nothing else (`users`, `sessions`; `db/migrations/002_accounts.sql`).
+   Signing up or in goes straight to `/app`.
+2. **Paste links** on `/app`. A new account lands on the reel's 9:16 frame with the paste box in it, focused.
+   Up to 10 YouTube links become `ingested_units`, linked to the user in `user_imports`.
+3. **Watch them process.** Until the first short is ready, the frame shows "Making your shorts" with each link's
+   real stage. After that, a top-bar status chip ("2 ready · 1 couldn't be made") opens the same list with the
+   actual errors.
+4. **Watch the reel**, full screen at 9:16 below the top bar, edge to edge on phones. **Add videos** opens a sheet
+   with the paste box.
+5. **Skills and Tasks** open as a sheet over the reel, from top-bar buttons with counts or a short's
+   **View skill & tasks** link (which opens the sheet at that skill's card). Skills reach an agent by copy or
+   download; nothing is delivered directly.
+
+There is no project, setup step, or review gate: whatever the processor marks `ready` is shown. Signed-in
+visitors see "Open your feed" on the landing page.
 
 ```
 Browser ──POST /api/auth/signup──▶ Worker ──INSERT users, sessions──▶ TigerData   (httpOnly cookie back)
         ──POST /api/imports──▶ Worker ──INSERT ingested_units, user_imports──▶ TigerData
-                                  └──POST PROCESSOR_URL {unit_ids}──▶ Processor
-Processor: Gemini extraction → Digestion Prompt → artifacts → Opus script → render
-           ──PUT mp4 + vtt──▶ R2 (resurface-media)   ──UPDATE/INSERT──▶ TigerData
-Browser ──GET /api/imports, /api/feed?scope=mine (every 4 s while processing)──▶ Worker ──▶ TigerData
+                                  └──POST PROCESSOR_URL {unit_ids}──▶ Processor (server/src)
+Processor: Gemini extraction → Digestion Prompt (OpenAI) → artifacts
+           → skill + up to 3 tasks (OpenAI)             ──▶ skill_results, action_items
+           → script (OpenAI) → narration (Gemini TTS) → ffmpeg ──PUT mp4, vtt, m4a──▶ R2 ──▶ video_results
+Browser ──GET /api/imports, /api/feed?scope=mine, /api/skills (every 4 s while anything moves)──▶ Worker ──▶ TigerData
         ──GET /media/videos/…mp4 (Range)──▶ Worker ──▶ R2
 ```
 
@@ -34,34 +45,66 @@ Every mutation must be `application/json`; with the `SameSite=Lax` session cooki
 | `GET /api/me` | `{ user, imports }`; `{ user: null }` when signed out. |
 | `POST /api/imports` `{ links }` | Canonicalises links, reuses a non-failed unit for the same video and start time, links each to the user, and sends units new to this user to the processor. Returns `{ units, processor }`. |
 | `GET /api/imports` | The user's links with their stage: `queued`, `fetching`, `digesting`, `rendering`, `ready`, `failed`, `render_failed`, `not_selected`, plus the actual error. |
-| `GET /api/feed?scope=mine` | The user's shorts: artifacts built from their links whose artifact and video are both `ready`. |
+| `GET /api/feed?scope=mine` | The user's shorts: artifacts they can see (below) whose artifact and video are both `ready`. |
+| `GET /api/skills` | The newest skill per visible ready artifact: `{ id, status, error, artifact, name, description, markdown, videos, action_items }`. Tasks carry `task`, `prerequisites`, `steps`, `completion_check` and `evidence`. |
 | `GET /api/feed` | The public curated feed (needs `feed_order`); no account. |
-| `GET /media/<key>` | Streams `videos/`, `captions/` or `posters/` objects from R2 with byte ranges (Safari and seeking need them). |
+| `GET /media/<key>` | Streams `videos/`, `captions/` or `posters/` objects from R2 with byte ranges (Safari and seeking need them). Narration under `audio/` is stored but not served. |
+
+The page polls the three read routes every 4 s while a link is moving or a skill is being written. When a short
+is ready but its skill hasn't started, it checks every 20 s, at most 15 times. A failing `/api/skills` doesn't stop
+links and shorts from updating.
 
 Rate limits: sign-up and sign-in 10 per IP per minute (`AUTH_LIMITER`), imports 5 per account per minute (`IMPORT_LIMITER`).
 
-## What the processor must do
+## Who sees what
 
-It receives `POST PROCESSOR_URL` with `Authorization: Bearer PROCESSOR_TOKEN` and `{ "unit_ids": [...] }`.
-Reply `202` quickly and work asynchronously. The same id can arrive twice, so be idempotent.
-A unit is sent the first time a user imports it; resubmitting doesn't resend it. Also sweep imported
-`ingested_units WHERE status = 'pending'` on a timer, which picks up anything a failed request missed.
-The Node processor in `server/src/ingest/` does all of this; set `PROCESSOR_URL` to `https://<host>/api/ingest/process`
-and `PROCESSOR_TOKEN` to its `INGEST_TOKEN`.
+Units are shared: a video imported by two people is read once. A digest (artifact) can combine several videos,
+so **a user sees an artifact, its short and its skill only when they imported every video it was built from**
+(`feed.js`, `imports.js`, `skills.js`). That keeps one person's videos out of another's reel. The processor
+re-digests a shared video for any importer who can't see a digest of it yet (`server/src/ingest/store.ts`).
 
-1. Set the unit to `running`, extract, then `ready` with `transcript` or `raw_artifact_ref`, or
-   `failed` with the actual `error`. A unit that's already `ready` (someone else imported the video) isn't re-extracted.
-2. Digest ready units that have no non-failed artifact and no exclusion yet: write `artifacts` with `source_ids`
-   containing the unit ids and `project_context_id` null, or `artifact_exclusions` with a reason.
-3. Render, then upload to R2 under:
-   - `videos/<artifact_id>/<version>/short.mp4`: H.264 + AAC, 1080×1920, `-movflags +faststart`
-   - `captions/<artifact_id>/<version>/short.vtt`: WebVTT (the browser `<track>` only reads VTT)
-   - optional `posters/<artifact_id>/<version>/poster.jpg`
-4. Write `video_results` with `media_ref = 'r2:videos/…/short.mp4'` and `caption_ref = 'r2:captions/…/short.vtt'`,
-   `status = 'ready'` only after the uploaded file is verified playable. Ready artifacts and videos reach the reel automatically.
+**Open decision.** This replaces the earlier "digested once, shared by everyone" rule, and it can give someone a
+second short covering a video that's already in a combined digest. The alternative is fully shared digests, which
+means people see others' videos. The user hasn't chosen yet.
 
-Refs are resolved at the Worker, so the bucket stays private and no credentials reach the browser.
-Anything other than `r2:<allowed key>` or an `https://` URL is treated as unplayable and left out of the feed.
+## The processor
+
+Node, in `server/src`. `POST /api/ingest/process` takes `{ "unit_ids": [...] }` with
+`Authorization: Bearer <INGEST_TOKEN>`, replies `202`, and works in the background. The web Worker calls it with
+`PROCESSOR_URL` and `PROCESSOR_TOKEN` (equal to `INGEST_TOKEN`). Timed sweeps pick up anything a request missed.
+
+1. **Extract** (`ingest/`): claim pending units, read each video's window with Gemini, then `ready` with the
+   evidence, or `failed` with the actual error. A unit that's already `ready` isn't read again.
+2. **Digest**: the Digestion Prompt (OpenAI) writes `artifacts` (`project_context_id` null) and
+   `artifact_exclusions` with reasons. A digest that fails is stored as a failed artifact with its error and is
+   retried, up to 3 times per unit.
+3. **Skill** (`outputs/skills.ts`): one ready artifact becomes a `SKILL.md` (front matter `name` and `description`,
+   a review warning, `## Sources`) and up to three tasks, each with steps and a `completion_check`.
+4. **Short** (`outputs/render/`): OpenAI writes a 4–6 scene script (about 70–110 words of narration). Gemini TTS
+   speaks each scene, and the scene times come from the measured speech. Captions are WebVTT cues spread over
+   that speech. ffmpeg composes one title card per scene over the narration, 1080×1920 H.264 + AAC with
+   `+faststart`. There's no music in v0.
+5. **Checks before `ready`.** The rendered file must probe as 1080×1920 H.264 with an AAC track, and its duration
+   must match the timeline within a second. Each upload is read back and its size compared. `video_results` then
+   records the script, the models used, `media_ref`, `caption_ref`, `narration_ref` and the measured duration.
+
+R2 keys (resolved by the Worker as `r2:<key>`):
+- `videos/<artifact_id>/<version>/short.mp4`
+- `captions/<artifact_id>/<version>/short.vtt`
+- `audio/<artifact_id>/<version>/narration.m4a`
+
+**Claims.** Every job is claimed. A unit's claim, and the claim token on `video_results` or `skill_results`, can be
+taken over after 60 minutes (`server/src/claims.ts`), which is longer than the slowest extraction or render. A
+worker whose claim was taken over can't write its result.
+
+**Configuration** (`server/.env.example`): `GEMINI_API_KEY` and `INGEST_TOKEN` mount ingestion. `OPENAI_API_KEY`
+enables digests, skills and scripts; without it, units are only extracted. `DATABASE_URL` enables the sweeps.
+Media goes to R2 through its S3 API (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`),
+or to local wrangler dev with `MEDIA_LOCAL_WEB_DIR`. Optional: `OPENAI_MODEL`, `GEMINI_MODEL`, `GEMINI_TTS_MODEL`,
+`GEMINI_TTS_VOICE`, `RENDER_FONT`, `SWEEP_INTERVAL_MS`. Renders need `ffmpeg` and `ffprobe` on the host.
+
+**Hosting** is PR #5: a Cloudflare Container behind a `resurface-processor` Worker that sleeps when idle, to stay
+around $5–10 a month. It isn't deployed. It needs Workers Paid and a Workers Builds connection.
 
 ## Storage choice: Cloudflare R2
 
@@ -76,33 +119,38 @@ and delivered, and it re-encodes the uploads. 30 to 45 s progressive MP4s don't 
 
 ## Setup before deploy
 
-Apply `db/migrations/002_accounts.sql` to TigerData (it only adds `users`, `sessions` and `user_imports`).
-Existing databases also need `db/migrations/003_ready_feed.sql` to remove approval gates from the shared feed view.
-Historical review columns remain for compatibility; they do not gate processing, playback, or skill readiness.
+Migrations: 001–004 are applied to TigerData. **`005_outputs.sql` isn't yet**: it adds `claimed_at`, one video
+and one skill result per artifact revision, `claim_token`, and a stricter ready check. Run the duplicate checks
+in its header first.
 
 ```
 cd web
-npx wrangler r2 bucket create resurface-media
-npx wrangler secret put DATABASE_URL        # TigerData connection string with ?sslmode=require
-npx wrangler secret put PROCESSOR_URL       # once the processor exists
-npx wrangler secret put PROCESSOR_TOKEN
+npx wrangler r2 bucket create resurface-media   # done
+npx wrangler secret put DATABASE_URL            # done
+npx wrangler secret put PROCESSOR_URL           # https://resurface-processor.<subdomain>.workers.dev/api/ingest/process, once PR #5 is live
+npx wrangler secret put PROCESSOR_TOKEN         # equal to the processor's INGEST_TOKEN
 ```
 
 For local dev, put the same keys in `web/.dev.vars` (gitignored). For production, a Hyperdrive config
 bound as `HYPERDRIVE` is preferred over `DATABASE_URL` (pooled connections); `src/db.js` uses it when present.
 
-## Local dev with the simulated processor
+## Local dev
 
-`web/scripts/dev-processor.mjs` stands in for the processor so the whole journey can be walked locally.
-It refuses any database that isn't on this machine, labels every record `[Simulated]`, points every short
-at one test clip. It has no manual review step.
+Database for both options:
 
 ```
 createdb resurface_dev
-psql -d resurface_dev -f db/migrations/001_shared_schema.sql -f db/migrations/002_accounts.sql
+for f in db/migrations/00{1,2,3,4,5}_*.sql; do psql -d resurface_dev -v ON_ERROR_STOP=1 -f "$f"; done
 # web/.dev.vars (gitignored):
 #   DATABASE_URL=postgres://you@127.0.0.1:5432/resurface_dev
-#   PROCESSOR_URL=http://127.0.0.1:8799/process
+#   PROCESSOR_URL=http://127.0.0.1:8799/process          (simulated) or http://127.0.0.1:3000/api/ingest/process (real)
+```
+
+**Simulated processor**, with no provider keys. `web/scripts/dev-processor.mjs` refuses any database that isn't on
+this machine, labels every record `[Simulated]`, and points every short at one test clip. It writes no skills:
+the skill generator only reads real digests.
+
+```
 cd web
 npx wrangler r2 object put resurface-media/videos/dev/simulation/short.mp4 --file <any 9:16 mp4> --local
 npx wrangler r2 object put resurface-media/captions/dev/simulation/short.vtt --file <any .vtt> --local
@@ -110,15 +158,27 @@ DATABASE_URL=postgres://you@127.0.0.1:5432/resurface_dev FAIL_IDS=dQw4w9WgXcQ no
 npm run dev     # http://localhost:8787
 ```
 
+**Real processor**: copy `server/.env.example` to `server/.env`. Fill in the keys, the same `DATABASE_URL`, and
+`MEDIA_LOCAL_WEB_DIR=../web`, so renders land in the web Worker's local R2. Then run `npm run dev --prefix server`
+alongside `npm run dev --prefix web`, with the web `PROCESSOR_TOKEN` equal to `INGEST_TOKEN`.
+
 ## Known gaps
 
-- No processor exists yet: links queue in TigerData and show `Queued` until one is connected.
-- Sign-up reveals whether an email already has an account (`409`), which is normal sign-up UX but lets
-  someone test emails; it's rate limited. There's no email verification or password reset yet.
-- Bodies are capped at 32 KB and links at 2,048 characters. Consider Turnstile on sign-up before announcing the URL.
-- The API never returns `submitted_url`: a reused unit's original link belongs to whoever pasted it first.
-- Source links in the reel are only rendered when they're `http(s)`; they come from model output.
-- The landing page currently collects emails through `/api/waitlist` in the existing D1 waitlist. Production uses the dedicated waitlist Worker; product onboarding remains available in the normal development configuration.
+- **No processor in production yet** (PR #5), and migration 005 isn't on TigerData. Links queue as `Queued`.
+- **Shorts are basic title cards**: one large text frame per scene over narration, with no motion design and no
+  stored animation code. The spec's Opus script and animation-code step isn't built.
+- **Length isn't held to 30–45 s.** Only the script's word count (40–160) is checked, so roughly 15–65 s passes.
+- **Citations are optional.** Script scenes and tasks may carry no `source_ids` or evidence, though the spec
+  requires traceable evidence for factual claims.
+- **Upload checks are size only.** "Playable" is checked on the local file before upload; after upload, only the
+  size is compared.
+- **Skills only appear once a `skill_results` row exists.** A ready short whose skill was never started shows no
+  skill state (the page retries for about 5 minutes).
+- **The visibility rule is still open** (see Who sees what).
+- Sign-up reveals whether an email already has an account (`409`); it's rate limited. There's no email
+  verification or password reset yet. Consider Turnstile on sign-up before reopening it.
+- Bodies are capped at 32 KB and links at 2,048 characters. The API never returns `submitted_url`. Reel source
+  links render only when they're `http(s)`, since they come from model output.
 
 ## Waitlist deployment
 

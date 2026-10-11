@@ -1,6 +1,25 @@
 // What the processor makes from a ready artifact: a rendered short (workflow 2) and a skill with tasks (workflow 3).
 // Both read one artifact revision and write only their own tables (video_results, skill_results, action_items).
 
+/** One OpenAI call's credentials and model. */
+export interface OpenAIOptions { apiKey: string; model?: string; fetchImpl?: typeof fetch }
+
+/** The provider settings both outputs read, set once in src/index.ts. */
+export interface ProviderOptions {
+  openaiKey?: string;
+  openaiModel?: string;
+  geminiKey?: string;
+  ttsModel?: string;
+  ttsVoice?: string;
+  fetchImpl?: typeof fetch;
+}
+
+export type SourceRef = { url: string; title: string | null };
+
+/** An artifact's stored sources as the outputs read and cite them. */
+export const sourceRefs = (sources: { url: string; title?: string | null }[] | null | undefined): SourceRef[] =>
+  (sources ?? []).map((s) => ({ url: s.url, title: s.title ?? null }));
+
 export interface ArtifactEvidence { source_id: string; start_seconds: number; end_seconds: number; passage: string }
 
 /** One ready artifact revision, the input to both outputs. */
@@ -12,7 +31,7 @@ export interface ReadyArtifact {
   processed_text: string;
   selection_reason: string | null;
   source_ids: string[];
-  sources: { url: string; title: string | null }[];
+  sources: SourceRef[];
   evidence: ArtifactEvidence[];
 }
 
@@ -27,7 +46,7 @@ export interface ActionItem {
 
 export interface GeneratedSkill {
   skill_markdown: string;
-  supporting_refs: { url: string; title: string | null }[];
+  supporting_refs: SourceRef[];
   action_items: ActionItem[];
 }
 

@@ -23,12 +23,7 @@ export interface Cue { start: number; end: number; text: string }
 export function captionCues(narration: string[], slots: Slot[], maxChars = 42): Cue[] {
   const cues: Cue[] = [];
   narration.forEach((text, i) => {
-    const chunks: string[] = [];
-    for (const word of text.split(/\s+/).filter(Boolean)) {
-      const last = chunks.at(-1);
-      if (last !== undefined && (last + " " + word).length <= maxChars) chunks[chunks.length - 1] = `${last} ${word}`;
-      else chunks.push(word);
-    }
+    const chunks = wrapLines(text, maxChars);
     const { start, speechEnd } = slots[i];
     const total = chunks.reduce((n, c) => n + c.length, 0);
     let t = start;
@@ -51,13 +46,18 @@ export function toVtt(cues: Cue[]): string {
   return `WEBVTT\n\n${cues.map((c, i) => `${i + 1}\n${stamp(c.start)} --> ${stamp(c.end)}\n${c.text.replace(/-->/g, "→")}\n`).join("\n")}`;
 }
 
-/** Greedy word wrap for on-screen text; a word longer than the line stays whole. */
-export function wrap(text: string, maxChars: number): string {
+/** Greedy word wrap into lines of at most maxChars; a word longer than the line stays whole. */
+function wrapLines(text: string, maxChars: number): string[] {
   const lines: string[] = [];
   for (const word of text.split(/\s+/).filter(Boolean)) {
     const last = lines.at(-1);
     if (last !== undefined && (last + " " + word).length <= maxChars) lines[lines.length - 1] = `${last} ${word}`;
     else lines.push(word);
   }
-  return lines.join("\n");
+  return lines;
+}
+
+/** On-screen text wrapped for drawtext. Caption cues use the same wrapping, one line per cue. */
+export function wrap(text: string, maxChars: number): string {
+  return wrapLines(text, maxChars).join("\n");
 }

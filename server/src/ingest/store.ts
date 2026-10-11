@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import type { DigestArtifact, IngestedUnit, StoredArtifact } from "./types.js";
+import { STALE_CLAIM_MINUTES } from "../claims.js";
 
 type Exclusion = { unit_id: string; reason: string };
 
@@ -114,11 +115,9 @@ function rowToUnit(r: any): IngestedUnit {
 
 const ARTIFACT_RETURNING = "id, version, source_url, sources, ingestion_status, review_status, digestion_prompt_id, project_context_id, project_context_version, error";
 
-/** Writes to the shared TigerData schema (db/migrations). Workflow 1 owns these tables only. */
-// Needs claimed_at from db/migrations/005_outputs.sql. A claim older than this belongs to a processor that died.
-// It must outlast one extraction's worst case: 4 attempts of (90 s + window / 10) plus backoff is about 31 minutes
-// at the 3,600 s maximum window, so an hour never steals a unit that's still being read.
-const CLAIMABLE = `(status = 'pending' OR (status = 'running' AND (claimed_at IS NULL OR claimed_at < now() - interval '60 minutes')))`;
+// Needs claimed_at from db/migrations/005_outputs.sql. A unit claimed longer ago than STALE_CLAIM_MINUTES belongs to
+// a processor that died mid-extraction, so it's claimable again.
+const CLAIMABLE = `(status = 'pending' OR (status = 'running' AND (claimed_at IS NULL OR claimed_at < now() - interval '${STALE_CLAIM_MINUTES} minutes')))`;
 
 // A user sees an artifact only when they imported every video it was built from (web/src/feed.js and skills.js),
 // so a digest never shows one person's videos to another. This is "no visible digest of u for that user".
@@ -126,6 +125,7 @@ const UNSEEN_BY = (user: string) => `NOT EXISTS (
   SELECT 1 FROM artifacts a WHERE u.id = ANY (a.source_ids) AND a.ingestion_status <> 'failed'
     AND a.source_ids <@ ARRAY(SELECT x.unit_id FROM user_imports x WHERE x.user_id = ${user}))`;
 
+/** Writes to the shared TigerData schema (db/migrations). Workflow 1 owns these tables only. */
 export class PgStore implements Store {
   private pool: pg.Pool;
   constructor(pool: pg.Pool) { this.pool = pool; }
@@ -149,7 +149,6 @@ export class PgStore implements Store {
     return rows.map(rowToUnit);
   }
 
-  // A unit claimed longer ago than STALE_CLAIM is treated as pending again: its processor died mid-extraction.
   async claimPendingUnits(ids?: string[], limit = 50) {
     const { rows } = await this.pool.query(
       `UPDATE ingested_units SET status = 'running', claimed_at = now()

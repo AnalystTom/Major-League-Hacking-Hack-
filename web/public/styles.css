@@ -599,6 +599,123 @@ a.reel-btn { text-decoration: none; }
 }
 .reel-placeholder-title { font-family: var(--display); font-weight: 800; font-size: 1.375rem; color: var(--ink); }
 
+/* ---------- Full-screen reel (/app) ----------
+   The signed-in page is the reel on a dark stage. Link stages sit in a top-bar popover, more videos come in
+   through a sheet, and the first-run paste box takes the reel's frame until a short is ready. */
+
+.app-page { --bar: 61px; background: var(--night); color: var(--on-night); }
+.app-bar { background: color-mix(in srgb, var(--night) 90%, transparent); border-bottom-color: rgba(255, 255, 255, .08); color: var(--on-night); }
+.app-bar .topbar-inner { gap: 10px; }
+.app-page .btn-quiet-top { color: var(--on-night); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .22); }
+.app-page .btn-quiet-top:hover { box-shadow: inset 0 0 0 2px var(--on-night); }
+.app-page .onboard-loading { color: var(--on-night-soft); }
+
+.stage { height: calc(100svh - var(--bar)); display: grid; place-items: center; padding: 12px var(--gutter); }
+.stage-frame { width: 100%; height: 100%; display: grid; place-items: center; }
+/* A fixed 9:16 width capped by max-width: a percentage inside this auto-sized grid would collapse. */
+.app-page .reel { --h: calc(100svh - var(--bar) - 24px - 30px); width: calc(var(--h) * 9 / 16); max-width: 100%; }
+.app-page .reel-counter { color: var(--on-night-soft); }
+
+.frame-card {
+  --h: calc(100svh - var(--bar) - 24px - 30px);
+  width: calc(var(--h) * 9 / 16); max-width: 100%; height: var(--h); overflow-y: auto;
+  display: flex; flex-direction: column; gap: 14px; padding: 28px 24px;
+  background: var(--night-2); border-radius: 24px;
+}
+/* Centred while it fits; once ten links overflow the card, the spacers shrink to nothing and the
+   content starts at the top of the scroll area instead of being cut off above it. */
+.frame-card::before, .frame-card::after { content: ""; flex: 1 1 0; min-height: 0; }
+.frame-card h2 { font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 800; letter-spacing: -.025em; }
+.frame-lede { color: var(--on-night-soft); line-height: 1.5; }
+
+.app-page .add-links { grid-template-columns: minmax(0, 1fr); margin: 0; }
+.app-page .add-links label { color: var(--on-night); }
+.app-page .add-links textarea { background: rgba(255, 255, 255, .06); color: var(--on-night); border-color: rgba(255, 255, 255, .18); }
+.app-page .add-links textarea::placeholder { color: var(--on-night-soft); opacity: .7; }
+.app-page .add-links .btn { justify-self: start; }
+.app-page .form-status[data-tone="error"] { color: var(--late-on-night); }
+
+.app-page .units li { background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .1); color: var(--on-night); }
+.app-page .unit-stage, .app-page .unit-error, .app-page .hint { color: var(--on-night-soft); }
+.app-page .units li[data-stage="ready"] .unit-stage { color: var(--accent); }
+.app-page .units li:is([data-stage="failed"], [data-stage="render_failed"], [data-stage="not_selected"]) .unit-stage { color: var(--late-on-night); }
+.frame-units { margin: 0; }
+
+.status { position: relative; }
+.status > summary {
+  list-style: none; cursor: pointer; white-space: nowrap;
+  font-size: .875rem; font-weight: 600; padding: 7px 12px; border-radius: 999px; background: rgba(255, 255, 255, .1);
+}
+.status > summary::-webkit-details-marker { display: none; }
+.status[data-busy="true"] > summary::before {
+  content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%;
+  background: var(--accent); vertical-align: .1em; animation: pulse 1.2s ease-in-out infinite;
+}
+.status-panel {
+  position: absolute; z-index: 30; right: 0; top: calc(100% + 8px); width: min(420px, calc(100vw - 2 * var(--gutter)));
+  max-height: 60svh; overflow-y: auto; display: grid; gap: 10px; padding: 14px;
+  background: var(--night-2); border: 1px solid rgba(255, 255, 255, .1); border-radius: 14px; box-shadow: var(--shadow);
+}
+.status-panel .units { margin: 0; }
+.status-panel .hint:empty { display: none; }
+
+.topbar-pill {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap;
+  font: inherit; font-size: .875rem; font-weight: 700; padding: 7px 12px; border-radius: 999px;
+  color: var(--on-night); background: transparent; border: 1px solid rgba(255, 255, 255, .22);
+}
+.topbar-pill:hover { border-color: var(--on-night); }
+.topbar-pill b { min-width: 1.5em; padding: 0 7px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: .75rem; text-align: center; }
+
+/* Skills and Tasks sheet: a dark drawer over the reel. The page tokens point at the night palette here,
+   so the skill and task cards keep their own styles. */
+.skills-sheet {
+  --bg: var(--night); --bg-2: rgba(255, 255, 255, .06); --paper: var(--night-2);
+  --ink: var(--on-night); --ink-soft: var(--on-night-soft); --rule: rgba(255, 255, 255, .14);
+  --accent-ink: var(--accent); --late: var(--late-on-night);
+  margin: 0 0 0 auto; width: min(720px, 100vw); max-width: 100vw; height: 100svh; max-height: 100svh;
+  padding: 0 clamp(16px, 3vw, 32px) 48px; border: 0; overflow-y: auto;
+  background: var(--bg); color: var(--ink); display: none;
+}
+.skills-sheet[open] { display: grid; align-content: start; gap: 8px; }
+.skills-sheet::backdrop { background: rgba(0, 0, 0, .55); }
+.skills-sheet-head { position: sticky; top: 0; z-index: 1; padding: 16px 0 12px; background: var(--bg); }
+.skills-sheet .journey-section { margin-top: 20px; }
+.skills-sheet .journey-section, .skills-sheet .journey-section h2, .skills-sheet .skill { scroll-margin-top: 64px; }
+
+.add-open { gap: 6px; }
+.add-open span[aria-hidden] { font-weight: 800; }
+
+.add-sheet {
+  width: min(520px, calc(100vw - 2 * var(--gutter))); padding: 24px; border: 0; border-radius: 20px;
+  background: var(--night-2); color: var(--on-night); display: none;
+}
+.add-sheet[open] { display: grid; gap: 14px; }
+.add-sheet::backdrop { background: rgba(0, 0, 0, .6); }
+.add-sheet h2 { font-size: 1.5rem; font-weight: 800; letter-spacing: -.02em; }
+.add-sheet .linkish { justify-self: start; color: var(--on-night-soft); }
+
+@media (max-width: 640px) {
+  .app-page { --bar: 57px; }
+  .stage { padding: 0; }
+  .app-page .reel, .frame-card { --h: calc(100svh - var(--bar)); width: 100vw; }
+  .app-page .reel-track, .frame-card { border-radius: 0; }
+  .app-page .reel-counter { display: none; }
+  /* Icon-only wordmark and a "+" add button keep the bar to one row at 390 px. */
+  .app-bar .btn-small { padding: 9px 12px; }
+  .app-bar .add-label { display: none; }
+  .add-open span[aria-hidden] { font-size: 1.25rem; line-height: .8; }
+  .status > summary { max-width: 34vw; overflow: hidden; text-overflow: ellipsis; }
+  /* Anchored to the bar's edges, not the small chip, so the list stays on screen. The bar's backdrop
+     filter makes it the containing block for this fixed panel. */
+  .status-panel { position: fixed; left: 12px; right: 12px; top: calc(var(--bar) + 6px); width: auto; }
+  .app-bar .wordmark { display: none; }
+  .app-bar .topbar-inner { justify-content: flex-end; }
+  .topbar-tasks { display: none; }
+  .topbar-pill { padding: 6px 10px; font-size: .8125rem; }
+  .status > summary { padding: 6px 10px; font-size: .8125rem; }
+}
+
 /* ---------- How it works ---------- */
 
 .steps ol {

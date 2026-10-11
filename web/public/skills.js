@@ -1,21 +1,10 @@
 // Skills and Tasks on the signed-in home: each ready artifact's SKILL.md, where the chosen agent reads it, and
 // its tasks ready to paste into that agent. Every API string goes in through textContent.
 
-import { AGENTS, agentOrDefault, evidenceLink, skillFile, skillSlug, taskPrompt } from "./agents.js";
+import { AGENTS, agentOrDefault, evidenceLink, skillAnchor, skillFile, skillSlug, taskPrompt } from "./agents.js";
+import { el } from "./dom.js";
 
 const AGENT_KEY = "resurface-agent";
-
-function el(tag, attrs = {}, ...children) {
-  const node = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === null || v === undefined || v === false) continue;
-    if (k === "text") node.textContent = v;
-    else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
-    else node.setAttribute(k, v === true ? "" : v);
-  }
-  node.append(...children.filter(Boolean));
-  return node;
-}
 
 async function copyText(text) {
   try {
@@ -76,7 +65,7 @@ export function createSkills({ skillsList, tasksList, picker, skillsStatus, task
       el("h3", { text: s.name ?? s.artifact.name }),
       s.description ? el("p", { class: "skill-desc", text: s.description }) : null
     );
-    const li = el("li", { class: "skill", id: `skill-${s.artifact.id}-${s.artifact.version}`, "data-status": s.status }, head);
+    const li = el("li", { class: "skill", id: skillAnchor(s.artifact.id, s.artifact.version), "data-status": s.status }, head);
     if (s.status !== "ready") {
       li.append(el("p", { class: "skill-state", text: s.status === "failed" ? `Couldn't write this skill. ${s.error || "Reason unknown."}` : SKILL_STATE[s.status] ?? s.status }));
       return li;
@@ -141,7 +130,7 @@ export function createSkills({ skillsList, tasksList, picker, skillsStatus, task
     },
     get counts() {
       const ready = skills.filter((s) => s.status === "ready");
-      return { skills: ready.length, tasks: ready.reduce((n, s) => n + s.action_items.length, 0), writing: skills.length - ready.length };
+      return { skills: ready.length, tasks: ready.reduce((n, s) => n + s.action_items.length, 0) };
     },
   };
 }

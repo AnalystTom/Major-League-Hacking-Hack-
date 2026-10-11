@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { LostClaim, MemoryOutputStore } from "../../src/outputs/store.js";
 import { produceOutputs, sweepOutputs } from "../../src/outputs/run.js";
 import type { MediaStore } from "../../src/outputs/render/media.js";
-import { artifact, outputsFetch } from "./helpers.js";
+import { artifact, outputsFetch, takeOver } from "./helpers.js";
 
 const hasFfmpeg = (() => { try { execFileSync("ffmpeg", ["-version"]); return true; } catch { return false; } })();
 const media: MediaStore = { put: async (key) => `r2:${key}` };
@@ -61,7 +61,7 @@ test("a worker whose claim was taken over can't save or fail the result", async 
   const a = artifact();
   const outputs = new MemoryOutputStore();
   const stale = (await outputs.claim("video", a))!;
-  outputs.takeOver("video", stale.id);
+  takeOver(outputs, "video", stale.id);
   await assert.rejects(outputs.finishVideo(stale, { script: { scenes: [] }, prompt_revision: "r", media_ref: "m", caption_ref: "c", narration_ref: "n", duration_seconds: 1 }), LostClaim);
   assert.equal(await outputs.fail("video", stale, "late"), false);
   assert.equal([...outputs.rows.video.values()][0].status, "running", "the newer worker's row is untouched");
