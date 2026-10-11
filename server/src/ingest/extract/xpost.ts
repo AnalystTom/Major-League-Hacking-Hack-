@@ -11,6 +11,32 @@ interface TwitterApiTweet {
   quoted_tweet?: { text?: string; author?: { userName?: string } } | null;
 }
 
+/**
+ * twitterapi.io's free tier allows one request every 5 seconds. Calls are spaced process-wide, and a 429 is retried
+ * after the wait the API asks for (Retry-After) or one interval, so a batch of X links settles instead of failing.
+ * TWITTERAPI_MIN_INTERVAL_MS overrides the spacing (0 disables it, for tests or a paid plan).
+ */
+const DEFAULT_INTERVAL_MS = 5_200;
+const MAX_RETRIES = 3;
+let gate: Promise<void> = Promise.resolve();
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const intervalMs = () => {
+  const n = Number(process.env.TWITTERAPI_MIN_INTERVAL_MS);
+  return process.env.TWITTERAPI_MIN_INTERVAL_MS !== undefined && Number.isFinite(n) && n >= 0 ? n : DEFAULT_INTERVAL_MS;
+};
+
+/** Runs `fn` after the previous call's slot has passed; each caller holds the next slot for one interval. */
+function paced<T>(fn: () => Promise<T>): Promise<T> {
+  const turn = gate;
+  gate = turn.then(() => sleep(intervalMs()));
+  return turn.then(fn);
+}
+
+function retryAfterMs(res: Response): number {
+  const s = Number(res.headers.get("retry-after"));
+  return Number.isFinite(s) && s > 0 ? Math.min(s * 1000, 30_000) : intervalMs();
+}
+
 export interface XPostOptions {
   apiKey: string;
   postId: string;
@@ -24,10 +50,17 @@ export interface XPostOptions {
  * Throws with the actual failure (deleted, protected, bad key, rate limited) so the unit shows it.
  */
 export async function extractXPost(o: XPostOptions): Promise<{ title: string; transcript: NonNullable<IngestedUnit["transcript"]> }> {
-  const res = await (o.fetchImpl ?? fetch)(`https://api.twitterapi.io/twitter/tweets?tweet_ids=${encodeURIComponent(o.postId)}`, {
+  const get = () => (o.fetchImpl ?? fetch)(`https://api.twitterapi.io/twitter/tweets?tweet_ids=${encodeURIComponent(o.postId)}`, {
     headers: { "x-api-key": o.apiKey },
     signal: AbortSignal.timeout(o.timeoutMs ?? 15_000),
   });
+  let res = await paced(get);
+  for (let attempt = 0; res.status === 429 && attempt < MAX_RETRIES; attempt++) {
+    const wait = retryAfterMs(res);
+    await res.text().catch(() => "");
+    await sleep(wait);
+    res = await paced(get);
+  }
   const text = await res.text();
   if (!res.ok) throw new Error(httpError("twitterapi.io", res.status, text));
   let body: { status?: string; message?: string; msg?: string; tweets?: TwitterApiTweet[] };
