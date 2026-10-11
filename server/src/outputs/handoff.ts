@@ -5,6 +5,7 @@
 import { z } from "zod";
 import { AGENTS, type AgentId } from "../agents.js";
 import { chatJson } from "./openai.js";
+import { PIPE_TO_SHELL } from "./skills.js";
 import type { ActionItem } from "./types.js";
 
 export const HANDOFF_PROMPT_REVISION = "handoff-v5";
@@ -130,6 +131,10 @@ export function validateBrief(raw: unknown, skills: HandoffSkill[]): HandoffBrie
   brief.tensions.forEach((t) => t.positions.forEach((p) => known(p.skill, `tension "${t.topic}"`)));
   brief.actions.forEach((a) => a.skills.forEach((s) => known(s, `action "${a.title}"`)));
   brief.not_actionable.forEach((n) => known(n.skill, "not_actionable"));
+  // Same rule as a skill: a brief derived from videos never tells the agent to run a downloaded script.
+  const texts = [brief.summary, ...brief.review_focus, ...brief.themes.flatMap((t) => [t.lesson, t.transfer]), ...brief.tensions.map((t) => t.decide_by),
+    ...brief.actions.flatMap((a) => [a.why, ...a.look_for, ...a.steps, a.done_when, a.not_applicable_if, a.already_done_if])];
+  if (texts.some((t) => PIPE_TO_SHELL.test(t))) throw new Error("the brief tells the agent to pipe a download into a shell");
   const covered = new Set([...brief.themes.flatMap((t) => t.skills), ...brief.not_actionable.map((n) => n.skill)]);
   const missing = skills.filter((s) => !covered.has(s.slug)).map((s) => s.slug);
   if (missing.length) throw new Error(`brief leaves out ${missing.join(", ")}`);

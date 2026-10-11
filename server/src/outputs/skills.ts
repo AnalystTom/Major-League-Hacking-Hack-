@@ -60,7 +60,7 @@ const SCAFFOLD = /\b(stubs?|placeholders?|skeleton|no-op|dry-run)\b/i;
 
 // What a source-derived skill must never tell an agent to do: run a downloaded script. Sources are evidence, and
 // the prompt forbids this, so a skill containing it fails instead of reaching someone's repo.
-const PIPE_TO_SHELL = /\b(?:curl|wget|iwr|Invoke-WebRequest)\b[^\n]*\|\s*(?:sudo\s+)?(?:ba|z|da)?sh\b|\b(?:ba|z)?sh\s+-c\s+["']?\$\(\s*(?:curl|wget)/i;
+export const PIPE_TO_SHELL = /\b(?:curl|wget|iwr|Invoke-WebRequest)\b[^\n]*\|\s*(?:sudo\s+)?(?:ba|z|da)?sh\b|\b(?:ba|z)?sh\s+-c\s+["']?\$\(\s*(?:curl|wget)/i;
 
 // A task whose only proof is that some text says the right words proves nothing about the repository; the prompt
 // asks for runnable checks, and a task that still comes back with one of these is dropped.
