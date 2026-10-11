@@ -482,6 +482,63 @@ button { font: inherit; color: inherit; }
   background: rgba(0, 0, 0, .7); text-align: center; padding: 24px;
 }
 .reel-counter { margin-top: 10px; text-align: center; font-weight: 600; font-size: .875rem; color: var(--ink-soft); }
+a.reel-btn { text-decoration: none; }
+
+/* ---------- Saved -> Reel -> Skills -> Tasks on the signed-in home ---------- */
+
+.journey { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 28px; }
+.journey a {
+  display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px;
+  background: var(--paper); border: 1px solid var(--rule); color: var(--ink); text-decoration: none;
+  font-family: var(--display); font-weight: 700; font-size: .9375rem;
+}
+.journey a:hover { border-color: var(--ink); }
+.journey a + a::before { content: "→"; margin: 0 4px 0 -2px; color: var(--ink-soft); font-weight: 400; }
+.journey b { min-width: 1.5em; padding: 1px 7px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: .75rem; text-align: center; }
+
+.journey-section { margin-top: 56px; display: grid; gap: 12px; scroll-margin-top: 88px; }
+.journey-section h2 { font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 800; letter-spacing: -.02em; scroll-margin-top: 88px; }
+.journey-section-head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 24px; }
+.journey-section-head .hint { max-width: 44rem; margin-top: 4px; }
+.journey-empty { padding: 22px; border: 2px dashed var(--rule); border-radius: 16px; color: var(--ink-soft); }
+.agent-pick { display: grid; gap: 4px; font-weight: 700; font-size: .875rem; }
+.agent-pick select {
+  font: inherit; font-weight: 600; padding: 9px 12px; border-radius: 10px;
+  border: 2px solid var(--rule); background: var(--paper); color: var(--ink);
+}
+.agent-pick select:focus-visible { border-color: var(--accent); outline: none; }
+
+.skills, .tasks { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); }
+.skill, .task {
+  display: grid; gap: 12px; align-content: start; min-width: 0;
+  background: var(--paper); border: 1px solid var(--rule); border-radius: 16px; padding: 18px 20px; scroll-margin-top: 88px;
+}
+.skill:target { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
+.skill-head { display: grid; gap: 6px; }
+.skill h3, .task h3 { font-size: 1.125rem; font-weight: 800; letter-spacing: -.01em; line-height: 1.25; overflow-wrap: anywhere; }
+.skill-from { font-size: .8125rem; font-weight: 600; color: var(--ink-soft); }
+.skill-desc { color: var(--ink-soft); line-height: 1.45; }
+.skill-state { font-weight: 600; color: var(--ink-soft); }
+.skill[data-status="failed"] .skill-state { color: var(--late); }
+.skill:is([data-status="pending"], [data-status="running"]) .skill-state::before {
+  content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 7px; border-radius: 50%;
+  background: currentColor; vertical-align: .1em; animation: pulse 1.2s ease-in-out infinite;
+}
+.skill-path { display: grid; gap: 4px; font-size: .8125rem; color: var(--ink-soft); }
+.skill-path code, .skill-md { font-family: var(--mono); font-size: .75rem; }
+.skill-path code { color: var(--ink); background: var(--bg-2); border-radius: 8px; padding: 6px 8px; overflow-wrap: anywhere; }
+.skill-md { margin: 0; max-height: 22rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg-2); border-radius: 10px; padding: 12px; line-height: 1.55; }
+.skill-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.btn-line { font: inherit; font-weight: 700; font-size: .9375rem; color: var(--accent-ink); background: none; border: 0; padding: 4px 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+
+.task-block { display: grid; gap: 4px; }
+.task-label { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); }
+.task-block :is(ul, ol) { margin: 0; padding-left: 20px; display: grid; gap: 4px; line-height: 1.45; }
+.task-check { padding: 10px 12px; border-radius: 10px; background: var(--bg-2); }
+.task-evidence summary { cursor: pointer; font-weight: 700; font-size: .875rem; color: var(--accent-ink); }
+.task-evidence ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 6px; font-size: .875rem; }
+.task-evidence q { display: block; color: var(--ink-soft); }
+.task-evidence a { font-size: .8125rem; }
 
 /* ---------- Get started (landing) ---------- */
 

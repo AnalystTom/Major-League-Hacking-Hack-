@@ -6,6 +6,7 @@ import waitlist from "./waitlist.js";
 import { readFeed } from "./feed.js";
 import { createUnits, parseImport, readUnits, userUnitIds } from "./imports.js";
 import { serveMedia } from "./media.js";
+import { readSkills } from "./skills.js";
 import { requestProcessing } from "./processor.js";
 
 const json = (data, status = 200, headers = {}) =>
@@ -79,7 +80,7 @@ async function startImport(request, env, sql, user) {
   }
   const units = await createUnits(sql, parsed.value.links, { userId: user.id });
   const processor = await requestProcessing(env, units.filter((u) => u.linked).map((u) => u.id));
-  return json({ units: await readUnits(sql, units.map((u) => u.id)), processor }, 201);
+  return json({ units: await readUnits(sql, units.map((u) => u.id), await userUnitIds(sql, user.id)), processor }, 201);
 }
 
 async function api(request, env, url, sql) {
@@ -120,6 +121,10 @@ async function api(request, env, url, sql) {
   if (pathname === "/api/feed" && method === "GET") {
     const ids = await userUnitIds(sql, user.id);
     return json({ items: await readFeed(sql, ids) });
+  }
+
+  if (pathname === "/api/skills" && method === "GET") {
+    return json({ skills: await readSkills(sql, await userUnitIds(sql, user.id)) });
   }
 
   return json({ error: "Not found." }, 404);

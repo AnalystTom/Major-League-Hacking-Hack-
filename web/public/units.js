@@ -49,22 +49,35 @@ export function renderUnits(list, units) {
   );
 }
 
+const writing = (s) => s.status === "pending" || s.status === "running";
+
+// A ready short whose skill hasn't been started yet (the processor's sweep picks it up) gets slower checks for
+// a few minutes, so that skill still appears without polling forever for one that never comes.
+export const SKILL_WAIT_MS = 20_000;
+export const SKILL_WAIT_CHECKS = 15;
+
 /**
- * Polls the user's imports and shorts every 4 s while something is moving,
- * and not at all once everything has settled.
+ * Polls the user's imports and shorts (and skills, with onSkills) every 4 s while something is moving,
+ * and not at all once everything has settled. A skill can still be writing after its short is ready.
  */
-export function followImports({ onUnits, onItems, onError }) {
+export function followImports({ onUnits, onItems, onSkills, onError }) {
   let timer = null;
+  let skillChecks = 0;
   async function refresh() {
     clearTimeout(timer);
     try {
       // Read the feed after progress so a final ready update cannot stop polling before its clip arrives.
       const { units } = await api("/api/imports");
       const { items } = await api("/api/feed?scope=mine");
+      const { skills } = onSkills ? await api("/api/skills") : { skills: [] };
       onUnits(units);
       onItems(items);
-      const waiting = units.some((u) => !u.settled);
-      const delay = waiting ? POLL_MS : null;
+      onSkills?.(skills);
+      const waiting = units.some((u) => !u.settled) || skills.some(writing);
+      const skillDue = onSkills && items.some((i) => !i.skill) && skillChecks < SKILL_WAIT_CHECKS;
+      if (waiting) skillChecks = 0;
+      else if (skillDue) skillChecks++;
+      const delay = waiting ? POLL_MS : skillDue ? SKILL_WAIT_MS : null;
       if (delay) timer = setTimeout(refresh, document.hidden ? delay * 4 : delay);
     } catch (err) {
       onError?.(err);

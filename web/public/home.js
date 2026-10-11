@@ -3,10 +3,26 @@
 
 import { api } from "./api.js";
 import { createReel } from "./reel.js";
+import { createSkills } from "./skills.js";
 import { followImports, PROCESSOR, renderUnits } from "./units.js";
 
 const $ = (sel) => document.querySelector(sel);
 const reel = createReel($("[data-reel]"));
+const skills = createSkills({
+  skillsList: $("[data-skills]"), tasksList: $("[data-tasks]"), picker: $("[data-agent]"),
+  skillsStatus: $("[data-skills-status]"), tasksStatus: $("[data-tasks-status]"),
+});
+const counts = { saved: 0, reel: 0, skills: 0, tasks: 0 };
+
+// The four steps from the landing film, with what's actually there at each.
+function showCounts(next) {
+  Object.assign(counts, next);
+  for (const [step, n] of Object.entries(counts)) {
+    const b = document.querySelector(`[data-step="${step}"] [data-count]`);
+    b.textContent = n ? String(n) : "";
+    b.hidden = !n;
+  }
+}
 let follower = null;
 
 // First run (no links yet) leads with the paste box; afterwards it's "add more" above the list.
@@ -19,6 +35,18 @@ function setFirstRun(first) {
 function showLinks(units) {
   renderUnits($("[data-units]"), units);
   setFirstRun(units.length === 0);
+  showCounts({ saved: units.length });
+}
+
+function showSkills(list) {
+  skills.update(list);
+  const c = skills.counts;
+  const any = list.length > 0 || counts.saved > 0;
+  $("[data-skills-section]").hidden = !any;
+  $("[data-tasks-section]").hidden = !any;
+  $("[data-skills-empty]").hidden = list.length > 0;
+  $("[data-tasks-empty]").hidden = c.tasks > 0;
+  showCounts({ skills: c.skills, tasks: c.tasks });
 }
 
 const addForm = $("[data-add]");
@@ -73,7 +101,9 @@ $("[data-signout]").addEventListener("click", async () => {
     onItems: (items) => {
       reel.render(items);
       $("[data-reel-empty]").hidden = reel.count > 0;
+      showCounts({ reel: reel.count });
     },
+    onSkills: showSkills,
     onError: (err) => {
       if (err.status === 401) location.assign("/start");
       else $("[data-run-note]").textContent = `${err.message} Retrying…`;

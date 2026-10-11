@@ -88,11 +88,13 @@ export async function userUnitIds(sql, userId, limit = 50) {
 
 /**
  * Each unit with the artifacts it fed, their newest video result, and any exclusion reasons. Digests are
- * shared, so everyone who imported a video sees the same artifacts for it.
+ * shared, but an artifact only counts when it's built entirely from videos in `visible` (all of the user's
+ * imports), the same rule as the feed and skills, so a link's stage matches what the user can actually open.
  */
-export async function readUnits(sql, ids) {
+export async function readUnits(sql, ids, visible = ids) {
   if (ids.length === 0) return [];
   const list = ids.join(",");
+  const mine = visible.join(",");
   const rows = await sql`
     SELECT u.id, u.source_url, u.start_seconds, u.title, u.status, u.error,
       COALESCE((SELECT json_agg(e.reason ORDER BY e.created_at) FROM artifact_exclusions e WHERE e.unit_id = u.id), '[]') AS exclusions,
@@ -107,7 +109,8 @@ export async function readUnits(sql, ids) {
             ORDER BY v.created_at DESC, v.id DESC LIMIT 1)
         ) ORDER BY a.created_at)
         FROM artifacts a
-        WHERE u.id = ANY (a.source_ids)), '[]') AS artifacts
+        WHERE u.id = ANY (a.source_ids)
+          AND a.source_ids <@ string_to_array(${mine}, ',')::uuid[]), '[]') AS artifacts
     FROM ingested_units u
     WHERE u.id = ANY (string_to_array(${list}, ',')::uuid[])
     ORDER BY array_position(string_to_array(${list}, ',')::uuid[], u.id)`;
