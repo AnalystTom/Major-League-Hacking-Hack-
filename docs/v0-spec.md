@@ -1,196 +1,200 @@
 # Resurface v0 — Draft Spec
 
-Status: draft for discussion. Only decisions marked confirmed are agreed. Recommendations and contracts below are proposed. No implementation is authorized by this document.
+Status: direction and preparation model agreed; implementation details remain open. Recommendations are proposals. This document does not authorize implementation.
 
 ## Goal
 
-Turn a prepared collection of real engineering bookmarks into a categorized feed of short motion explanations.
+**Your saved ideas, applied to your project.**
 
-Audience: AI engineers improving their agent workflows.
+Combine related saves, match them to what an AI engineer is building, and turn the useful parts into actions. A short explains the recommendation. The useful result is a project-specific task backed by sources.
 
-## Confirmed scope
+## Agreed direction
 
 - The team supplies real bookmarks before the demo.
-- Visitors browse one prepared feed. They do not submit their own links in v0.
-- Shorts use motion generated through Opus 5.5: the model writes animation code; a renderer creates the video.
-- Selecting content for later agent ingestion belongs to v2.
-- The work is divided into three streams: ingestion, video generation, and feed UI.
+- Use one real project supplied beforehand. Visitors do not import their own saves or projects in v0.
+- Combine related bookmarks and tutorials instead of producing one short per link.
+- Match ideas to the project's goal, stack, current work, and available resources.
+- Desired journey: short → checklist → agent handoff.
+- Opus 5.5 writes animation code; a renderer produces the videos.
+- Split implementation into three streams with shared contracts.
 
-## Source list
+Open decision: whether action selection and actual Codex delivery move into v0. They were previously deferred to v2. Neither is implemented.
 
-These are the links supplied in the conversation. The observations below come from research, not a completed ingestion pipeline.
+## Proposed user journey
 
-| Source | Observed content / access | Suggested use |
+1. Open the prepared project and see its real goal.
+2. Browse recommendations grouped by topic.
+3. Watch a short: what the combined sources teach, why it fits this project, and what to do next.
+4. Open up to three supported actions, with evidence and a way to check the result.
+5. Choose an action and inspect the task for the agent.
+6. Send to one supported Codex destination, if included in v0. Show delivery after acknowledgement and completion after checking the actual result.
+
+Analysis and clips can be prepared beforehand; label them as prepared. Selection and delivery can happen live if agreed. The demo payoff is a useful change in the real project: show its artifact or diff and the relevant check. Video generation or prompt delivery alone does not establish improvement.
+
+## Categories across the collection
+
+Classify retrieved ideas, then combine those addressing the same project problem. One source can support several topics. Product categories appear only when they contain real, ready recommendations.
+
+| Topic | Candidate material | Evidence status |
 | --- | --- | --- |
-| [Matt Pocock skills](https://github.com/mattpocock/skills) | Repository README describes engineering practices for clarification, testing, debugging, and architecture. | Extract individual techniques, rather than summarize the entire repository. |
-| [pstack](https://github.com/cursor/plugins/tree/main/pstack) | README and guide describe task routing, playbooks, verification, model roles, and engineering principles. | Extract workflow steps and their requirements. |
-| [Kun Chen article](http://substack.com/@kunchenguid/p-214840284) | Resolves to [I distilled myself, and you should too](https://blog.kunchenguid.com/p/i-distilled-myself-and-you-should). Describes capturing judgment in a skill and updating it from public material. | Explain how to turn repeated decisions into agent guidance. |
-| [Stephan Livera X post](https://x.com/stephanlivera/status/2103315922098470926) | Research fetch returned 403. Contents not read. | Unclassified until successfully retrieved. |
-| [achxvi X post](https://x.com/achxvi/status/2103918792845963545?s=20) | Research fetch returned 403. Contents not read. | Unclassified until successfully retrieved. |
-| [LLMJunky X post](https://x.com/LLMJunky/status/2106411941497389342?s=20) | Research fetch returned 403. Contents not read. | Unclassified until successfully retrieved. |
-| [X history](https://x.com/i/history) | Private account content not inspected. This is not the documented bookmark API endpoint. | Future input route; v0 accepts supplied public links. |
-| [YouTube Watch Later](https://www.youtube.com/playlist?list=WL) | Private list not inspected. The official YouTube API cannot retrieve Watch Later items. | Supply individual public video links or a regular playlist if YouTube is included. |
+| Agent workflows | Planning, testing, routing, architecture, reusable judgment | Matt Pocock, pstack, and Kun Chen were read. Recommendations are not yet extracted or tested. |
+| SEO and distribution | SEO page techniques and related tutorials | User-described topic; X content and link-to-topic mapping remain unverified. |
+| Building apps | iOS guides and implementation ideas | User-described topic; specific source and project fit need confirmation. |
+| Local AI and infrastructure | Trying tools on an available device | User-described example involving 0xSero; content and requirements unverified. |
+| Business growth | Applying learnings from Ernesto's post | User-described example; the meaning of “zero to 150” and its evidence are unverified. |
+| Hardware | Pocket Charm and device-specific ideas | User-described example involving witcheer. Exclude from actionable recommendations when the required device is absent. |
 
-## Proposed categories
-
-Classify each extracted technique, not the whole bookmarked source. One source can produce techniques in several categories. Display only categories with ready clips.
-
-| Category | What a short would explain | Supporting supplied sources |
-| --- | --- | --- |
-| Planning and requirements | Clarify a request and define a checkable outcome before implementation. | Matt Pocock; pstack |
-| Testing and verification | Reproduce a bug, use a feedback loop, and check actual behavior. | Matt Pocock; pstack |
-| Agent orchestration | Sequence work, route tasks, and coordinate model or agent roles. | pstack |
-| Code quality and performance | Improve module design, remove unnecessary code, and measure changes. | Matt Pocock; pstack |
-| Judgment and autonomy | Capture recurring decisions so agents need fewer repeated corrections. | Kun Chen; pstack |
-
-These labels describe topics. They do not assert that an extracted technique has been validated or improves an agent.
+These are proposed categories, not assertions about unread posts. Engineering subtopics can remain tags within Agent workflows.
 
 ## Visual flow
 
 ```mermaid
 flowchart TD
-  subgraph Preparation["Team prepares the feed"]
-    A["Provide real bookmark URLs"] --> B["Fetch sources and supporting evidence"]
-    B --> C["Extract techniques and classify them"]
-    C --> D["Review explanations and citations"]
-    D --> E["Opus writes motion scenes; renderer creates videos"]
-    E --> F["Check videos and publish ready clips"]
-  end
-  subgraph Visitor["Visitor uses v0"]
-    F --> G["Open the prepared feed"]
-    G --> H["Browse All or choose a category"]
-    H --> I["Scroll, watch, pause, and read captions"]
-    I --> J["Open the original source"]
-    J --> I
-  end
-  I -. "v2 only" .-> K["Select a technique for later agent use"]
+  A["Real saves"] --> B["Read and group related ideas"]
+  P["One real project: goal, stack, current work, resources"] --> C["Check project fit and prerequisites"]
+  B --> C
+  C -->|"Fits"| D["Add supporting evidence and resolve conflicts"]
+  C -->|"Missing context or resource"| E["Record reason; exclude from actionable feed"]
+  D --> T["Topics: workflows, SEO, apps, local AI, growth, hardware"]
+  T --> F["Review recommendation and actions"]
+  F --> G["Render project-specific short"]
+  G --> H["Browse shorts and sources"]
+  H --> I["Open checklist and choose action"]
+  I --> J["Inspect agent task"]
+  J --> K["Deliver to Codex if included in v0"]
+  K --> L["Inspect result and check it"]
 ```
 
-Review gates, categories, captions, and controls in this diagram are recommendations pending the questions below. They are not implemented behavior.
+Action selection and delivery timing remain an open scope decision.
 
-## Proposed user journeys
+## Filtering and supporting research
 
-### Team prepares content
+Use an explicit project brief plus authorized repository/site material. Record the goal, relevant implementation facts, current blocker, available tools/devices, constraints, and where each fact came from. Unknowns stay unknown.
 
-1. Put the selected public URLs into a source manifest.
-2. Run the ingestion pipeline through Codex or a CLI.
-3. Review extracted techniques, categories, and cited evidence.
-4. Generate and review the shorts.
-5. Publish the approved clips and their metadata.
+1. Retrieve actual content or a usable transcript. A URL alone is insufficient.
+2. Identify techniques and group sources addressing the same problem; remove duplicates.
+3. Compare prerequisites with project facts. Record why the idea fits or exactly what is missing.
+4. Use Nimble to fill specific gaps with primary documentation, relevant versions, examples, and counterevidence. Preserve disagreements.
+5. Propose a concrete action and completion check. Prioritize the current goal and satisfied prerequisites.
 
-If a source cannot be read, retain the URL and the actual error. Do not create an explanation from its URL, author, title, or an assumed transcript.
+Do not invent relevance scores, revenue, traffic uplift, effort estimates, repository paths, or implementation results. Expected benefits remain expectations until observed. If nothing fits, show an empty actionable feed and actual exclusion reasons.
 
-### Visitor discovers a technique
+## Agent handoff
 
-1. Open the feed without signing in.
-2. Browse all ready clips or choose a topic.
-3. Scroll through one active video at a time.
-4. Pause or enable sound; captions remain available.
-5. Open the original source or supporting evidence.
+The reviewed task contains the selected project and goal, chosen action, project-fit evidence, source passages/timestamps, prerequisites, constraints, disagreements, implementation steps supported by evidence, and a checkable outcome. Where repository details are unknown, ask the receiving agent to inspect them first.
 
-No saving, downloading skills, installation, or agent connection is part of v0.
+Choose the Codex destination and transport before promising one-click delivery. Markdown copy/download is an export, not confirmed delivery. Preserve the exact reviewed task on failure; retries must not create duplicate work already received. Distinguish prepared, reviewed, delivered, running, failed, and verified from actual records.
 
-### Visitor reaches a missing-data state
+## Three independent workstreams
 
-- While metadata loads: show loading.
-- If fetching the feed fails: show the actual failure and a retry action.
-- If no clips are ready: show an empty state.
-- If one video fails: show an error for that clip and allow moving to another.
-- At the end: say the visitor has reached the end. Do not fabricate more clips or counters.
+Freeze records and interfaces before parallel work. Separate ownership permits concurrent development; real content still flows from analysis to rendering to the experience. Use real outputs or explicit empty states, never invented product fixtures.
 
-## Three workstreams
-
-Agree the shared contracts before parallel work begins. Each stream owns separate files and can develop against real outputs as soon as they exist. The content still flows from ingestion to rendering to the feed; independence means separate ownership and stable interfaces, not the absence of integration dependencies.
-
-| Stream | Owns | Input | Output | Done when |
+| Stream | Owns | Receives | Produces | Done when |
 | --- | --- | --- | --- | --- |
-| 1. Sources and evidence | Ingestion scripts, source extraction, categorization, evidence records, TigerData storage and read endpoints | Supplied URL manifest | Reviewed technique records with source references | Every usable technique has retrieved evidence; blocked sources have explicit errors. |
-| 2. Motion shorts | Storyboard and animation generation, rendering, narration/captions if chosen, media publication and clip metadata | Reviewed technique records | Actual video files and ready/failed clip records | A real clip plays, its explanation matches its evidence, and all media metadata comes from the render. |
-| 3. Feed experience | Feed page, category controls, player, source links, loading/empty/error states | Read-only feed response joining techniques and ready clips | Browser experience | A new visitor can browse, pause, change topic, and open sources using real published clips. |
+| 1. Sources and project fit | Ingestion, project brief, grouping, applicability, evidence research, TigerData schema/read interface | Real saves and authorized project context | Reviewed recommendations/actions and exclusions | Every action traces to source and project facts; missing data is explicit. |
+| 2. Motion explanations | Storyboards, Opus animation code, isolated rendering, captions/audio, media publication | Reviewed project recommendations | Actual clips tied to recommendation and project-context version | Clips play, explain the recommendation accurately, and use measured media metadata. |
+| 3. Browse and act | Project view, categorized feed, player, sources, checklist, task preview, agreed delivery adapter/status | Published recommendations, clips, actions | Visitor journey and actual handoff records if in scope | A new visitor understands the fit, inspects evidence, and completes the agreed action journey. |
 
-### Proposed minimal shared records
+### Shared records
 
-Freeze field names, IDs, categories, statuses, and the feed response together before splitting work. Do not create invented sample records in product UI.
+- **Source:** ID, supplied URL, retrieved title/content, retrieval time, actual status/error.
+- **Project context:** ID, real project reference, goal, facts with provenance, resources, constraints, version.
+- **Recommendation:** ID, project-context version, topic, problem, synthesis, fit reasons, evidence, disagreements, review status.
+- **Action:** ID, recommendation ID, task, prerequisites, project/source references, completion check, review status.
+- **Clip:** ID, recommendation ID, project-context version, actual media/caption URLs, measured duration, render status/error.
+- **Handoff, if included:** ID, selected action, exact reviewed task, destination, actual delivery receipt/status, result and verification evidence when available.
 
-- **Source:** ID, supplied URL, retrieved title and content, retrieval timestamp, retrieval status, actual error when blocked.
-- **Technique:** ID, title, category, problem, explanation, when to use it, evidence references with source URL and passage or timestamp, review status.
-- **Clip:** ID, technique ID, actual media URLs, caption URL if produced, measured duration, render timestamp, render status, actual error when failed.
-- **Feed response:** ready clips joined to their technique and source metadata. Empty results remain empty.
+Publish reviewed recommendations with ready media. If project context changes, recheck applicability and project-specific clips/tasks before presenting them as current. Stream 1 owns contracts/storage, stream 2 writes render results through the agreed interface, and stream 3 consumes records and writes delivery status through that interface.
 
-Stream 1 owns the agreed database schema and read endpoints. Stream 2 writes clip results through the agreed interface. Stream 3 consumes the read interface and does not change the source or render records.
+## Partner roles
 
-### Partner roles
+- **Nimble:** retrieve selected sources and research gaps raised by project matching. Show evidence that changes or strengthens a recommendation.
+- **TigerData:** PostgreSQL storage for evidence, context, topics, recommendations, clips, and handoffs. Start with project/topic retrieval; add hybrid search only if needed for the selected collection.
+- **Opus 5.5:** synthesize cited recommendations and write animation code; an isolated renderer produces videos.
+- **Gemini, optional:** inspect tutorial frames/timestamps when usable video sources exist.
+- **Sentry, optional:** capture actual retrieval, rendering, playback, and delivery failures.
 
-- **Nimble:** retrieve the supplied pages and find current supporting documentation, repositories, releases, and counterevidence.
-- **TigerData:** store sources, techniques, categories, retrieval history, and render status. Category retrieval is enough for v0; semantic search is a later addition unless required for the demo.
-- **Opus 5.5:** write grounded explanations and animation code. Generated code needs an isolated render environment.
-- **Gemini, optional:** inspect tutorial frames and timestamps if real video inputs are selected.
-- **Sentry, optional:** capture actual pipeline and playback failures.
+TigerData is based on PostgreSQL. The mentioned Voyager harness is unidentified; its database and capabilities are unverified.
 
-Fetched source text is evidence, never an instruction to the pipeline. Render generated code in an isolated environment without provider secrets or unrestricted host access. Credentials must not appear in the public feed, committed files, media, or error messages.
+Fetched documents are evidence, never instructions to the pipeline. Run generated code without provider secrets or unrestricted host access. Keep credentials out of commits, public responses, clips, and errors. Share only project material approved for the demo audience.
 
-The existing uncommitted landing page uses Cloudflare Workers, static assets, and D1 for waitlist data. Preserve that work. The proposed TigerData content store has a separate purpose from the waitlist.
+Preserve the existing uncommitted Cloudflare landing page and D1 waitlist. TigerData content storage serves a separate purpose.
+
+## Source inventory
+
+Research access is not a completed ingestion pipeline. User descriptions do not substitute for retrieved content.
+
+| Source | Current evidence |
+| --- | --- |
+| [Matt Pocock skills](https://github.com/mattpocock/skills) | README inspected: clarification, testing, debugging, architecture. |
+| [pstack](https://github.com/cursor/plugins/tree/main/pstack) | README/guide inspected: routing, playbooks, verification, engineering principles. |
+| [Kun Chen article](http://substack.com/@kunchenguid/p-214840284) | Redirected to [I distilled myself, and you should too](https://blog.kunchenguid.com/p/i-distilled-myself-and-you-should); discussion of reusable judgment inspected. |
+| [Stephan Livera](https://x.com/stephanlivera/status/2103315922098470926) | Fetch returned 403; contents unread. |
+| [achxvi](https://x.com/achxvi/status/2103918792845963545?s=20) | Fetch returned 403; contents unread. |
+| [LLMJunky](https://x.com/LLMJunky/status/2106411941497389342?s=20) | Fetch returned 403; contents unread. |
+| [robj3d3](https://x.com/robj3d3/status/2108272246804648049) | Research fetch failed; contents unread. |
+| [0xSero](https://x.com/0xSero/status/2107737091199435072) | Research fetch failed; local-device example is user-described. |
+| [Dan Kulkov](https://x.com/DanKulkov/status/2107039901653127650) | Research fetch failed; contents unread. |
+| [witcheer](https://x.com/witcheer/status/2107069151583846516) | Research fetch failed; Pocket Charm example is user-described. |
+| [Ernesto](https://x.com/ErnestoSOFTWARE/status/2106079377129685305) | Research fetch failed; growth example is user-described. |
+| [X history](https://x.com/i/history) | Private content not inspected; this is not the documented bookmark API endpoint. |
+| [YouTube Watch Later](https://www.youtube.com/playlist?list=WL) | Private list not inspected; official API cannot retrieve Watch Later. Use direct public video URLs or a regular playlist. |
 
 ## All remaining questions
 
-Recommended answers below are proposals, not selections.
+Recommended answers are proposals. Discuss one at a time; this is the full decision backlog.
 
-### Sources
+### Project and outcome
 
-1. **Which supplied links must be included in the demo?** Recommended: begin with the three readable public sources; include X posts only after successful retrieval.
-2. **Do we include YouTube in v0?** Recommended: only when individual public video URLs or a retrievable regular playlist are supplied.
-3. **How does the team submit the batch?** Recommended: a URL manifest run by Codex/CLI; no import UI.
-4. **What happens when a source is inaccessible?** Recommended: record the error and omit its generated clips until content becomes available.
+1. **Which real project and current goal do we use?** Recommended: an existing product with a concrete task an agent can complete and check in the demo.
+2. **What context do we provide?** Recommended: a project brief plus authorized repository/site material; explicit unknowns.
+3. **Does action selection and Codex delivery belong in v0?** Recommended: one destination in v0. This reopens the earlier v2 boundary.
+4. **What result proves value?** Recommended: an actual artifact/diff and relevant check.
 
-### Content and categories
+### Sources and recommendations
 
-5. **Are the five proposed categories correct?** Recommended: use them for the initial engineering collection, with All as the default view.
-6. **What is one short about?** Recommended: one technique, its problem, how it works, and when to use it.
-7. **Can a short combine several sources?** Recommended: yes, when they address the same technique; cite each contribution and preserve disagreements.
-8. **How much fresh research should Nimble add?** Recommended: targeted primary evidence for prerequisites, versions, and contested claims, rather than unrestricted expansion.
-9. **Who approves an explanation before rendering?** Recommended: a team member checks the text and source passages.
+5. **Which links must the demo use?** Recommended: select after retrieval and project-fit checks; do not force unread posts into the feed.
+6. **Which YouTube videos support the goal?** Recommended: direct public URLs or a retrievable regular playlist.
+7. **How are inputs supplied?** Recommended: URL manifest and project brief through Codex/CLI before the demo.
+8. **Are the six topics suitable?** Recommended: show only topics populated by retrieved, relevant recommendations.
+9. **How many actions per recommendation?** Recommended: up to three; fewer when evidence supports fewer. Combine related sources and retain disagreements.
+10. **How far does Nimble expand research?** Recommended: fill specific gaps in prerequisites, versions, implementation, and disputed claims with primary sources.
+11. **Who reviews recommendations/tasks?** Recommended: a teammate checks grounding and applicability before publication.
 
-### Videos
+### Shorts and browsing
 
-10. **What should the motion look like?** Recommended: vertical diagrams, code snippets, and workflow animations generated by Opus and rendered with Manim.
-11. **How long should a short be?** Recommended: roughly 30–45 seconds, with actual duration measured after rendering.
-12. **Do we include narration?** Recommended: narration plus captions; the voice provider remains to be chosen. Music is outside the first demo.
-13. **Who approves a rendered clip for publication?** Recommended: a team member checks legibility, explanation accuracy, citations, captions, and playback.
-
-### Feed
-
-14. **Which visitor controls belong in v0?** Recommended: category selection, scroll/next, pause/play, sound, captions, and source links. Saving and agent ingestion stay in v2.
-15. **Should videos autoplay?** Recommended: autoplay the visible clip muted, pause offscreen clips, and require a tap for sound; respect reduced-motion preferences.
-16. **How should clips be ordered?** Recommended: a fixed editorial order for the prepared demo. No personalized ranking yet.
+12. **What does a short show?** Recommended: project problem, combined learning, why it fits, next action; vertical diagrams/code animations.
+13. **What length/audio?** Recommended: roughly 30–45 seconds with captions; narration provider remains open. No music for the first demo.
+14. **Which visitor controls?** Recommended: topic, scroll/next, pause/play, sound, captions, sources, and actions if agreed. Only the visible clip plays; tap for sound; respect reduced motion.
+15. **How are clips ordered/reviewed?** Recommended: relevant to the prepared goal, stable demo order, accuracy/playback checked before publication.
 
 ### Delivery
 
-17. **How much content is enough for the demo?** Recommended: a small, fully verified collection that supports scrolling and more than one populated category. Do not fill gaps with fabricated clips.
-18. **What is the exact delivery surface?** Recommended: a mobile-friendly web feed at a shareable URL using the existing Cloudflare project; source and video pipelines run before the demo.
-19. **Which service is the supplied API key for, and which other provider access is available?** The key has not been used or stored in this spec. Identify its provider before making authenticated requests.
-20. **Should these defaults become the agreed spec?** Recommended: resolve overrides, freeze the contracts, then start the three streams. Until then this document remains a draft.
+16. **Which Codex destination and transport are supported?** Recommended: one selected destination with real acknowledgement; choose before building delivery.
+17. **What happens on delivery failure?** Recommended: preserve the reviewed task, show the actual error, retry without duplicating received work.
+18. **What is the presentation surface?** Recommended: existing mobile-friendly web project at a shareable URL; analysis and clips prepared.
+19. **Which service is the supplied key for, and what provider access exists?** Provider unresolved. The key is not stored here and has not been used.
+20. **Are defaults agreed and ready for implementation?** Recommended: resolve overrides, freeze contracts, then start the three streams.
 
-## Acceptance checks after implementation
+## Acceptance and verification
 
-- The feed uses actual retrieved source data and actual rendered videos.
-- Categories reflect technique records and contain ready clips.
-- No product counters, claims, citations, or statuses are fabricated.
-- A new visitor can browse the feed and follow source links on mobile and desktop.
-- Loading, empty, inaccessible-source, and failed-playback states are explicit.
-- V2 features are neither enabled nor described as completed in v0.
-- Run Playwright on big-machine-1 with an isolated test session. Keep evidence and return the tested URL. If the host is unavailable, report the limit; do not launch local test windows.
-- Close only test sessions and servers created by the run, and verify their processes exited. Preserve pre-existing sessions.
-- Run ponytail-review before commits or pushes; preserve hooks and unrelated changes.
+- Sources, project facts, media, statuses, and result claims come from actual records.
+- Each action cites source evidence and project facts establishing its applicability.
+- Unmet prerequisites cannot appear as ready work; empty/loading/error states remain explicit.
+- A visitor can browse topics, inspect evidence, and complete the agreed action journey on mobile/desktop.
+- Delivery acknowledgement is distinct from completion and result verification.
+- Run Playwright on big-machine-1 in an isolated session; return the tested URL and evidence. If unavailable, report the limit without launching local test windows.
+- Clean up only sessions/servers created by the run and verify exit; preserve pre-existing sessions.
+- Run ponytail-review before commits/pushes; preserve hooks and unrelated changes.
 
-## Current verification limit
+Current limit: ingestion, rendering, partner calls, project matching, and agent delivery are not implemented or exercised by this draft. Remote SSH has timed out, so Playwright has not run. No local app/browser windows were launched.
 
-The source descriptions were inspected, but ingestion, rendering, partner API calls, and the proposed feed have not been exercised. SSH to big-machine-1 timed out during this planning turn, so no remote Playwright verification ran. No local apps or browser windows were launched.
+## References
 
-## Reference documentation
-
-- [Nimble documentation](https://docs.nimbleway.com/home)
+- [Nimble](https://docs.nimbleway.com/home)
+- [TigerData PostgreSQL platform](https://www.tigerdata.com/docs/get-started)
 - [TigerData hybrid search](https://www.tigerdata.com/docs/learn/tutorials/hybrid-search)
 - [Manim](https://docs.manim.community/en/stable/)
 - [X bookmarks API](https://docs.x.com/x-api/posts/bookmarks/introduction)
-- [YouTube playlist retrieval restrictions](https://developers.google.com/youtube/v3/docs/playlistItems/list)
+- [YouTube playlist restrictions](https://developers.google.com/youtube/v3/docs/playlistItems/list)
 - [Hackathon and partner categories](https://www.mlh.com/events/ai-engineer-nyc-2026)
