@@ -31,7 +31,9 @@ test("extraction prompt names the video and window so the model can echo them", 
 
 import { windowFor, MAX_WINDOW_SECONDS } from "../../src/ingest/extract/gemini.js";
 test("window is bounded to 1 hour and starts at the selected time", () => {
-  assert.deepEqual(windowFor(306), [306, 606]);
+  assert.deepEqual(windowFor(306), [306, 3906], "default window is one hour from the start");
+  assert.deepEqual(windowFor(null), [0, 3600]);
+  assert.deepEqual(windowFor(306, 300), [306, 606]);
   assert.deepEqual(windowFor(null, MAX_WINDOW_SECONDS), [0, 3600]);
   assert.throws(() => windowFor(0, 3601));
   assert.throws(() => windowFor(0, 5));

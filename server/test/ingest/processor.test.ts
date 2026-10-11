@@ -18,7 +18,7 @@ test("extracts a pending unit from its stored URL/start, fetches the title, and 
   const saved = (await store.getUnits([unit.id]))[0];
   assert.equal(saved.status, "ready");
   assert.equal(saved.title, "Real Title");
-  assert.deepEqual(saved.transcript?.window, [306, 606]);
+  assert.deepEqual(saved.transcript?.window, [306, 3906]);
   assert.equal(saved.submittedUrl, unit.submittedUrl, "submitted URL is preserved");
   assert.equal(summary.digested, 1);
   assert.equal(store.artifacts[0].project_context_id, null);

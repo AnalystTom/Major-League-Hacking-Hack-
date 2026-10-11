@@ -36,7 +36,7 @@ test("processor against the shared schema", { skip: !url && "TEST_DATABASE_URL n
     const units = await store.getUnits([a, b]);
     assert.deepEqual(units.map((u) => u.status), ["ready", "ready"]);
     assert.equal(units[0].title, "Real Title");
-    assert.deepEqual(units.find((u) => u.id === b)?.transcript?.window, [306, 606]);
+    assert.deepEqual(units.find((u) => u.id === b)?.transcript?.window, [306, 3906]);
 
     const arts = (await pool.query(`SELECT id, project_context_id, project_context_version, digestion_prompt_id
                                     FROM artifacts WHERE source_ids && $1::uuid[]`, [[a, b]])).rows;

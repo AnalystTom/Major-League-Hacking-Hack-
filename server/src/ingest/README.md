@@ -15,7 +15,7 @@ Every route needs `Authorization: Bearer $INGEST_TOKEN`. The web Worker sends it
 | --- | --- |
 | `INGEST_TOKEN` | Bearer token callers must send. Required when ingestion is enabled. |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | Extraction. Model defaults to `gemini-3.5-flash-lite`. |
-| `WINDOW_SECONDS` | Seconds extracted from each unit's start time (30-3600, default 300). |
+| `WINDOW_SECONDS` | Seconds extracted from each unit's start time (30-3600, default 3600, i.e. 1 hour). |
 | `OPENAI_API_KEY`, `OPENAI_MODEL` | Digestion. Without a key units are extracted but not digested. |
 | `DIGESTION_REQUEST` | Categorization request stored with each Digestion Prompt revision. |
 | `DATABASE_URL` | Postgres/TigerData. Enables the sweep; without it records stay in memory. |

@@ -1,7 +1,7 @@
 import { ModelExtraction } from "../types.js";
 
 export const GEMINI_MODEL = "gemini-3.5-flash-lite";
-export const DEFAULT_WINDOW_SECONDS = 300;
+export const DEFAULT_WINDOW_SECONDS = 3600;
 export const MAX_WINDOW_SECONDS = 3600;
 export const MIN_WINDOW_SECONDS = 30;
 

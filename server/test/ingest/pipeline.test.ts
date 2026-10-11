@@ -17,7 +17,7 @@ test("ready unit keeps canonical URL and start; model URL cannot replace it", as
   assert.equal(u.status, "ready");
   assert.equal(u.sourceUrl, "https://www.youtube.com/watch?v=V-EDrhIhHzQ");
   assert.equal(u.startSeconds, 306);
-  assert.deepEqual(u.transcript?.window, [306, 606]);
+  assert.deepEqual(u.transcript?.window, [306, 3906]);
   assert.equal((await store.listReadyUnits()).length, 1);
 });
 
@@ -43,7 +43,7 @@ test("digest validation rejects unknown ids and out-of-window evidence", async (
     evidence: [{ source_id: id, start_seconds: s, end_seconds: s + 13, passage: "p" }] });
   assert.doesNotThrow(() => validateDigest({ artifacts: [art(u.id)], exclusions: [] }, [u]));
   assert.throws(() => validateDigest({ artifacts: [art("00000000-0000-4000-8000-000000000000")], exclusions: [] }, [u]), /unknown/);
-  assert.throws(() => validateDigest({ artifacts: [art(u.id, 500)], exclusions: [] }, [u]), /outside/);
+  assert.throws(() => validateDigest({ artifacts: [art(u.id, 5000)], exclusions: [] }, [u]), /outside/);
 });
 
 
