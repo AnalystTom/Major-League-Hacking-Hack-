@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en" data-palette="hn">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Resurface</title>
+  <meta name="description" content="Cool apps stuck in your bookmarks, tutorials stuck in Watch Later. Resurface turns your backlog into 30-second shorts and installs the ones you keep in Claude Code, Codex, Cursor or Hermes.">
+  <meta property="og:title" content="Resurface: you saved it, your agent never saw it">
+  <meta property="og:description" content="Your backlog as 30-second shorts. Keep the takeaways worth using and send them to your coding agent. Join the waitlist.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <script>
+    // Apply the chosen colour palette before first paint: ?palette= wins, then the last pick.
+    (function () {
+      var ok = ["hn", "highlighter", "cobalt", "violet"];
+      var p = new URLSearchParams(location.search).get("palette");
+      try { if (!p) p = localStorage.getItem("resurface-palette"); } catch (e) {}
+      if (ok.indexOf(p) >= 0) document.documentElement.dataset.palette = p;
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Funnel+Display:wght@400..800&family=Funnel+Sans:wght@400..700&family=Martian+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="/" aria-label="Resurface home">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10 9.5l4.5 2.5-4.5 2.5z"/></svg>
+        Resurface
+      </a>
+      <nav class="topnav" aria-label="Sections">
+        <a href="#shorts">Shorts</a>
+        <a href="#how">How it works</a>
+      </nav>
+      <a class="btn btn-small" href="#join">Join the waitlist</a>
+    </div>
+  </header>
+
+  <main>
+    <!-- ============ Hero ============ -->
+    <section class="hero" aria-labelledby="hero-title">
+      <p class="badge">Built at AI Engineer NYC 2026</p>
+      <h1 id="hero-title" class="hero-title play">
+        <span class="line"><span class="kw" style="--i:0">You</span> <span class="kw" style="--i:1">saved</span> <span class="kw" style="--i:2">it.</span></span>
+        <span class="line"><span class="kw" style="--i:3">Your</span> <span class="kw" style="--i:4">agent</span> <span class="kw" style="--i:5">never</span> <span class="kw" style="--i:6">saw</span> <span class="kw" style="--i:7">it.</span></span>
+      </h1>
+      <p class="lede">Resurface turns the bookmarks, Watch Later videos and conference talks you never got to into 30-second shorts. Keep the good ones and they're installed in your coding agent as skills.</p>
+      <form class="signup signup-hero" id="join" data-signup novalidate>
+        <label class="visually-hidden" for="hero-email">Email address</label>
+        <input id="hero-email" name="email" type="email" autocomplete="email" placeholder="you@company.dev" required>
+        <input class="visually-hidden" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
+        <button type="submit" class="btn">Join the waitlist</button>
+        <p class="form-status" role="status" aria-live="polite"></p>
+      </form>
+      <div class="works-with">
+        <p>Sends to</p>
+        <ul>
+          <li><span class="logo logo-claude-code" aria-hidden="true"></span>Claude Code</li>
+          <li><span class="logo logo-codex" aria-hidden="true"></span>Codex</li>
+          <li><span class="logo logo-cursor" aria-hidden="true"></span>Cursor</li>
+          <li><span class="logo logo-hermes" aria-hidden="true"></span>Hermes</li>
+        </ul>
+      </div>
+
+      <figure class="film" data-film aria-label="Demo: how saved items get stuck, and what Resurface does with them">
+        <div class="film-screen">
+          <div class="scene scene-bookmarks is-on" data-scene data-caption="Cool apps, stuck in your bookmarks.">
+            <div class="stream" aria-hidden="true">
+              <p>A local-first sync engine</p><p>An open-source plugin pack for Cursor</p><p>A CLI that turns any repo into agent context</p><p>A voice agent starter in 200 lines</p><p>Agent skills for real engineering work</p><p>A tiny eval harness</p><p>A local-first sync engine</p><p>An open-source plugin pack for Cursor</p>
+            </div>
+            <p class="big-count"><span data-to="847">0</span><small>bookmarks, unopened</small></p>
+          </div>
+          <div class="scene scene-watch" data-scene data-caption="Crucial tutorials, stuck in Watch Later.">
+            <div class="queue" aria-hidden="true">
+              <b style="--i:0; --h:250">48:12</b><b style="--i:1; --h:150">1:12:40</b><b style="--i:2; --h:30">36:05</b><b style="--i:3; --h:200">22:18</b><b style="--i:4; --h:290">54:30</b>
+            </div>
+            <p class="big-count"><span data-to="1180" data-format="hm">0 h 00 m</span><small>of tutorials, still queued</small></p>
+          </div>
+          <div class="scene scene-talks" data-scene data-caption="AI Engineer 2026 is here. Last year's New York talks, still unwatched.">
+            <div class="film-talks" aria-hidden="true">
+              <i style="--i:0; --h:250"></i><i style="--i:1; --h:30"></i><i style="--i:2; --h:200"></i><i style="--i:3; --h:150"></i><i style="--i:4; --h:290"></i><i style="--i:5; --h:100"></i><i style="--i:6; --h:60"></i><i style="--i:7; --h:220"></i>
+            </div>
+            <p class="big-count"><span>0%</span><small>of last year's talks watched</small></p>
+          </div>
+          <div class="scene scene-resurface" data-scene data-caption="Resurface keeps the part worth knowing and sends it to your agent.">
+            <div class="mini-short" aria-hidden="true">
+              <span class="ms-source">YouTube, Watch Later</span>
+              <p class="ms-take">Write the check before the agent says done.</p>
+              <span class="ms-bar"></span>
+            </div>
+            <p class="landed" aria-hidden="true"><span>Sent to Claude Code</span><code>.claude/skills/verify-journey/SKILL.md</code></p>
+          </div>
+          <p class="film-caption" data-caption-out aria-live="polite"></p>
+        </div>
+        <figcaption class="film-controls">
+          <button type="button" class="film-toggle" data-toggle aria-label="Pause demo" data-state="playing">
+            <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="2" width="3.5" height="12" rx="1"/><rect x="9.5" y="2" width="3.5" height="12" rx="1"/></svg>
+            <svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9.5-5.5z"/></svg>
+          </button>
+          <ol class="chapters">
+            <li><button type="button" data-chapter><span>Bookmarks</span><i></i></button></li>
+            <li><button type="button" data-chapter><span>Watch Later</span><i></i></button></li>
+            <li><button type="button" data-chapter><span>AI Engineer 2025</span><i></i></button></li>
+            <li><button type="button" data-chapter><span>Resurface</span><i></i></button></li>
+          </ol>
+        </figcaption>
+      </figure>
+    </section>
+
+    <!-- ============ Shorts feed ============ -->
+    <section class="feed" id="shorts" data-feed-root aria-labelledby="feed-title">
+      <div class="section-head">
+        <h2 id="feed-title">Swipe through your backlog</h2>
+        <p>Five sample takeaways from saved posts, repos and talks. Move with the arrows, then send the ones worth keeping.</p>
+      </div>
+      <div class="fb-strip">
+        <div class="fb-viewport" data-viewport>
+          <div class="fb-track" data-track></div>
+        </div>
+      </div>
+      <div class="fb-panel">
+        <div class="fb-nav">
+          <button type="button" class="arrow" data-prev aria-label="Previous short"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 5l-5 5 5 5"/></svg></button>
+          <p class="feed-counter" data-counter>1 of 5</p>
+          <button type="button" class="arrow" data-next aria-label="Next short"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7.5 5l5 5-5 5"/></svg></button>
+        </div>
+        <p class="feed-why" data-why></p>
+        <div class="feed-actions">
+          <button type="button" class="btn-copy" data-copy>Copy to clipboard</button>
+          <button type="button" class="btn btn-send" data-send>Send to your agents</button>
+        </div>
+        <p class="feed-status" data-feed-status role="status" aria-live="polite"></p>
+      </div>
+      <div class="nudge">
+        <p>That was five samples. Your backlog is probably a few hundred.</p>
+        <a class="btn" href="#join">Join the waitlist</a>
+      </div>
+    </section>
+
+    <!-- ============ How it works ============ -->
+    <section class="steps" id="how" aria-labelledby="steps-heading">
+      <div class="section-head">
+        <h2 id="steps-heading">From backlog to working agent</h2>
+      </div>
+      <ol>
+        <li>
+          <h3>Connect what you've saved</h3>
+          <p>X bookmarks, YouTube playlists, GitHub stars, newsletters and conference talks. Paste single links too.</p>
+        </li>
+        <li>
+          <h3>Watch a short for each one</h3>
+          <p>Every item becomes a 30-second short of the part worth keeping, matched against what you're building. Copy it, or send it straight to your agents.</p>
+        </li>
+        <li>
+          <h3>Check it against today's docs</h3>
+          <p>Before anything is installed, Resurface pulls the linked repo, release notes and open issues, so a year-old tip doesn't ship a deprecated flag.</p>
+        </li>
+        <li>
+          <h3>Install it where your agent looks</h3>
+          <p>Skills, rules and AGENTS.md sections land in your repo as a reviewable diff, each one linked back to the post or video it came from.</p>
+        </li>
+      </ol>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <p>Resurface. Built at AI Engineer NYC 2026.</p>
+    <a href="#join">Join the waitlist</a>
+  </footer>
+
+  <aside class="palette-picker" data-palette-picker aria-label="Colour palette" hidden>
+    <p>Colours</p>
+    <button type="button" data-pick-palette="hn" aria-label="Hacker News orange"><i class="sw sw-hn"></i><span>Orange</span></button>
+    <button type="button" data-pick-palette="highlighter" aria-label="Highlighter yellow"><i class="sw sw-highlighter"></i><span>Highlighter</span></button>
+    <button type="button" data-pick-palette="cobalt" aria-label="Cobalt blue"><i class="sw sw-cobalt"></i><span>Cobalt</span></button>
+    <button type="button" data-pick-palette="violet" aria-label="Sage and violet"><i class="sw sw-violet"></i><span>Violet</span></button>
+  </aside>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "resurface-api",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-09-01",
+  "vars": {
+    "WEB_ORIGINS": "https://resurface.thomasmann2001.workers.dev,http://localhost:8787"
+  },
+  "observability": { "enabled": true }
+}
