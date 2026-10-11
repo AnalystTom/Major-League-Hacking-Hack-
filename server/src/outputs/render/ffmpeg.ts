@@ -12,6 +12,26 @@ const FONT_CANDIDATES = [
   "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
 ];
 
+let drawtextCheck: Promise<void> | undefined;
+
+/**
+ * Fails fast, before any paid script or narration call, when this ffmpeg build has no drawtext filter (it needs
+ * libfreetype). Homebrew's default ffmpeg may lack it: `brew install ffmpeg-full` has it. Checked once per process.
+ */
+export function assertDrawtext(): Promise<void> {
+  drawtextCheck ??= new Promise<void>((resolve, reject) => {
+    const child = spawn("ffmpeg", ["-hide_banner", "-filters"], { stdio: ["ignore", "pipe", "ignore"] });
+    let out = "";
+    child.stdout.on("data", (d) => (out += d));
+    child.on("error", (e) => reject(new Error(`ffmpeg is not runnable: ${e.message}`)));
+    child.on("close", () => (/\bdrawtext\b/.test(out) ? resolve() : reject(new Error(
+      "this ffmpeg has no 'drawtext' filter (built without libfreetype); install one that does, e.g. `brew install ffmpeg-full`"))));
+  });
+  // A failed check is retried next time, so installing ffmpeg doesn't need a processor restart.
+  drawtextCheck.catch(() => { drawtextCheck = undefined; });
+  return drawtextCheck;
+}
+
 /** RENDER_FONT, else a bold system font; null means fontconfig's default sans. */
 export function fontFile(font = process.env.RENDER_FONT): string | null {
   return font ?? FONT_CANDIDATES.find((f) => existsSync(f)) ?? null;

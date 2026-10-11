@@ -5,7 +5,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_DIGEST_MODEL } from "../../ingest/digest/run.js";
-import { composeShort, probe } from "./ffmpeg.js";
+import { assertDrawtext, composeShort, probe } from "./ffmpeg.js";
 import type { MediaStore } from "./media.js";
 import { SCRIPT_PROMPT_REVISION, writeScript } from "./script.js";
 import { captionCues, timeline, toVtt } from "./timeline.js";
@@ -20,6 +20,7 @@ export interface RenderOptions extends ProviderOptions {
 }
 
 export async function renderArtifact(a: ReadyArtifact, o: RenderOptions): Promise<RenderedVideo> {
+  await assertDrawtext();
   const draft = await writeScript(a, { apiKey: o.openaiKey, model: o.openaiModel, fetchImpl: o.fetchImpl });
   const dir = await mkdtemp(join(tmpdir(), "resurface-render-"));
   try {
