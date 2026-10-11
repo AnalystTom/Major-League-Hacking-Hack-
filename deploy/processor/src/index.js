@@ -43,6 +43,18 @@ export class Processor extends Container {
     this.envVars = vars;
   }
 
+  // Hash prefixes and state only, never values: which settings the Worker sent, which this object holds,
+  // and which the running container started with.
+  async settingsStatus(sent) {
+    const short = async (vars) => (await settingsHash(vars)).slice(0, 12);
+    return {
+      sent: await short(sent),
+      held: await short(this.envVars),
+      started_with: ((await this.ctx.storage.get("settingsHash")) ?? "none").slice(0, 12),
+      container: (await this.getState()).status,
+    };
+  }
+
   // A container keeps the settings it started with, so once a secret or var changes, restart it on the next
   // request, as long as it isn't mid-job (otherwise it carries on and the next request checks again).
   async fetch(request) {
@@ -111,7 +123,7 @@ const ANSWER_WITHIN_MS = 6000;
 // The only routes callers need: the web Worker's processing and handoff requests, and a health check.
 // Anything else (such as the processor's dev import route, which skips the processing limits) never
 // reaches the container.
-const ROUTES = new Set(["GET /health", "POST /api/ingest/process", "POST /api/ingest/handoff"]);
+const ROUTES = new Set(["GET /health", "POST /api/ingest/process", "POST /api/ingest/handoff", "GET /settings-status"]);
 
 export default {
   async fetch(request, env, ctx) {
@@ -125,6 +137,13 @@ export default {
     const forward = new Request(request.url, { method: request.method, headers: request.headers, body });
     const processor = getContainer(env.PROCESSOR);
     await applySettings(processor, env);
+    if (pathname === "/settings-status") {
+      try {
+        return Response.json(await processor.settingsStatus(settingsFrom(env)));
+      } catch (error) {
+        return Response.json({ error: String(error?.message ?? error) }, { status: 500 });
+      }
+    }
     const reply = processor.fetch(forward)
       .catch(() => new Response("The processor didn't start.", { status: 502 }));
     ctx.waitUntil(reply);
