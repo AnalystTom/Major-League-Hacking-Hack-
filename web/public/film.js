@@ -33,6 +33,18 @@ export function createFilm(root) {
   new ResizeObserver(fit).observe(screen);
   fit();
 
+  function countUp(el) {
+    const to = Number(el.dataset.to);
+    const t0 = performance.now();
+    const dur = reduceMotion ? 0 : 2200;
+    const draw = (now) => {
+      const p = dur ? Math.min(1, (now - t0) / dur) : 1;
+      el.textContent = Math.round(to * (1 - Math.pow(1 - p, 3))).toLocaleString("en-US");
+      if (p < 1) requestAnimationFrame(draw);
+    };
+    requestAnimationFrame(draw);
+  }
+
   function show(i) {
     index = i;
     scenes.forEach((s) => s.classList.remove("is-on"));
@@ -47,6 +59,7 @@ export function createFilm(root) {
     void chapters[i].offsetWidth;
     chapters[i].classList.add("run");
     caption.textContent = scenes[i].dataset.caption;
+    scenes[i].querySelectorAll("[data-to]").forEach(countUp);
     remaining = lengths[i];
     schedule();
   }

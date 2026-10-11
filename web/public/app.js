@@ -1,8 +1,22 @@
-// Page wiring: the demo film, the palette picker, and the Get started buttons.
+// Page wiring: the demo film, the sample shorts feed, and the Get started call to action.
 
+import { createFeed } from "./feed.js";
 import { createFilm } from "./film.js";
 
+const feed = createFeed(document.querySelector("[data-feed-root]"));
 createFilm(document.querySelector("[data-film]")).refresh();
+feed.refresh();
+
+// Arrow keys drive the feed while it's on screen, without hijacking form fields.
+let feedInView = false;
+new IntersectionObserver(([e]) => (feedInView = e.isIntersecting), { threshold: 0.5 }).observe(feed.root);
+
+document.addEventListener("keydown", (e) => {
+  if (e.target.closest("input, textarea, select, [role='radiogroup'], [data-reel-track]")) return;
+  if (!feedInView && !feed.root.contains(document.activeElement)) return;
+  if (feed.key(e)) e.preventDefault();
+});
+
 
 // ---------- Colour palette picker (shown with ?pick) ----------
 
@@ -28,10 +42,9 @@ picker.addEventListener("click", (e) => {
 });
 markPalette();
 
-
 // ---------- Get started ----------
 
-// Signed-in visitors go straight to their feed instead of sign-up.
+// Signed-in visitors go straight to their feed instead of onboarding.
 fetch("/api/me", { credentials: "same-origin" })
   .then((res) => (res.ok ? res.json() : null))
   .then((me) => {
