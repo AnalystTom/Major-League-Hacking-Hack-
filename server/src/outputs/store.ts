@@ -8,6 +8,17 @@ import { sourceRefs, type GeneratedSkill, type ReadyArtifact, type RenderedVideo
 
 export type Kind = "skill" | "video";
 
+/** Claims per result before a failure is final; a provider outage or one invalid reply shouldn't be. */
+export const MAX_OUTPUT_ATTEMPTS = 3;
+/** A failed result waits this long times its attempts so far before it's tried again (5, then 10 minutes). */
+export const RETRY_AFTER_MINUTES = 5;
+
+/** A result row a worker may take: never started, abandoned by a crashed worker, or failed with attempts left. */
+const CLAIMABLE = (r: string) => `(${r}.status = 'pending'
+  OR (${r}.status = 'running' AND ${r}.updated_at < now() - make_interval(mins => ${STALE_CLAIM_MINUTES}))
+  OR (${r}.status = 'failed' AND ${r}.attempts < ${MAX_OUTPUT_ATTEMPTS}
+      AND ${r}.updated_at < now() - make_interval(mins => ${RETRY_AFTER_MINUTES} * ${r}.attempts)))`;
+
 /** The row a worker holds, and the token that proves it still holds it. */
 export interface Claim { id: string; token: string }
 
@@ -17,7 +28,7 @@ export class LostClaim extends Error {
 }
 
 export interface OutputStore {
-  /** Ready digests of imported units with no result of this kind yet, or whose claim went stale. */
+  /** Ready digests of imported units with no result of this kind yet, a stale claim, or a failure with attempts left. */
   artifactsNeeding(kind: Kind, limit: number): Promise<ReadyArtifact[]>;
   /** Takes the one result row for this revision as `running`; null when someone else holds it or it's settled. */
   claim(kind: Kind, a: ReadyArtifact): Promise<Claim | null>;
@@ -49,18 +60,19 @@ export class PgOutputStore implements OutputStore {
        WHERE a.ingestion_status = 'ready' AND a.digestion_prompt_id IS NOT NULL
          AND EXISTS (SELECT 1 FROM user_imports ui WHERE ui.unit_id = ANY (a.source_ids))
          AND NOT EXISTS (SELECT 1 FROM ${TABLE[kind]} r WHERE r.artifact_id = a.id AND r.artifact_version = a.version
-                         AND NOT (r.status = 'pending' OR (r.status = 'running' AND r.updated_at < now() - make_interval(mins => $2))))
-       ORDER BY a.created_at LIMIT $1`, [limit, STALE_CLAIM_MINUTES]);
+                         AND NOT ${CLAIMABLE("r")})
+       ORDER BY a.created_at LIMIT $1`, [limit]);
     return rows.map(rowToArtifact);
   }
 
   async claim(kind: Kind, a: ReadyArtifact) {
     const t = TABLE[kind];
     const { rows } = await this.pool.query(
-      `INSERT INTO ${t} (artifact_id, artifact_version, status, updated_at, claim_token) VALUES ($1, $2, 'running', now(), gen_random_uuid())
-       ON CONFLICT (artifact_id, artifact_version) DO UPDATE SET status = 'running', error = NULL, updated_at = now(), claim_token = gen_random_uuid()
-       WHERE ${t}.status = 'pending' OR (${t}.status = 'running' AND ${t}.updated_at < now() - make_interval(mins => $3))
-       RETURNING id, claim_token`, [a.id, a.version, STALE_CLAIM_MINUTES]);
+      `INSERT INTO ${t} (artifact_id, artifact_version, status, updated_at, claim_token, attempts) VALUES ($1, $2, 'running', now(), gen_random_uuid(), 1)
+       ON CONFLICT (artifact_id, artifact_version) DO UPDATE SET status = 'running', error = NULL, updated_at = now(),
+         claim_token = gen_random_uuid(), attempts = ${t}.attempts + 1
+       WHERE ${CLAIMABLE(t)}
+       RETURNING id, claim_token`, [a.id, a.version]);
     return rows[0] ? { id: rows[0].id as string, token: rows[0].claim_token as string } : null;
   }
 
@@ -109,20 +121,28 @@ export class PgOutputStore implements OutputStore {
   }
 }
 
-type Row = { id: string; token: string; artifact: ReadyArtifact; status: "running" | "ready" | "failed"; error: string | null; value?: unknown };
+type Row = {
+  id: string; token: string; artifact: ReadyArtifact; status: "running" | "ready" | "failed"; error: string | null; value?: unknown;
+  attempts: number; failedAt?: number;
+};
 
 /** In-memory stand-in for tests and runs without DATABASE_URL. */
 export class MemoryOutputStore implements OutputStore {
   artifacts: ReadyArtifact[] = [];
   rows: Record<Kind, Map<string, Row>> = { skill: new Map(), video: new Map() };
+  /** RETRY_AFTER_MINUTES in milliseconds; tests set 0. */
+  constructor(private retryAfterMs = RETRY_AFTER_MINUTES * 60_000) {}
   private key = (a: ReadyArtifact) => `${a.id}:${a.version}`;
+  private claimable = (r: Row | undefined) =>
+    !r || (r.status === "failed" && r.attempts < MAX_OUTPUT_ATTEMPTS && Date.now() >= (r.failedAt ?? 0) + this.retryAfterMs * r.attempts);
 
   async artifactsNeeding(kind: Kind, limit: number) {
-    return this.artifacts.filter((a) => !this.rows[kind].has(this.key(a))).slice(0, limit);
+    return this.artifacts.filter((a) => this.claimable(this.rows[kind].get(this.key(a)))).slice(0, limit);
   }
   async claim(kind: Kind, a: ReadyArtifact) {
-    if (this.rows[kind].has(this.key(a))) return null;
-    const row: Row = { id: randomUUID(), token: randomUUID(), artifact: a, status: "running", error: null };
+    const before = this.rows[kind].get(this.key(a));
+    if (!this.claimable(before)) return null;
+    const row: Row = { id: before?.id ?? randomUUID(), token: randomUUID(), artifact: a, status: "running", error: null, attempts: (before?.attempts ?? 0) + 1 };
     this.rows[kind].set(this.key(a), row);
     return { id: row.id, token: row.token };
   }
@@ -131,7 +151,7 @@ export class MemoryOutputStore implements OutputStore {
   }
   async fail(kind: Kind, c: Claim, error: string) {
     const row = this.held(kind, c);
-    if (row) Object.assign(row, { status: "failed", error });
+    if (row) Object.assign(row, { status: "failed", error, failedAt: Date.now() });
     return !!row;
   }
   async finishSkill(c: Claim, s: GeneratedSkill) {

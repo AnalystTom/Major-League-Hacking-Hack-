@@ -12,6 +12,8 @@ import { MemoryStore, PgStore } from "./ingest/store.js";
 import { mediaFromEnv } from "./outputs/render/media.js";
 import { produceOutputs, startOutputSweep, toReadyArtifact } from "./outputs/run.js";
 import { MemoryOutputStore, PgOutputStore } from "./outputs/store.js";
+import { createHandoffApp } from "./outputs/handoff-api.js";
+import { PgHandoffStore } from "./outputs/handoff-store.js";
 
 const app = createApp({ webOrigins: parseOrigins(process.env.WEB_ORIGINS) });
 setUsageSink((u) => console.log(`[usage] ${JSON.stringify(u)}`));
@@ -53,6 +55,9 @@ if (process.env.GEMINI_API_KEY) {
     log: (m: string) => console.log(`[outputs] ${m}`),
   };
   const processor = { ...options, onArtifacts: (a: StoredArtifact[]) => produceOutputs(a.map(toReadyArtifact), outputs) };
+  // The agent handoff merges a user's picked skills into one prompt (agent_briefs), so it needs DATABASE_URL.
+  // Mounted before the ingest app so its own bearer check answers /api/ingest/handoff.
+  if (pool) app.route("/api/ingest/handoff", createHandoffApp({ ...options, store: new PgHandoffStore(pool) }));
   app.route("/api/ingest", createIngestApp(processor));
   const interval = Number(process.env.SWEEP_INTERVAL_MS ?? 60_000);
   if (pool) {

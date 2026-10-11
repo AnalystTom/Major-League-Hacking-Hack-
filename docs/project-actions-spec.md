@@ -2,7 +2,7 @@
 
 This is the single canonical product spec. It supersedes the earlier v0 draft and HTML planning preview.
 
-Status (11 Oct 2026): product scope agreed and v0 built end to end in local dev. The web Worker implements accounts, imports and their progress, the full-screen reel, Skills and Tasks, the feed and media streaming ([HTTP API](#http-api)). The Node processor (`server/src`) extracts with Gemini, digests, writes skills with tasks, and renders basic narrated shorts to R2; one real provider run has passed on a local database. Production serves the waitlist; the processor's hosting (PR #5) and migration 005 on TigerData are pending. Where v0 falls short of a requirement below, an **Implementation (v0)** note says so. Migration, provider runs, commits and deployment still require approval.
+Status (11 Oct 2026): product scope agreed and v0 built end to end in local dev. The web Worker implements accounts, imports and their progress, the full-screen reel, Skills and Tasks, the feed and media streaming ([HTTP API](#http-api)). The Node processor (`server/src`) extracts with Gemini, digests, writes skills with tasks, renders basic narrated shorts to R2, and merges picked skills into one prompt for the user's coding agent (Send to agent); failed skills and shorts are retried up to three times; one real provider run has passed on a local database. Production serves the waitlist; the processor's hosting (PR #5) and migrations 005–009 on TigerData are pending. There is no project brief: fit with a project is judged by the user's coding agent, which the handoff prompt tells to review the repository first. Where v0 falls short of a requirement below, an **Implementation (v0)** note says so. Migration, provider runs, commits and deployment still require approval.
 
 ## Goal
 
@@ -47,18 +47,20 @@ flowchart TD
   R["Import UI: individual YouTube links"] --> I["Workstream 1: Gemini extraction and source review"]
   I --> U["Ingested units: one source per unit; actual status/error"]
   U -->|Usable content only| D["Digestion Prompt: select, group, categorize, synthesize"]
-  P["One real project and a user-supplied prompt"] --> D
   D --> T["TigerData: final artifacts, dynamic categories, source IDs, processed_text"]
-  T --> V["Workflow 2: Opus writes video scripts and animation code"]
-  V --> M["Render with narration, music, captions; store actual media"]
-  M --> F["Cloudflare: TikTok-style feed, sources, CTAs"]
-  T --> S["Workflow 3: lessons, processed_skill, project action items"]
-  S --> K["TigerData: skill result and readiness"]
-  K --> F
-  S --> X["Review/export/use in Codex without needing video"]
-  F --> C["CTA: inspect skill and select action"]
-  C --> X
-  X --> Q["Inspect actual agent result and check it"]
+  T --> V["Workflow 2: script, narration, captions, render"]
+  V --> M["R2 media + video_results"]
+  M --> F["/app Reel: TikTok-style feed, sources, skill chip"]
+  T --> S["Workflow 3: one SKILL.md + up to 3 tasks per artifact"]
+  S --> K["TigerData: skill_results, action_items"]
+  K --> SK["/app Skills and Tasks: per-agent path, copy, download"]
+  SK --> H["/app Send to agent: user picks skills, agent, mode"]
+  H -->|POST /api/handoffs| B["agent_briefs row (pending)"]
+  B -->|POST /api/ingest/handoff| HR["Handoff refinement: merge lessons across videos, keep tensions, order actions"]
+  HR --> P["Rendered prompt per agent and mode: install skills at the agent's path, review recent work, where to apply, report back"]
+  P -->|ready brief| H
+  H -->|copy or download| X["User's agent (Codex, Claude Code, Cursor) in their repo"]
+  X --> Q["Inspect the agent's report and diff, run its checks"]
   L["V1: Codex fetches inputs and Nimble adds supporting sources"] -.-> I
 ```
 
@@ -66,13 +68,13 @@ Workflows 2 and 3 consume the same ingestion output independently. Workflow 3 ne
 
 ## Filtering and Digestion Prompt
 
-Use an explicit project brief plus authorized repository/site material. Record the goal, relevant implementation facts, current blocker, available tools/devices, constraints, and where each fact came from. Unknowns stay unknown.
+Digests don't see a project. Fit with the user's project is decided at the end, by their coding agent, which the handoff prompt tells to review the repository and recent work before judging each action. Unknowns stay unknown.
 
-1. Retrieve actual content or a usable transcript. A URL alone is insufficient.
-2. Identify techniques and group sources addressing the same problem; remove duplicates.
-3. Compare prerequisites with project facts. Record why the idea fits or exactly what is missing.
+1. Retrieve actual content or a usable transcript. A URL alone is insufficient. Extraction reads up to an hour from the link's start time; every cited moment must overlap evidence that was actually extracted.
+2. Identify techniques and group sources addressing the same problem; remove duplicates. A digest only combines one person's videos from one batch; lessons from separate batches are combined by the handoff.
+3. State each lesson in a form that transfers to an ordinary codebase (for example, evaluate your own prompts on fixed real inputs, rather than build a training pipeline).
 4. Preserve disagreements and missing prerequisites. V0 uses only the supplied videos; it does not fetch supporting sources. Specific-gap research belongs to V1.
-5. Propose a concrete action and completion check. Prioritize the current goal and satisfied prerequisites.
+5. Propose a concrete action with a check of behaviour, never of wording, plus when it doesn't apply and when it's already done.
 
 Do not invent relevance scores, revenue, traffic uplift, effort estimates, repository paths, or implementation results. Expected benefits remain expectations until observed. If nothing fits, show an empty actionable feed and actual exclusion reasons.
 
@@ -272,7 +274,7 @@ Signed-out requests to session routes get `401`. Rate limits: sign-up and sign-i
 
 **Media references.** TigerData stores `r2:<key>` (resolved to `/media/<key>`) or an `https://` URL. Keys must match `videos|captions|posters/` followed by `[A-Za-z0-9._-]` path segments, with no `..`. The processor also stores narration under `audio/`, which isn't served. Anything else is treated as unplayable, and its item is left out of the feed. The bucket stays private; no storage credentials reach the browser.
 
-**Schema.** `001_shared_schema.sql` defines the shared tables and `artifact_feed`. `002_accounts.sql` adds `users`, `sessions` and `user_imports`. `003_ready_feed.sql` makes the feed view use processing readiness alone. `004_artifact_revisions.sql` keys artifacts on `(id, version)` and freezes a ready revision. `005_outputs.sql` adds `claimed_at`, one video and one skill result per artifact revision, `claim_token`, and a stricter ready check for videos. 001–004 are applied to TigerData; 005 isn't yet. The Worker writes `users`, `sessions`, `ingested_units` and `user_imports`. The processor writes units, artifacts, exclusions, video results, skill results and action items, with no teammate approval step.
+**Schema.** `001_shared_schema.sql` defines the shared tables and `artifact_feed`. `002_accounts.sql` adds `users`, `sessions` and `user_imports`. `003_ready_feed.sql` makes the feed view use processing readiness alone. `004_artifact_revisions.sql` keys artifacts on `(id, version)` and freezes a ready revision. `005_outputs.sql` adds `claimed_at`, one video and one skill result per artifact revision, `claim_token`, and a stricter ready check for videos. `008_agent_briefs.sql` adds `agent_briefs` (Send to agent). `009_output_retries.sql` adds `attempts` to skill and video results. 001–004 are applied to TigerData; 005–009 aren't yet. The Worker writes `users`, `sessions`, `ingested_units`, `user_imports` and `agent_briefs`. The processor writes units, artifacts, exclusions, video results, skill results and action items, with no teammate approval step.
 
 ### Processor (`server/src`, implemented)
 
@@ -329,6 +331,10 @@ Generate reusable lessons/procedures as reviewed `SKILL.md` content with `name` 
 
 The handoff includes the project and goal, selected action, project-fit evidence, source passages/timestamps, prerequisites, constraints, disagreements, supported implementation steps, and a completion check. Where repository details are unknown, ask Codex to inspect them first. Source content is evidence, never blindly promoted into executable instructions.
 
+**Implemented: skills and tasks.** Each ready artifact gets one SKILL.md and up to three tasks (`server/src/outputs/skills.ts`, revision `skill-v3`). Tasks change what the repository does (code, tests, evals, config, CI) in the nearest practice an ordinary codebase has, their checks verify behaviour rather than wording (a task whose check only looks for words is dropped), no task asks for stubs or placeholders, and cited moments must match the artifact's evidence; a reply that breaks these rules gets one corrected retry. Every SKILL.md carries a provenance line telling the agent to ask before running anything it mentions. A failed skill or short is retried by the sweep after 5, then 10 minutes, up to three attempts (`db/migrations/009_output_retries.sql`); the page says it's trying again until then.
+
+**Implemented: Send to agent (multi-source handoff).** The last step on `/app` turns the skills a user picks, usually from several videos, into one prompt for their coding agent. The web Worker (`web/src/handoffs.js`) checks every picked skill is ready and comes from the user's imports, then queues an `agent_briefs` row (`db/migrations/008_agent_briefs.sql`) keyed by the exact skill revisions and prompt revision, so picking the same skills again reuses the brief. It asks the processor at `POST /api/ingest/handoff { brief_id }`. The processor (`server/src/outputs/handoff.ts`) runs the Handoff refinement prompt: it merges overlapping lessons into themes that cite every supporting skill and real evidence timestamps, keeps disagreements between sources as tensions with the repository condition that decides them, orders at most five actions (each with what to look for, steps that begin by inspecting the repository, *done when* and *skip if*), and names skills that support no action. Validation rejects unknown skills, invented timestamps, and a brief that drops a skill. Code, not the model, then writes the prompt for every agent and mode: install each SKILL.md verbatim at the agent's path (`.agents/skills/<name>/SKILL.md` for Codex), review recent work (`git log`, `git diff --stat`, conventions files), the themes and tensions, the ordered actions, how to work (*Find where it applies*: no code changes; *Apply the first task that fits*: smallest change plus its check, no commit), and a report table. Sources stay evidence: the agent must ask before running any command a skill mentions. `npm run handoff -- <url>...` in `server/` runs extraction through handoff for a few links and writes every intermediate output.
+
 Choose one concrete transport before building the **Use in Codex** CTA. Copy/download is an export; installation requires confirmed file delivery, invocation requires an actual selected task, and completion requires checking the result. Preserve the reviewed payload on failure and retry without duplicating received work.
 
 **Implementation (v0):** `server/src/outputs/skills.ts` turns one ready artifact into a `SKILL.md` and up to three tasks. The skill has `name` and `description` front matter, a review warning, the procedure, and `## Sources` with the real video links. Each task has prerequisites, steps and a `completion_check`. It uses only that artifact's text and evidence and doesn't wait for the video. Delivery is copy or download only (owner decision for v0): the Skills sheet shows the path each agent reads, and each task can be copied for the chosen agent. Gaps: tasks may carry no evidence (`applicability_evidence` and `source_refs` default to empty), and the project-fit evidence this section asks for doesn't exist, because v0 has no project brief.
@@ -378,11 +384,11 @@ These replace the answered 20-question backlog. Recommended answers remain propo
 
 Run each step past the owner before proceeding. Preparing this spec does not authorize a database write, implementation run, commit/push, or deployment.
 
-1. **Database:** done for 001–004 on Tiger Cloud `mlh-aie-hackathon` (`kc5lnts1vn`). Apply `005_outputs.sql` after the duplicate checks in its header, when the owner says so.
+1. **Database:** done for 001–004 on Tiger Cloud `mlh-aie-hackathon` (`kc5lnts1vn`). Apply `005_outputs.sql` after the duplicate checks in its header, then `006_processing_limits.sql` and `007_processing_starts.sql` (processing limits), then `008_agent_briefs.sql` and `009_output_retries.sql`, when the owner says so.
 2. **Schema review:** prepare the migration corrections, the workstream 2 additions above, and the columns the web Worker reads (see [HTTP API](#http-api)); show the diff before applying anything.
-3. **Ingestion and digestion:** review the five candidate observations, refine extraction/few-shot examples, approve the project brief and Digestion Prompt, then validate and store real artifacts.
+3. **Ingestion and digestion:** review real extractions, refine extraction/few-shot examples, approve the Digestion Prompt, then validate and store real artifacts. Start the reviewed taskset from real handoff runs (input skills, the brief, and the agent's report).
 4. **Workstream 2:** the basic renderer is built, and one real run produced two narrated shorts on a local database. Still open: hosting (PR #5), the Opus/animation-code renderer, a music track, and the length and citation checks listed under the video output.
-5. **Workstream 3:** skills and tasks are built, with copy and download as the v0 export. Still open: required task evidence and any direct delivery route.
+5. **Workstream 3:** skills and tasks are built, with copy and download as the v0 export, and Send to agent merges picked skills into one agent prompt. Still open: any direct delivery route, and trying the handoff's apply mode in a real agent run.
 6. **Verification and delivery:** follow this repository's `AGENTS.md`: run the relevant package tests and verify frontend changes with local headless Playwright, clean up owned test processes, and run ponytail-review before any approved commit/push. Ask separately before deployment.
 
 ## Acceptance and verification

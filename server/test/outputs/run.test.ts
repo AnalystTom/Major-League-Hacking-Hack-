@@ -47,6 +47,41 @@ test("a skill failure is recorded with the provider error", async () => {
   assert.match(s.error!, /OpenAI HTTP 500/);
 });
 
+test("a failed skill is retried by the sweep until it lands, at most MAX_OUTPUT_ATTEMPTS times", async () => {
+  const a = artifact();
+  const outputs = new MemoryOutputStore(0);
+  outputs.artifacts.push(a);
+  const failing = outputsFetch(a, { openaiStatus: 500 });
+  const o = { outputs, openaiKey: "o", media: null, fetchImpl: failing.impl };
+  await produceOutputs([a], o);
+  const row = () => [...outputs.rows.skill.values()][0];
+  assert.equal(row().status, "failed");
+  await sweepOutputs(o);
+  assert.equal(row().attempts, 2);
+  assert.equal(row().status, "failed");
+  await sweepOutputs({ ...o, fetchImpl: outputsFetch(a).impl });
+  assert.equal(row().status, "ready", "the third attempt succeeds");
+  assert.equal(row().attempts, 3);
+
+  const b = artifact();
+  const stuck = new MemoryOutputStore(0);
+  stuck.artifacts.push(b);
+  const down = { outputs: stuck, openaiKey: "o", media: null, fetchImpl: outputsFetch(b, { openaiStatus: 500 }).impl };
+  for (let i = 0; i < 5; i++) await sweepOutputs(down);
+  const s = [...stuck.rows.skill.values()][0];
+  assert.equal(s.attempts, 3);
+  assert.equal(s.status, "failed", "after three failures it stays failed with the last error");
+  assert.match(s.error!, /OpenAI HTTP 500/);
+});
+
+test("a failed result waits before it's retried", async () => {
+  const a = artifact();
+  const outputs = new MemoryOutputStore();
+  await produceOutputs([a], { outputs, openaiKey: "o", media: null, fetchImpl: outputsFetch(a, { openaiStatus: 500 }).impl });
+  outputs.artifacts.push(a);
+  assert.equal((await outputs.artifactsNeeding("skill", 10)).length, 0);
+});
+
 test("the sweep produces outputs for artifacts that are missing them", async () => {
   const a = artifact();
   const outputs = new MemoryOutputStore();

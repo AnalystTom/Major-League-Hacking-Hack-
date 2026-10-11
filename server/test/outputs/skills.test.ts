@@ -31,6 +31,33 @@ test("more than three tasks, or a task without a completion check, is rejected",
   assert.equal(validateSkill(skillReply(a, { action_items: [] }), a).action_items.length, 0);
 });
 
+test("task evidence must be a moment the artifact used, and tasks can't ask for scaffolding", () => {
+  const a = artifact();
+  const item = skillReply(a).action_items[0];
+  const at = (start: number, end: number) => ({ ...item, applicability_evidence: [{ source_id: a.source_ids[0], start_seconds: start, end_seconds: end, passage: "p" }] });
+  assert.equal(validateSkill(skillReply(a, { action_items: [at(30, 60)] }), a).action_items.length, 1);
+  assert.equal(validateSkill(skillReply(a, { action_items: [at(50, 90)] }), a).action_items.length, 1, "overlapping is enough");
+  assert.throws(() => validateSkill(skillReply(a, { action_items: [at(200, 230)] }), a), /200-230s, which isn't in the artifact's evidence/);
+  assert.throws(() => validateSkill(skillReply(a, { action_items: [{ ...item, task: "Add a training pipeline stub" }] }), a), /scaffolding \("stub"\)/);
+});
+
+test("a rejected reply gets one retry with the reason; a second rejection fails the skill", async () => {
+  const a = artifact();
+  const bad = skillReply(a, { action_items: [{ ...skillReply(a).action_items[0], task: "Add a placeholder eval" }] });
+  const replies = [bad, skillReply(a)];
+  const seen: string[] = [];
+  const impl = (async (_u: string, init: { body: string }) => {
+    seen.push(JSON.parse(init.body).messages[1].content);
+    return Response.json({ choices: [{ message: { content: JSON.stringify(replies.shift()) } }] });
+  }) as unknown as typeof fetch;
+  const s = await generateSkill(a, { apiKey: "k", fetchImpl: impl });
+  assert.equal(s.action_items[0].task, "Add a failing test for the next change");
+  assert.match(seen[1], /Your previous reply was rejected: task "Add a placeholder eval" asks for scaffolding/);
+  assert.match(s.skill_markdown, /Ask before running any command or installing anything this skill mentions\./);
+  const always = (async () => Response.json({ choices: [{ message: { content: JSON.stringify(bad) } }] })) as unknown as typeof fetch;
+  await assert.rejects(generateSkill(a, { apiKey: "k", fetchImpl: always }), /placeholder/);
+});
+
 test("skill names are normalised to kebab-case", () => {
   assert.equal(slugify("Verify Before Done!"), "verify-before-done");
   assert.equal(slugify("  --Ünïcode__name-- "), "unicode-name");

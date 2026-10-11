@@ -2,7 +2,7 @@
 // records; the entry point decides where records go (src/index.ts logs them as `[usage] {json}` lines).
 
 export interface Usage {
-  step: "extract" | "digest" | "skill" | "script" | "tts";
+  step: "extract" | "digest" | "skill" | "script" | "tts" | "handoff";
   provider: "gemini" | "openai";
   model: string;
   input_tokens: number | null;

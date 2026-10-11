@@ -44,6 +44,7 @@ test("digest validation rejects unknown ids and out-of-window evidence", async (
   assert.doesNotThrow(() => validateDigest({ artifacts: [art(u.id)], exclusions: [] }, [u]));
   assert.throws(() => validateDigest({ artifacts: [art("00000000-0000-4000-8000-000000000000")], exclusions: [] }, [u]), /not one of the supplied units/);
   assert.throws(() => validateDigest({ artifacts: [art(u.id, 5000)], exclusions: [] }, [u]), /outside/);
+  assert.throws(() => validateDigest({ artifacts: [art(u.id, 200)], exclusions: [] }, [u]), /cites 200-213s .* where nothing was extracted/);
 });
 
 
@@ -156,4 +157,12 @@ test("HTTP failures and truncation are not retried", async () => {
   const cut = sequence(Response.json({ choices: [{ message: { content: "" }, finish_reason: "length" }] }));
   await assert.rejects(runDigestion({ apiKey: "k", units: [ready(1)], request: "r", fetchImpl: cut.f }), /output cap/);
   assert.equal(cut.bodies.length, 1);
+});
+
+test("a cited moment where nothing was extracted is retried with the reason", async () => {
+  // The unit's only extracted evidence is 5-20s.
+  const { f, bodies } = sequence({ artifacts: [artifactFor("u1", 200)], exclusions: [] }, { artifacts: [artifactFor("u1", 6)], exclusions: [] });
+  const out = await runDigestion({ apiKey: "k", units: [ready(1)], request: "r", fetchImpl: f });
+  assert.equal(out.artifacts[0].evidence[0].start_seconds, 6);
+  assert.match(bodies[1].messages.at(-1).content, /200-205s .* where nothing was extracted/);
 });

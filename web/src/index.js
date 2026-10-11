@@ -6,6 +6,7 @@ import waitlist from "./waitlist.js";
 import { readFeed } from "./feed.js";
 import { createUnits, parseImport, readUnits, userUnitIds } from "./imports.js";
 import { serveMedia } from "./media.js";
+import { createHandoff, parseHandoff, readHandoff } from "./handoffs.js";
 import { readSkills } from "./skills.js";
 import { requestProcessing } from "./processor.js";
 
@@ -125,6 +126,29 @@ async function api(request, env, url, sql) {
 
   if (pathname === "/api/skills" && method === "GET") {
     return json({ skills: await readSkills(sql, await userUnitIds(sql, user.id)) });
+  }
+
+  // The last step: picked skills become one prompt for the user's coding agent.
+  if (pathname === "/api/handoffs" && method === "POST") {
+    // Each new pick of skills is a model call, so it shares the import budget's shape: 5 per account per minute.
+    if (await limited(env.IMPORT_LIMITER, `handoff:${user.id}`)) {
+      return json({ error: "That's a lot of prompts at once. Wait a minute and try again." }, 429);
+    }
+    const { body, error } = await readJson(request);
+    if (error) return error;
+    const parsed = parseHandoff(body);
+    if (!parsed.ok) return json({ error: parsed.error }, 400);
+    const result = await createHandoff(sql, env, user, await userUnitIds(sql, user.id), parsed.value.skill_ids);
+    if (result.error) return json({ error: result.error }, result.status);
+    return json(result, 201);
+  }
+  if (pathname === "/api/handoffs/latest" && method === "GET") {
+    return json({ brief: await readHandoff(sql, user) });
+  }
+  const handoff = /^\/api\/handoffs\/([0-9a-f-]{36})$/i.exec(pathname);
+  if (handoff && method === "GET") {
+    const brief = await readHandoff(sql, user, handoff[1]);
+    return brief ? json({ brief }) : json({ error: "Not found." }, 404);
   }
 
   return json({ error: "Not found." }, 404);
