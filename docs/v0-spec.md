@@ -99,9 +99,9 @@ Agree the shared contracts before parallel work begins. Each stream owns separat
 
 | Stream | Owns | Input | Output | Done when |
 | --- | --- | --- | --- | --- |
-| 1. Sources and evidence | Ingestion scripts, source extraction, categorization, evidence records, TigerData storage and read endpoints | Supplied URL manifest | Reviewed technique records with source references | Every usable technique has retrieved evidence; blocked sources have explicit errors. |
+| 1. Sources and evidence | Ingestion scripts, source extraction, categorization, evidence records, TigerData storage and read endpoints | Supplied URL manifest | Reviewed technique records with source references | Every usable technique has retrieved evidence; blocked sources have explicit errors. | 
 | 2. Motion shorts | Storyboard and animation generation, rendering, narration/captions if chosen, media publication and clip metadata | Reviewed technique records | Actual video files and ready/failed clip records | A real clip plays, its explanation matches its evidence, and all media metadata comes from the render. |
-| 3. Feed experience | Feed page, category controls, player, source links, loading/empty/error states | Read-only feed response joining techniques and ready clips | Browser experience | A new visitor can browse, pause, change topic, and open sources using real published clips. |
+
 
 ### Proposed minimal shared records
 
