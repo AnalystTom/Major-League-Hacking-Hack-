@@ -11,6 +11,10 @@ export interface ProviderOptions {
   geminiKey?: string;
   ttsModel?: string;
   ttsVoice?: string;
+  /** "motion" renders shorts as model-written motion graphics (RENDER_STYLE); anything else uses the text renderer. */
+  renderStyle?: string;
+  /** Chromium for motion renders (CHROMIUM_PATH); Playwright's own when unset. */
+  chromiumPath?: string;
   fetchImpl?: typeof fetch;
 }
 

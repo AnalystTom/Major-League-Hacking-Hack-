@@ -11,6 +11,7 @@ const ENV_NAMES = [
   "GEMINI_MODEL", "OPENAI_MODEL", "GEMINI_TTS_MODEL", "GEMINI_TTS_VOICE",
   "WINDOW_SECONDS", "DIGESTION_REQUEST", "SWEEP_INTERVAL_MS", "WEB_ORIGINS",
   "TWITTERAPI_IO_KEY", "OPENAI_MAX_OUTPUT_TOKENS", "DAILY_VIDEO_LIMIT", "MONTHLY_VIDEO_LIMIT",
+  "RENDER_STYLE", "CHROMIUM_NO_SANDBOX",
 ];
 
 // However busy it says it is, a container is stopped after this long awake, so a stuck job can't run up

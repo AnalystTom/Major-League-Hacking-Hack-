@@ -6,16 +6,20 @@ import type { OpenAIOptions } from "./types.js";
 /** model is OPENAI_MODEL, else the digest default. The output cap is the digest's, counting hidden reasoning. */
 export interface ChatJsonOptions extends OpenAIOptions {
   /** Which output this call is for, recorded with its token usage. */
-  step: Extract<Usage["step"], "skill" | "script" | "handoff">;
+  step: Extract<Usage["step"], "skill" | "script" | "motion" | "handoff">;
   /** The artifact it's for. */
   ref?: string;
   system: string;
-  user: string;
+  /** Text, or text and images (data: URLs) for a model that reads images. */
+  user: string | ({ type: "text"; text: string } | { type: "image_url"; image_url: { url: string; detail?: "low" | "high" } })[];
+  /** Output cap including hidden reasoning; defaults to the digest's. */
+  maxOutputTokens?: number;
+  timeoutMs?: number;
 }
 
 /** One JSON-mode chat completion. Throws with the actual HTTP or parse failure. */
 export async function chatJson(o: ChatJsonOptions): Promise<unknown> {
-  const cap = DEFAULT_MAX_OUTPUT_TOKENS;
+  const cap = o.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
   const res = await (o.fetchImpl ?? fetch)("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${o.apiKey}` },
@@ -25,7 +29,7 @@ export async function chatJson(o: ChatJsonOptions): Promise<unknown> {
       response_format: { type: "json_object" },
       messages: [{ role: "system", content: o.system }, { role: "user", content: o.user }],
     }),
-    signal: AbortSignal.timeout(180_000),
+    signal: AbortSignal.timeout(o.timeoutMs ?? 180_000),
   });
   const text = await res.text();
   if (!res.ok) throw new Error(httpError("OpenAI", res.status, text));

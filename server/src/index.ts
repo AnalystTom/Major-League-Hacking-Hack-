@@ -51,6 +51,8 @@ if (process.env.GEMINI_API_KEY) {
     geminiKey: options.geminiKey,
     ttsModel: process.env.GEMINI_TTS_MODEL,
     ttsVoice: process.env.GEMINI_TTS_VOICE,
+    renderStyle: process.env.RENDER_STYLE,
+    chromiumPath: process.env.CHROMIUM_PATH,
     media: mediaFromEnv(),
     log: (m: string) => console.log(`[outputs] ${m}`),
   };
