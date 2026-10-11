@@ -6,7 +6,8 @@
   "scripts": {
     "test": "node --test \"test/*.test.ts\"",
     "typecheck": "tsc --noEmit",
-    "ingest": "node src/cli.ts"
+    "ingest": "node src/cli.ts",
+    "serve": "node src/server.ts"
   },
   "dependencies": {
     "pg": "^8.23.1",
