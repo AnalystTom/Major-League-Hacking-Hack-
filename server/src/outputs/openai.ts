@@ -28,7 +28,8 @@ export async function chatJson(o: ChatJsonOptions): Promise<unknown> {
       response_format: { type: "json_object" },
       messages: [{ role: "system", content: o.system }, { role: "user", content: o.user }],
     }),
-    signal: AbortSignal.timeout(180_000),
+    // xhigh reasoning over a five-skill brief has taken over three minutes; a stuck call still ends inside STALE_BRIEF_MINUTES.
+    signal: AbortSignal.timeout(600_000),
   });
   const text = await res.text();
   if (!res.ok) throw new Error(httpError("OpenAI", res.status, text));

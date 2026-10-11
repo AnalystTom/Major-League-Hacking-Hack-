@@ -6,8 +6,8 @@ import type pg from "pg";
 import type { HandoffBrief, HandoffSkill } from "./handoff.js";
 import type { ActionItem } from "./types.js";
 
-/** A claimed `running` brief older than this belongs to a processor that died. */
-export const STALE_BRIEF_MINUTES = 10;
+/** A claimed `running` brief older than this belongs to a processor that died. It outlasts two 10-minute model calls. */
+export const STALE_BRIEF_MINUTES = 25;
 
 export interface BriefClaim { id: string; token: string; skill_result_ids: string[] }
 

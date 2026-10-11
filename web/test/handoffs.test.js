@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { requestProcessing } from "../src/processor.js";
 import { HANDOFF_REVISION, inputKey, isStuck, parseHandoff, requestHandoff, serializeBrief } from "../src/handoffs.js";
 
 const A = "6f1c2a52-8d0e-4f3b-9a51-0c6d2e7b9a10";
@@ -34,6 +35,18 @@ test("the processor is asked next to PROCESSOR_URL, with the bearer token", asyn
   assert.equal(await requestHandoff(env, A, async () => { throw new Error("down"); }), "unavailable");
 });
 
+test("with the PROCESSOR service binding, the call goes through it instead of a plain fetch", async () => {
+  let seen;
+  const PROCESSOR = { fetch: async (url, init) => { seen = { url: String(url), init }; return new Response(null, { status: 202 }); } };
+  const env = { PROCESSOR_URL: "https://resurface-processor.example.workers.dev/api/ingest/process", PROCESSOR_TOKEN: "t", PROCESSOR };
+  const fetchImpl = async () => { throw new Error("same-zone fetch is blocked (1042)"); };
+  assert.equal(await requestHandoff(env, A, fetchImpl), "requested");
+  assert.equal(seen.url, "https://resurface-processor.example.workers.dev/api/ingest/handoff");
+  assert.equal(seen.init.headers.authorization, "Bearer t");
+  assert.equal(await requestProcessing(env, [A], fetchImpl), "requested");
+  assert.deepEqual(JSON.parse(seen.init.body), { unit_ids: [A] });
+});
+
 test("only a ready brief carries prompts; a failed one carries its actual error", () => {
   const prompts = { codex: { review: "r", apply: "a" } };
   const ready = serializeBrief({ id: A, status: "ready", skill_result_ids: [B], prompts,
@@ -52,8 +65,8 @@ test("a brief nobody picked up, or one abandoned mid-way, is stuck so the page c
   const ago = (min) => new Date(now - min * 60_000).toISOString();
   assert.equal(isStuck({ status: "pending", updated_at: ago(1) }, now), false);
   assert.equal(isStuck({ status: "pending", updated_at: ago(3) }, now), true);
-  assert.equal(isStuck({ status: "running", updated_at: ago(5) }, now), false);
-  assert.equal(isStuck({ status: "running", updated_at: ago(11) }, now), true);
+  assert.equal(isStuck({ status: "running", updated_at: ago(20) }, now), false);
+  assert.equal(isStuck({ status: "running", updated_at: ago(26) }, now), true);
   assert.equal(isStuck({ status: "ready", updated_at: ago(60) }, now), false);
   assert.equal(isStuck({ status: "failed", updated_at: ago(60) }, now), false);
 });

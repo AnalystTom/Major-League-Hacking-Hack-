@@ -4,6 +4,10 @@
 // The processor accepts at most 10 unit ids per request, so larger imports go out in batches.
 export const PROCESSOR_BATCH = 10;
 
+// A Worker can't fetch() another Worker on the same workers.dev zone (Cloudflare error 1042), so in production the
+// call goes through the PROCESSOR service binding. The URL's path still picks the route; its host is ignored.
+export const processorFetch = (env, fetchImpl) => (env.PROCESSOR ? (url, init) => env.PROCESSOR.fetch(url, init) : fetchImpl);
+
 /**
  * POSTs { unit_ids } to PROCESSOR_URL with the PROCESSOR_TOKEN bearer. Returns what actually happened:
  * "requested" (every batch 2xx), "unavailable" (any error or non-2xx; the sweep picks up what was missed),
@@ -14,9 +18,10 @@ export async function requestProcessing(env, unitIds, fetchImpl = fetch) {
   if (!env.PROCESSOR_URL) return "not_configured";
   const batches = [];
   for (let i = 0; i < unitIds.length; i += PROCESSOR_BATCH) batches.push(unitIds.slice(i, i + PROCESSOR_BATCH));
+  const send = processorFetch(env, fetchImpl);
   const results = await Promise.all(batches.map(async (batch) => {
     try {
-      const res = await fetchImpl(env.PROCESSOR_URL, {
+      const res = await send(env.PROCESSOR_URL, {
         method: "POST",
         headers: {
           "content-type": "application/json",
