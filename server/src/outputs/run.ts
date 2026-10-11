@@ -4,7 +4,7 @@
 import { generateSkill } from "./skills.js";
 import { renderArtifact } from "./render/render.js";
 import type { MediaStore } from "./render/media.js";
-import type { Kind, OutputStore } from "./store.js";
+import { LostClaim, type Kind, type OutputStore } from "./store.js";
 import type { ReadyArtifact } from "./types.js";
 import type { StoredArtifact } from "../ingest/types.js";
 
@@ -29,24 +29,25 @@ async function produce(kind: Kind, a: ReadyArtifact, o: OutputOptions) {
   if (inFlight.has(key)) return;
   inFlight.add(key);
   try {
-    const id = await o.outputs.claim(kind, a);
-    if (!id) return;
+    const claim = await o.outputs.claim(kind, a);
+    if (!claim) return;
     try {
       if (!o.openaiKey) throw new Error("OPENAI_API_KEY isn't configured on the processor");
       if (kind === "skill") {
-        await o.outputs.finishSkill(id, await generateSkill(a, { apiKey: o.openaiKey, model: o.openaiModel, fetchImpl: o.fetchImpl }));
+        await o.outputs.finishSkill(claim, await generateSkill(a, { apiKey: o.openaiKey, model: o.openaiModel, fetchImpl: o.fetchImpl }));
       } else {
         if (!o.geminiKey) throw new Error("GEMINI_API_KEY isn't configured on the processor");
         if (!o.media) throw new Error("Media storage isn't configured on the processor (R2_* or MEDIA_LOCAL_WEB_DIR)");
-        await o.outputs.finishVideo(id, await renderArtifact(a, {
+        await o.outputs.finishVideo(claim, await renderArtifact(a, {
           openaiKey: o.openaiKey, openaiModel: o.openaiModel, geminiKey: o.geminiKey, ttsModel: o.ttsModel, ttsVoice: o.ttsVoice,
           media: o.media, fetchImpl: o.fetchImpl,
         }));
       }
       o.log?.(`${kind} ready for artifact ${a.id} v${a.version}`);
     } catch (e) {
-      await o.outputs.fail(kind, id, (e as Error).message);
-      o.log?.(`${kind} failed for artifact ${a.id} v${a.version}: ${(e as Error).message}`);
+      // A worker whose claim was taken over leaves the row to the one that took it.
+      const recorded = !(e instanceof LostClaim) && (await o.outputs.fail(kind, claim, (e as Error).message));
+      o.log?.(`${kind} ${recorded ? "failed" : "not recorded"} for artifact ${a.id} v${a.version}: ${(e as Error).message}`);
     }
   } catch (e) {
     o.log?.(`${kind} for artifact ${a.id} v${a.version} couldn't be claimed or recorded: ${(e as Error).message}`);

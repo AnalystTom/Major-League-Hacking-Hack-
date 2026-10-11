@@ -4,6 +4,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DEFAULT_DIGEST_MODEL } from "../../ingest/digest/run.js";
 import { composeShort, probe } from "./ffmpeg.js";
 import type { MediaStore } from "./media.js";
 import { SCRIPT_PROMPT_REVISION, writeScript } from "./script.js";
@@ -50,7 +51,7 @@ export async function renderArtifact(a: ReadyArtifact, o: RenderOptions): Promis
     }));
     return {
       script: { scenes },
-      prompt_revision: `${SCRIPT_PROMPT_REVISION}; openai:${o.openaiModel ?? "default"}; tts:${o.ttsModel ?? TTS_MODEL}`,
+      prompt_revision: `${SCRIPT_PROMPT_REVISION}; openai:${o.openaiModel ?? DEFAULT_DIGEST_MODEL}; tts:${o.ttsModel ?? TTS_MODEL}`,
       media_ref, caption_ref, narration_ref, duration_seconds: out.duration,
     };
   } finally {

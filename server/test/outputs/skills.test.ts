@@ -79,3 +79,9 @@ test("a skill or task that pipes a download into a shell is rejected", () => {
   fine.skill.body = "Check the response with `curl -s localhost:3000/health | jq .ok`";
   assert.doesNotThrow(() => validateSkill(fine, a));
 });
+
+test("a reply cut off by the output cap says so", async () => {
+  const a = artifact();
+  const impl = (async () => Response.json({ choices: [{ finish_reason: "length", message: { content: "" } }], usage: { completion_tokens_details: { reasoning_tokens: 19000 } } })) as unknown as typeof fetch;
+  await assert.rejects(generateSkill(a, { apiKey: "k", fetchImpl: impl }), /hit the 20000-token output cap before finishing \(19000 reasoning tokens\)/);
+});

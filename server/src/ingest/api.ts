@@ -66,7 +66,7 @@ export function createIngestApp(o: ApiOptions): Hono {
     if (ready.length === 0) { job.digest = { ...EMPTY_DIGEST, status: "skipped", error: "no successfully extracted sources" }; return; }
     job.digest.status = "running";
     try {
-      const d = await digestAndStore({ apiKey: o.openaiKey, model: o.openaiModel, units: ready, request: job.request, fetchImpl: o.fetchImpl, store: o.store });
+      const d = await digestAndStore({ apiKey: o.openaiKey, model: o.openaiModel, maxOutputTokens: o.openaiMaxOutputTokens, units: ready, request: job.request, fetchImpl: o.fetchImpl, store: o.store });
       job.digest = { status: d.storeError ? "failed" : "ready", error: d.storeError, result: d.result, digestion_prompt_id: d.promptId, stored_artifacts: d.stored, store_error: d.storeError };
     } catch (e) {
       job.digest = { ...EMPTY_DIGEST, status: "failed", error: (e as Error).message };

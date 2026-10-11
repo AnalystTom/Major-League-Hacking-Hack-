@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { captionCues, SCENE_GAP_SECONDS, timeline, toVtt, wrap } from "../../src/outputs/render/timeline.js";
 import { validateScript } from "../../src/outputs/render/script.js";
+import { headerText } from "../../src/outputs/render/ffmpeg.js";
 import { randomUUID } from "node:crypto";
 import { artifact, scriptReply } from "./helpers.js";
 
@@ -44,4 +45,12 @@ test("a script citing an unknown source or far off length is rejected", () => {
   bad.scenes[1].source_ids = [randomUUID()];
   assert.throws(() => validateScript(bad, a), /isn't a source/);
   assert.throws(() => validateScript({ scenes: [{ narration_text: "too short", on_screen_text: "x" }, { narration_text: "yes", on_screen_text: "y" }] }, a), /words/);
+});
+
+test("the frame header puts a long category on its own clipped line", () => {
+  assert.equal(headerText(null), "RESURFACE");
+  assert.equal(headerText("Agent evals"), "RESURFACE\nAGENT EVALS");
+  const long = headerText("Post-training pipelines and evaluation environments");
+  assert.equal(long, "RESURFACE\nPOST-TRAINING PIPELINES AND EVALU…");
+  assert.equal(long.split("\n")[1].length, 34);
 });
