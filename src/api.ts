@@ -21,7 +21,8 @@ interface ImportJob {
 
 export interface ApiOptions extends IngestOptions {
   context: ProjectContext;
-  anthropicKey?: string;
+  openaiKey?: string;
+  openaiModel?: string;
 }
 
 const MAX_LINKS = 20;
@@ -57,11 +58,11 @@ export function createApi(o: ApiOptions): Server {
   async function run(job: ImportJob, links: string[]) {
     await Promise.all(links.map(async (l, i) => { job.units[i] = await ingestLink(l, o, (u) => { job.units[i] = u; }); }));
     const ready = job.units.filter((u) => u.status === "ready");
-    if (!o.anthropicKey) { job.digest = { ...EMPTY_DIGEST, status: "skipped", error: "ANTHROPIC_API_KEY not configured" }; return; }
+    if (!o.openaiKey) { job.digest = { ...EMPTY_DIGEST, status: "skipped", error: "OPENAI_API_KEY not configured" }; return; }
     if (ready.length === 0) { job.digest = { ...EMPTY_DIGEST, status: "skipped", error: "no successfully extracted sources" }; return; }
     job.digest.status = "running";
     try {
-      const result = await runDigestion({ apiKey: o.anthropicKey, units: ready, request: job.request, context: o.context, fetchImpl: o.fetchImpl });
+      const result = await runDigestion({ apiKey: o.openaiKey, model: o.openaiModel, units: ready, request: job.request, context: o.context, fetchImpl: o.fetchImpl });
       job.digest = { ...EMPTY_DIGEST, status: "ready", result };
       try {
         job.digest.stored_artifact_ids = await o.store.saveArtifacts(result.artifacts, result.exclusions, null);

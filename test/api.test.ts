@@ -33,17 +33,17 @@ test("API returns extracted evidence and stores digested artifacts", async () =>
   const store = new MemoryStore();
   let unitId = "";
   const fetchImpl = (async (url: string, init: { body: string }) => {
-    if (String(url).includes("anthropic")) {
-      const sent = JSON.parse(JSON.parse(init.body).messages[0].content);
+    if (String(url).includes("openai")) {
+      const sent = JSON.parse(JSON.parse(init.body).messages[1].content);
       unitId = sent.units[0].id;
-      return new Response(JSON.stringify({ content: [{ type: "text", text: JSON.stringify({
+      return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
         artifacts: [{ name: "a", source_ids: [unitId], category: "c", processed_text: "t", selection_reason: "r",
           evidence: [{ source_id: unitId, start_seconds: 5, end_seconds: 20, passage: "p" }] }],
-        exclusions: [] }) }] }));
+        exclusions: [] }) } }] }));
     }
     return ok();
   }) as unknown as typeof fetch;
-  const server = createApi({ geminiKey: "k", anthropicKey: "a", store, context: { name: "p", goal: null, facts: [] }, fetchImpl, retries: 0 });
+  const server = createApi({ geminiKey: "k", openaiKey: "a", store, context: { name: "p", goal: null, facts: [] }, fetchImpl, retries: 0 });
   await new Promise<void>((r) => server.listen(0, r));
   try {
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;

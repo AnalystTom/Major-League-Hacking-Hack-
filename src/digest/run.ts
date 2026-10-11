@@ -2,10 +2,12 @@ import { SYSTEM_PROMPT, buildUserMessage, type ProjectContext } from "./prompt.t
 import { validateDigest } from "./validate.ts";
 import type { DigestOutput, IngestedUnit } from "../types.ts";
 
-export const DIGEST_MODEL = "claude-opus-5-5";
+export const DEFAULT_DIGEST_MODEL = "gpt-5";
 
 export interface DigestOptions {
   apiKey: string;
+  /** Override with OPENAI_MODEL; defaults to DEFAULT_DIGEST_MODEL. */
+  model?: string;
   units: IngestedUnit[];
   request: string;
   context: ProjectContext;
@@ -15,17 +17,22 @@ export interface DigestOptions {
 
 export async function runDigestion(o: DigestOptions): Promise<DigestOutput> {
   if (o.units.length === 0) return { artifacts: [], exclusions: [] };
-  const res = await (o.fetchImpl ?? fetch)("https://api.anthropic.com/v1/messages", {
+  const res = await (o.fetchImpl ?? fetch)("https://api.openai.com/v1/chat/completions", {
     method: "POST",
-    headers: { "content-type": "application/json", "x-api-key": o.apiKey, "anthropic-version": "2023-06-01" },
+    headers: { "content-type": "application/json", authorization: `Bearer ${o.apiKey}` },
     body: JSON.stringify({
-      model: DIGEST_MODEL, max_tokens: 8000, temperature: 0, system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: buildUserMessage(o.units, o.request, o.context, o.fewShot) }],
+      model: o.model ?? DEFAULT_DIGEST_MODEL,
+      max_completion_tokens: 8000,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: buildUserMessage(o.units, o.request, o.context, o.fewShot) },
+      ],
     }),
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`Digestion HTTP ${res.status}: ${text.slice(0, 300)}`);
-  const content: string = JSON.parse(text).content?.filter((b: { type: string }) => b.type === "text").map((b: { text: string }) => b.text).join("") ?? "";
-  const json = content.slice(content.indexOf("{"), content.lastIndexOf("}") + 1);
-  return validateDigest(JSON.parse(json), o.units);
+  const content: string | undefined = JSON.parse(text).choices?.[0]?.message?.content;
+  if (!content) throw new Error("Digestion returned no content");
+  return validateDigest(JSON.parse(content), o.units);
 }
