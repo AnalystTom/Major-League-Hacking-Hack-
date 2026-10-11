@@ -1,5 +1,6 @@
-// The signed-in home and the whole workflow: paste links, watch each one's stage, play the shorts.
-// A new account lands here straight from sign-up, with the paste box first.
+// The signed-in home is the reel, full screen. Until the first short is ready, the reel's frame holds the
+// paste box (new account) or what's happening to the links. Link stages otherwise live in the top-bar
+// status popover, more videos come in through the Add videos sheet, and Skills and Tasks open in a sheet.
 
 import { api } from "./api.js";
 import { createReel } from "./reel.js";
@@ -8,53 +9,119 @@ import { followImports, PROCESSOR, renderUnits } from "./units.js";
 
 const $ = (sel) => document.querySelector(sel);
 const reel = createReel($("[data-reel]"));
+const sheet = $("[data-add-sheet]");
+const skillsSheet = $("[data-skills-sheet]");
 const skills = createSkills({
   skillsList: $("[data-skills]"), tasksList: $("[data-tasks]"), picker: $("[data-agent]"),
   skillsStatus: $("[data-skills-status]"), tasksStatus: $("[data-tasks-status]"),
 });
-const counts = { saved: 0, reel: 0, skills: 0, tasks: 0 };
-
-// The four steps from the landing film, with what's actually there at each.
-function showCounts(next) {
-  Object.assign(counts, next);
-  for (const [step, n] of Object.entries(counts)) {
-    const b = document.querySelector(`[data-step="${step}"] [data-count]`);
-    b.textContent = n ? String(n) : "";
-    b.hidden = !n;
-  }
-}
+const form = $("[data-add-template]").content.firstElementChild.cloneNode(true);
 let follower = null;
 
-// First run (no links yet) leads with the paste box; afterwards it's "add more" above the list.
-function setFirstRun(first) {
-  $("[data-links]").hidden = first;
-  $("[data-home-title]").textContent = first ? "Paste your first videos" : "Your shorts";
-  $("[data-add-label]").textContent = first ? "Paste YouTube links, one per line (up to 10)" : "Add more YouTube links";
+const FAILED = new Set(["failed", "render_failed", "not_selected"]);
+
+function placeForm(where) {
+  const slot = $(where === "sheet" ? "[data-sheet-form-slot]" : "[data-first-form-slot]");
+  if (form.parentElement !== slot) slot.append(form);
 }
 
-function showLinks(units) {
+function summarize(units) {
+  const making = units.filter((u) => !u.settled).length;
+  const failed = units.filter((u) => FAILED.has(u.stage)).length;
+  const ready = units.filter((u) => u.stage === "ready").length;
+  const parts = [];
+  if (making) parts.push(`${making} making`);
+  if (ready) parts.push(`${ready} ready`);
+  if (failed) parts.push(`${failed} couldn't be made`);
+  return parts.join(" · ");
+}
+
+function render(units, items) {
+  reel.render(items);
+  const hasShorts = reel.count > 0;
+
+  const status = $("[data-status]");
+  status.hidden = units.length === 0;
+  status.dataset.busy = String(units.some((u) => !u.settled));
+  $("[data-status-summary]").textContent = summarize(units);
   renderUnits($("[data-units]"), units);
-  setFirstRun(units.length === 0);
-  showCounts({ saved: units.length });
+
+  const first = $("[data-first]");
+  first.hidden = hasShorts;
+  $("[data-open-add]").hidden = !hasShorts && units.length === 0;
+  if (hasShorts) {
+    if (!sheet.open) placeForm("sheet");
+    return;
+  }
+
+  const waiting = units.some((u) => !u.settled);
+  const title = units.length === 0 ? "Paste your first videos" : waiting ? "Making your shorts" : "No shorts from these links yet";
+  const lede = units.length === 0
+    ? "Each YouTube video becomes a 30-second short of the part worth keeping."
+    : waiting
+      ? "Your first short starts playing here as soon as it's ready. You can leave; processing carries on."
+      : "Each link below says what happened. Try other videos.";
+  $("[data-first-title]").textContent = title;
+  $("[data-first-lede]").textContent = lede;
+  const list = $("[data-first-units]");
+  list.hidden = units.length === 0;
+  renderUnits(list, units);
+  // While links are processing, more videos go through the sheet so the card stays about progress.
+  if (!waiting && !sheet.open) placeForm("first");
+  else if (waiting && form.parentElement === $("[data-first-form-slot]")) placeForm("sheet");
 }
 
+let units = [];
+let items = [];
+
+// Skills and tasks: counts on the top-bar buttons, the lists in the sheet.
 function showSkills(list) {
   skills.update(list);
   const c = skills.counts;
-  const any = list.length > 0 || counts.saved > 0;
-  $("[data-skills-section]").hidden = !any;
-  $("[data-tasks-section]").hidden = !any;
+  for (const [key, n] of Object.entries({ skills: c.skills, tasks: c.tasks })) {
+    const b = $(`[data-count="${key}"]`);
+    b.textContent = n ? String(n) : "";
+    b.hidden = !n;
+  }
+  $('[data-open-skills="skills"]').hidden = list.length === 0;
+  $('[data-open-skills="tasks"]').hidden = c.tasks === 0;
   $("[data-skills-empty]").hidden = list.length > 0;
   $("[data-tasks-empty]").hidden = c.tasks > 0;
-  showCounts({ skills: c.skills, tasks: c.tasks });
+  openPendingSkill();
 }
 
-const addForm = $("[data-add]");
-addForm.addEventListener("submit", async (e) => {
+function openSkills(target) {
+  if (!skillsSheet.open) skillsSheet.showModal();
+  // location.replace (not replaceState) so .skill:target applies, without adding a history entry.
+  if (target?.startsWith("skill-")) location.replace(`#${target}`);
+  const el = target && document.getElementById(target);
+  (el ?? skillsSheet.querySelector(target === "tasks-title" ? "#tasks-title" : "#skills-title"))?.scrollIntoView({ block: "start" });
+}
+
+// A short's "View skill & tasks" link (#skill-<id>-<version>) opens the sheet at that card; the hash makes
+// .skill:target highlight it. Coming back to /app with that hash does the same once the skills have loaded.
+function openPendingSkill() {
+  const id = location.hash.slice(1);
+  if (id.startsWith("skill-") && document.getElementById(id) && !skillsSheet.open) openSkills(id);
+}
+document.addEventListener("click", (e) => {
+  const a = e.target.closest('a[href^="#skill-"]');
+  if (!a) return;
   e.preventDefault();
-  const status = addForm.querySelector(".form-status");
-  const button = addForm.querySelector("button");
-  const links = String(new FormData(addForm).get("links") || "").split(/\s+/).filter(Boolean);
+  openSkills(a.getAttribute("href").slice(1));
+});
+document.querySelectorAll("[data-open-skills]").forEach((b) =>
+  b.addEventListener("click", () => openSkills(b.dataset.openSkills === "tasks" ? "tasks-title" : null)));
+$("[data-close-skills]").addEventListener("click", () => skillsSheet.close());
+skillsSheet.addEventListener("close", () => {
+  if (location.hash.startsWith("#skill-")) history.replaceState(null, "", location.pathname);
+});
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const status = form.querySelector(".form-status");
+  const button = form.querySelector("button");
+  const links = String(new FormData(form).get("links") || "").split(/\s+/).filter(Boolean);
   if (!links.length) {
     status.textContent = "Paste at least one YouTube link.";
     status.dataset.tone = "error";
@@ -65,7 +132,8 @@ addForm.addEventListener("submit", async (e) => {
     const body = await api("/api/imports", { method: "POST", body: { links } });
     $("[data-run-note]").textContent = PROCESSOR[body.processor] ?? "";
     status.textContent = "";
-    addForm.reset();
+    form.reset();
+    if (sheet.open) sheet.close();
     follower.refresh();
   } catch (err) {
     const detail = err.invalid?.map((i) => `${i.link}: ${i.error}`).join(" ");
@@ -75,6 +143,14 @@ addForm.addEventListener("submit", async (e) => {
     button.disabled = false;
   }
 });
+
+$("[data-open-add]").addEventListener("click", () => {
+  placeForm("sheet");
+  sheet.showModal();
+  form.querySelector("textarea").focus();
+});
+$("[data-close-add]").addEventListener("click", () => sheet.close());
+sheet.addEventListener("close", () => render(units, items));
 
 $("[data-signout]").addEventListener("click", async () => {
   await api("/api/auth/logout", { method: "POST", body: {} }).catch(() => {});
@@ -91,18 +167,13 @@ $("[data-signout]").addEventListener("click", async () => {
   }
   if (!me.user) return location.assign("/start");
 
-  $("[data-who]").textContent = me.user.name || me.user.email;
-  setFirstRun(me.imports === 0);
+  render([], []);
   $("[data-loading]").hidden = true;
   $("[data-home-body]").hidden = false;
-  if (me.imports === 0) $("#add-links").focus({ preventScroll: true });
+  if (me.imports === 0) form.querySelector("textarea").focus({ preventScroll: true });
   follower = followImports({
-    onUnits: showLinks,
-    onItems: (items) => {
-      reel.render(items);
-      $("[data-reel-empty]").hidden = reel.count > 0;
-      showCounts({ reel: reel.count });
-    },
+    onUnits: (u) => { units = u; },
+    onItems: (i) => { items = i; render(units, items); },
     onSkills: showSkills,
     onError: (err) => {
       if (err.status === 401) location.assign("/start");

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Your feed · Resurface</title>
+  <title>Your shorts · Resurface</title>
   <meta name="robots" content="noindex">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <script>
@@ -18,63 +18,61 @@
   <link href="https://fonts.googleapis.com/css2?family=Funnel+Display:wght@400..800&family=Funnel+Sans:wght@400..700&family=Martian+Mono:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
 </head>
-<body>
-  <header class="topbar">
+<body class="app-page">
+  <header class="topbar app-bar">
     <div class="topbar-inner">
       <a class="wordmark" href="/" aria-label="Resurface home">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10 9.5l4.5 2.5-4.5 2.5z"/></svg>
         Resurface
       </a>
-      <span class="who" data-who></span>
+      <!-- Link stages live here, not beside the reel: a one-line summary that opens the full list. -->
+      <details class="status" data-status hidden>
+        <summary data-status-summary></summary>
+        <div class="status-panel">
+          <p class="hint" data-run-note></p>
+          <ol class="units" data-units></ol>
+        </div>
+      </details>
+      <button type="button" class="topbar-pill" data-open-skills="skills" hidden>Skills <b data-count="skills"></b></button>
+      <button type="button" class="topbar-pill topbar-tasks" data-open-skills="tasks" hidden>Tasks <b data-count="tasks"></b></button>
+      <button type="button" class="btn btn-small add-open" data-open-add aria-label="Add videos" hidden><span aria-hidden="true">+</span><span class="add-label">Add videos</span></button>
       <button type="button" class="btn btn-small btn-quiet-top" data-signout>Sign out</button>
     </div>
   </header>
 
-  <main class="home" data-home>
+  <main class="stage" data-home>
     <p class="onboard-loading" data-loading>Loading your feed…</p>
 
-    <div data-home-body hidden>
-    <nav class="journey" aria-label="Your Resurface steps">
-      <a href="#links-title" data-step="saved"><span>Saved</span><b data-count></b></a>
-      <a href="#feed-title" data-step="reel"><span>Reel</span><b data-count></b></a>
-      <a href="#skills-title" data-step="skills"><span>Skills</span><b data-count></b></a>
-      <a href="#tasks-title" data-step="tasks"><span>Tasks</span><b data-count></b></a>
-    </nav>
-
-    <div class="home-grid">
-      <div class="home-side">
-        <section class="home-head" aria-labelledby="home-title">
-          <h1 id="home-title" data-home-title>Your shorts</h1>
-          <form class="add-links" data-add novalidate>
-            <label for="add-links" data-add-label>Paste YouTube links, one per line (up to 10)</label>
-            <textarea id="add-links" name="links" rows="3" spellcheck="false" autocomplete="off"
-              placeholder="https://www.youtube.com/watch?v=VQy50fuxI34&#10;https://youtu.be/V-EDrhIhHzQ?t=306"></textarea>
-            <button class="btn btn-small" type="submit">Make shorts</button>
-            <p class="form-status" role="status" aria-live="polite"></p>
-          </form>
-        </section>
-
-        <section class="run-progress" aria-labelledby="links-title" data-links hidden>
-          <h2 id="links-title">Your links</h2>
-          <p class="hint" data-run-note></p>
-          <ol class="units" data-units></ol>
-        </section>
+    <div class="stage-frame" data-home-body hidden>
+      <h1 class="visually-hidden">Your shorts</h1>
+      <div class="reel" data-reel hidden>
+        <div class="reel-track" data-reel-track tabindex="0" aria-label="Your shorts. Use the up and down arrows to move, M for sound."></div>
+        <p class="reel-counter" data-reel-counter aria-live="polite"></p>
       </div>
 
-      <section class="home-feed" aria-labelledby="feed-title">
-        <h2 id="feed-title" class="visually-hidden">Your shorts</h2>
-        <div class="reel" data-reel hidden>
-          <div class="reel-track" data-reel-track tabindex="0" aria-label="Your shorts. Use the up and down arrows to move, M for sound."></div>
-          <p class="reel-counter" data-reel-counter aria-live="polite"></p>
-        </div>
-        <div class="reel-placeholder" data-reel-empty>
-          <p class="reel-placeholder-title">Your shorts appear here</p>
-          <p>Each one shows up as soon as it's rendered. The list on the left shows where every link is.</p>
-        </div>
+      <!-- Shown in the reel's place until the first short is ready: the paste box for a new account,
+           then what's happening to the links. -->
+      <section class="frame-card" data-first hidden aria-labelledby="first-title">
+        <h2 id="first-title" data-first-title>Paste your first videos</h2>
+        <p class="frame-lede" data-first-lede>Each YouTube video becomes a 30-second short of the part worth keeping.</p>
+        <div data-first-form-slot></div>
+        <ol class="units frame-units" data-first-units hidden></ol>
       </section>
     </div>
+  </main>
 
-    <section class="journey-section" aria-labelledby="skills-title" data-skills-section hidden>
+  <dialog class="add-sheet" data-add-sheet aria-labelledby="add-title">
+    <h2 id="add-title">Add videos</h2>
+    <div data-sheet-form-slot></div>
+    <button type="button" class="linkish" data-close-add>Close</button>
+  </dialog>
+
+  <!-- Skills and Tasks open over the reel. A short's "View skill & tasks" link opens this at its skill card. -->
+  <dialog class="skills-sheet" data-skills-sheet aria-labelledby="skills-title">
+    <div class="skills-sheet-head">
+      <button type="button" class="linkish" data-close-skills>Back to the reel</button>
+    </div>
+    <section class="journey-section" aria-labelledby="skills-title" data-skills-section>
       <div class="journey-section-head">
         <div>
           <h2 id="skills-title">Skills</h2>
@@ -89,7 +87,7 @@
       <p class="journey-empty" data-skills-empty>Skills show up here as each video is digested, usually before its short finishes rendering.</p>
     </section>
 
-    <section class="journey-section" aria-labelledby="tasks-title" data-tasks-section hidden>
+    <section class="journey-section" aria-labelledby="tasks-title" data-tasks-section>
       <div class="journey-section-head">
         <div>
           <h2 id="tasks-title">Tasks</h2>
@@ -100,8 +98,18 @@
       <ol class="tasks" data-tasks></ol>
       <p class="journey-empty" data-tasks-empty>Tasks come from ready skills. A skill gets up to three, or none when its sources don't support one.</p>
     </section>
-    </div>
-  </main>
+  </dialog>
+
+  <!-- One paste form, moved between the first-run card and the Add videos sheet. -->
+  <template data-add-template>
+    <form class="add-links" data-add novalidate>
+      <label for="add-links">YouTube links, one per line (up to 10)</label>
+      <textarea id="add-links" name="links" rows="4" spellcheck="false" autocomplete="off"
+        placeholder="https://www.youtube.com/watch?v=VQy50fuxI34&#10;https://youtu.be/V-EDrhIhHzQ?t=306"></textarea>
+      <button class="btn" type="submit">Make shorts</button>
+      <p class="form-status" role="status" aria-live="polite"></p>
+    </form>
+  </template>
 
   <script src="/home.js" type="module"></script>
 </body>
