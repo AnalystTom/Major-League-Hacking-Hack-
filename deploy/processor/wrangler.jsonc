@@ -25,7 +25,7 @@
     "WEB_ORIGINS": "https://resurface.thomasmann2001.workers.dev"
   },
   // Secrets, set once with `npx wrangler secret put <NAME>`: GEMINI_API_KEY, OPENAI_API_KEY, INGEST_TOKEN
-  // (the web Worker's PROCESSOR_TOKEN must equal it), DATABASE_URL (TigerData), R2_ACCOUNT_ID,
+  // (checked here before waking the container; the web Worker's PROCESSOR_TOKEN must equal it), DATABASE_URL (TigerData), R2_ACCOUNT_ID,
   // R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY (an R2 API token with write access to resurface-media).
   // Then point the web Worker at it: PROCESSOR_URL=https://resurface-processor.<subdomain>.workers.dev/api/ingest/process
   "observability": { "enabled": true }
