@@ -1,3 +1,4 @@
+import { httpError } from "../../httpError.js";
 import { SYSTEM_PROMPT, buildUserMessage } from "./prompt.js";
 import { validateDigest } from "./validate.js";
 import type { DigestOutput, IngestedUnit } from "../types.js";
@@ -30,7 +31,7 @@ export async function runDigestion(o: DigestOptions): Promise<DigestOutput> {
     }),
   });
   const text = await res.text();
-  if (!res.ok) throw new Error(`Digestion HTTP ${res.status}: ${text.slice(0, 300)}`);
+  if (!res.ok) throw new Error(httpError("Digestion", res.status, text));
   const content: string | undefined = JSON.parse(text).choices?.[0]?.message?.content;
   if (!content) throw new Error("Digestion returned no content");
   return validateDigest(JSON.parse(content), o.units);

@@ -1,5 +1,7 @@
 // Narration with Gemini TTS through the Interactions API. A unary reply is base64 WAV (16-bit PCM, mono, 24 kHz).
 
+import { httpError } from "../../httpError.js";
+
 export const TTS_MODEL = "gemini-3.8-flash-tts";
 export const TTS_VOICE = "Kore";
 const STYLE = "clear, warm explainer for engineers, brisk but unhurried";
@@ -52,8 +54,8 @@ export async function synthesize(text: string, o: TtsOptions): Promise<Buffer> {
       continue;
     }
     const raw = await res.text();
-    if (res.status === 429 || res.status >= 500) { lastError = `TTS HTTP ${res.status}: ${raw.slice(0, 300)}`; continue; }
-    if (!res.ok) throw new Error(`TTS HTTP ${res.status}: ${raw.slice(0, 300)}`);
+    if (res.status === 429 || res.status >= 500) { lastError = httpError("TTS", res.status, raw); continue; }
+    if (!res.ok) throw new Error(httpError("TTS", res.status, raw));
     const data = audioFrom(JSON.parse(raw));
     if (!data) throw new Error("TTS returned no audio");
     const bytes = Buffer.from(data, "base64");

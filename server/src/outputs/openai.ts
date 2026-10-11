@@ -1,3 +1,4 @@
+import { httpError } from "../httpError.js";
 import { DEFAULT_DIGEST_MODEL } from "../ingest/digest/run.js";
 
 export interface ChatJsonOptions {
@@ -24,7 +25,7 @@ export async function chatJson(o: ChatJsonOptions): Promise<unknown> {
     signal: AbortSignal.timeout(180_000),
   });
   const text = await res.text();
-  if (!res.ok) throw new Error(`OpenAI HTTP ${res.status}: ${text.slice(0, 300)}`);
+  if (!res.ok) throw new Error(httpError("OpenAI", res.status, text));
   const content: string | undefined = JSON.parse(text).choices?.[0]?.message?.content;
   if (!content) throw new Error("OpenAI returned no content");
   return JSON.parse(content);

@@ -1,3 +1,4 @@
+import { httpError } from "../../httpError.js";
 import { ModelExtraction } from "../types.js";
 
 export const GEMINI_MODEL = "gemini-3.5-flash-lite";
@@ -81,10 +82,10 @@ export async function extractWithGemini(opts: GeminiRequestOptions): Promise<{ e
     }
     const text = await res.text();
     if (res.status === 429 || res.status >= 500) {
-      lastError = `Gemini HTTP ${res.status}: ${text.slice(0, 300)}`;
+      lastError = httpError("Gemini", res.status, text);
       continue;
     }
-    if (!res.ok) throw new Error(`Gemini HTTP ${res.status}: ${text.slice(0, 300)}`);
+    if (!res.ok) throw new Error(httpError("Gemini", res.status, text));
     const body = JSON.parse(text);
     const out = body?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("");
     if (!out) throw new Error("Gemini returned no content");
