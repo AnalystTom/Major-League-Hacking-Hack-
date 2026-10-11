@@ -43,7 +43,7 @@ test("parseImport validates, reports every bad line, and de-duplicates", () => {
   assert.deepEqual(bad.invalid.map((i) => i.link), ["https://vimeo.com/1"]);
 
   assert.equal(parseImport({ links: [] }).status, 400);
-  assert.equal(parseImport({ links: Array(11).fill("https://youtu.be/VQy50fuxI34") }).status, 400);
+  assert.equal(parseImport({ links: Array(121).fill("https://youtu.be/VQy50fuxI34") }).status, 400);
   assert.equal(parseImport({ links: "https://youtu.be/VQy50fuxI34", company: "bot" }).status, 202);
   assert.equal(parseImport({ links: [`https://youtu.be/VQy50fuxI34?x=${"a".repeat(3000)}`] }).status, 400);
   assert.equal(parseImport({ links: Array(1000).fill("") }).status, 400);
@@ -191,4 +191,23 @@ test("parseImport accepts YouTube and X links together and de-duplicates X posts
   const bad = parseImport({ links: ["https://x.com/a/status/12", "https://x.com/a"] });
   assert.equal(bad.ok, false);
   assert.deepEqual(bad.invalid.map((i) => i.link), ["https://x.com/a"]);
+});
+
+test("parseImport caps 20 YouTube videos and 100 X posts independently", () => {
+  const yt = (n) => Array.from({ length: n }, (_, i) => `https://www.youtube.com/watch?v=${String(i).padStart(11, "a")}`);
+  const xs = (n) => Array.from({ length: n }, (_, i) => `https://x.com/a/status/${i + 1}`);
+  assert.equal(parseImport({ links: [...yt(20), ...xs(100)] }).ok, true);
+  assert.match(parseImport({ links: yt(21) }).error, /at most 20 YouTube/);
+  assert.match(parseImport({ links: xs(101) }).error, /at most 100 X posts/);
+  assert.equal(parseImport({ links: [...yt(20), ...xs(101)] }).ok, false);
+});
+
+test("requestProcessing sends large imports in batches of 10", async () => {
+  const sent = [];
+  const fetchImpl = async (_url, init) => (sent.push(JSON.parse(init.body).unit_ids.length), { ok: true });
+  const ids = Array.from({ length: 25 }, (_, i) => `id${i}`);
+  assert.equal(await requestProcessing({ PROCESSOR_URL: "http://p" }, ids, fetchImpl), "requested");
+  assert.deepEqual(sent, [10, 10, 5]);
+  const failing = async (_u, init) => ({ ok: JSON.parse(init.body).unit_ids[0] !== "id10" });
+  assert.equal(await requestProcessing({ PROCESSOR_URL: "http://p" }, ids, failing), "unavailable");
 });

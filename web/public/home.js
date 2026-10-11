@@ -13,7 +13,7 @@ let follower = null;
 function setFirstRun(first) {
   $("[data-links]").hidden = first;
   $("[data-home-title]").textContent = first ? "Paste your first links" : "Your shorts";
-  $("[data-add-label]").textContent = first ? "Paste YouTube or X post links, one per line (up to 10)" : "Add more YouTube or X post links";
+  $("[data-add-label]").textContent = first ? "Paste YouTube or X post links, one per line (up to 20 videos or 100 X posts)" : "Add more YouTube or X post links";
 }
 
 function showLinks(units) {

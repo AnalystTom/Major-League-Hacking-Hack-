@@ -4,7 +4,10 @@
 import { isXLink, parseXLink } from "./xpost.js";
 import { parseYouTubeLink } from "./youtube.js";
 
-export const MAX_LINKS = 10;
+// Per source type: a video costs a long Gemini read, an X post one cheap API read.
+export const MAX_YOUTUBE_LINKS = 20;
+export const MAX_X_LINKS = 100;
+export const MAX_LINKS = MAX_YOUTUBE_LINKS + MAX_X_LINKS;
 export const MAX_LINK_LENGTH = 2048;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -17,7 +20,7 @@ export function parseImport(body) {
   if (raw.length > MAX_LINKS * 4) return { ok: false, status: 400, error: `Paste at most ${MAX_LINKS} links at a time.` };
   const lines = raw.filter((l) => typeof l === "string" && l.trim() !== "");
   if (lines.length === 0) return { ok: false, status: 400, error: "Paste at least one YouTube or X post link." };
-  if (lines.length > MAX_LINKS) return { ok: false, status: 400, error: `Paste at most ${MAX_LINKS} links at a time.` };
+  if (lines.length > MAX_LINKS) return { ok: false, status: 400, error: `Paste at most ${MAX_YOUTUBE_LINKS} YouTube videos and ${MAX_X_LINKS} X posts at a time.` };
   if (lines.some((l) => l.length > MAX_LINK_LENGTH)) return { ok: false, status: 400, error: "One of those links is too long." };
 
   const links = [];
@@ -35,6 +38,9 @@ export function parseImport(body) {
     const key = `${l.source_url}@${l.start_seconds}`;
     return seen.has(key) ? false : (seen.add(key), true);
   });
+  const xCount = unique.filter((l) => l.content_type === "x_post").length;
+  if (unique.length - xCount > MAX_YOUTUBE_LINKS) return { ok: false, status: 400, error: `Paste at most ${MAX_YOUTUBE_LINKS} YouTube videos at a time.` };
+  if (xCount > MAX_X_LINKS) return { ok: false, status: 400, error: `Paste at most ${MAX_X_LINKS} X posts at a time.` };
   return { ok: true, value: { links: unique } };
 }
 
