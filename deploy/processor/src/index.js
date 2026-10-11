@@ -18,6 +18,8 @@ const ENV_NAMES = [
 const MAX_AWAKE_MS = 2 * 60 * 60 * 1000;
 const BUSY_CHECK_MS = 3000;
 
+const settingsFrom = (env) => Object.fromEntries(ENV_NAMES.filter((name) => env[name]).map((name) => [name, String(env[name])]));
+
 // Only a hash of the settings is kept, never the values.
 async function settingsHash(vars) {
   const data = new TextEncoder().encode(JSON.stringify(Object.entries(vars).sort()));
@@ -32,7 +34,13 @@ export class Processor extends Container {
 
   constructor(ctx, env) {
     super(ctx, env);
-    this.envVars = Object.fromEntries(ENV_NAMES.filter((name) => env[name]).map((name) => [name, String(env[name])]));
+    this.envVars = settingsFrom(env);
+  }
+
+  // A Durable Object keeps the env it was created with until the Worker's code changes, so a `wrangler secret put`
+  // never reaches it on its own. The Worker, which always has the newest secrets, passes them in on every request.
+  async useSettings(vars) {
+    this.envVars = vars;
   }
 
   // A container keeps the settings it started with, so once a secret or var changes, restart it on the next
@@ -76,6 +84,14 @@ export class Processor extends Container {
   }
 }
 
+// Best effort: right after a deploy, the Durable Object can still be running the previous code without
+// useSettings, and a failure here must never fail the request. The next request applies the settings.
+async function applySettings(processor, env) {
+  try {
+    await processor.useSettings(settingsFrom(env));
+  } catch {}
+}
+
 // Only callers holding the processor's token may wake it: anyone else could keep it awake and run up the bill.
 async function authorized(request, env) {
   const header = request.headers.get("authorization") ?? "";
@@ -105,7 +121,9 @@ export default {
     // and a slow container would get a request without its unit ids.
     const body = request.method === "GET" ? undefined : await request.arrayBuffer();
     const forward = new Request(request.url, { method: request.method, headers: request.headers, body });
-    const reply = getContainer(env.PROCESSOR).fetch(forward)
+    const processor = getContainer(env.PROCESSOR);
+    await applySettings(processor, env);
+    const reply = processor.fetch(forward)
       .catch(() => new Response("The processor didn't start.", { status: 502 }));
     ctx.waitUntil(reply);
     const late = new Promise((resolve) => setTimeout(() => resolve(null), ANSWER_WITHIN_MS));
@@ -114,6 +132,7 @@ export default {
 
   // A health check starts the container if it's asleep; it then sleeps again once its sweeps find nothing to do.
   async scheduled(_event, env, ctx) {
-    ctx.waitUntil(getContainer(env.PROCESSOR).fetch(new Request("http://processor/health")));
+    const processor = getContainer(env.PROCESSOR);
+    ctx.waitUntil(applySettings(processor, env).then(() => processor.fetch(new Request("http://processor/health"))));
   },
 };
