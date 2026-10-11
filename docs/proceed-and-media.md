@@ -3,7 +3,7 @@
 The product onboarding at `/start` uses: email and password, nothing else (`users`, `sessions`;
 `db/migrations/002_accounts.sql`). Signing up or in goes straight to `/app`, where the whole workflow lives:
 
-1. **Paste links**: up to 10 YouTube links, the first thing on the page for a new account. Stored as
+1. **Paste links**: up to 10 YouTube or X post links (`x.com/<user>/status/<id>`, stored with `content_type = 'x_post'`), the first thing on the page for a new account. Stored as
    `ingested_units` and linked to the user in `user_imports`.
 2. **Watch progress**: each link's real stage, updated every 4 seconds while anything is moving.
 3. **Watch shorts**: the reel beside the list fills in as shorts are rendered.

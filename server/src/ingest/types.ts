@@ -21,12 +21,16 @@ export const ModelExtraction = z.object({
 });
 export type ModelExtraction = z.infer<typeof ModelExtraction>;
 
+export type ContentType = "youtube_video" | "x_post";
+
 export interface IngestedUnit {
   id: string;
   submittedUrl: string;
   sourceUrl: string;
   startSeconds: number | null;
   title: string | null;
+  /** What kind of source this is; absent means a YouTube video. Stored in ingested_units.content_type. */
+  contentType?: ContentType;
   /** Timestamped, validated segments; stored in ingested_units.transcript. */
   transcript: { overview?: string; window: [number, number]; evidence_items: EvidenceItem[] } | null;
   extractionMethod: string | null;

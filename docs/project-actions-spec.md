@@ -12,7 +12,7 @@ Combine related saves, match them to what an AI engineer is building, and turn t
 
 ## Agreed direction
 
-- V0 accepts individual public YouTube links through a simple import UI. No automatic Watch Later import, X ingestion, or other source formats yet.
+- V0 accepts individual public YouTube links through a simple import UI. X post links (the individual posts a user bookmarked) are accepted alongside YouTube links; no automatic Watch Later or X bookmark-list sync (X OAuth), and no other source formats yet.
 - Use one real project supplied beforehand. Visitors can supply video links; project onboarding remains outside v0.
 - Combine related tutorials when they address the same problem; do not force unrelated videos into one short.
 - Match ideas to the project's goal, stack, current work, and available resources.

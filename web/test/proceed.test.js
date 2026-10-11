@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { parseXLink } from "../src/xpost.js";
 import { parseYouTubeLink } from "../src/youtube.js";
 import { describeUnit, parseImport, parseUnitIds } from "../src/imports.js";
 import { isMediaKey, parseRange, resolveMediaRef } from "../src/media.js";
@@ -165,4 +166,29 @@ test("final progress is read before the feed so a just-rendered clip is not miss
     await finished;
   }
   assert.deepEqual(calls, ["/api/imports", "/api/feed?scope=mine"]);
+});
+
+test("canonicalises X post links and rejects X links that aren't a post", () => {
+  for (const input of [
+    "https://x.com/someone/status/1850000000000000001?s=20",
+    "https://twitter.com/someone/status/1850000000000000001",
+    "x.com/i/web/status/1850000000000000001",
+  ]) {
+    const r = parseXLink(input);
+    assert.equal(r.ok, true, input);
+    assert.deepEqual(r.value, { submitted_url: input, source_url: "https://x.com/i/status/1850000000000000001", start_seconds: null, content_type: "x_post" });
+  }
+  for (const input of ["https://x.com/someone", "https://x.com/i/bookmarks", "https://x.com.evil.dev/a/status/1"]) {
+    assert.equal(parseXLink(input).ok, false, input);
+  }
+});
+
+test("parseImport accepts YouTube and X links together and de-duplicates X posts", () => {
+  const r = parseImport({ links: "https://youtu.be/VQy50fuxI34 https://x.com/a/status/12 https://twitter.com/b/status/12" });
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.value.links.map((l) => l.source_url), ["https://www.youtube.com/watch?v=VQy50fuxI34", "https://x.com/i/status/12"]);
+
+  const bad = parseImport({ links: ["https://x.com/a/status/12", "https://x.com/a"] });
+  assert.equal(bad.ok, false);
+  assert.deepEqual(bad.invalid.map((i) => i.link), ["https://x.com/a"]);
 });

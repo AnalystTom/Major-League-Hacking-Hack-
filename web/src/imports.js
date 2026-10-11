@@ -1,6 +1,7 @@
-// Proceed: pasted YouTube links become ingested units in TigerData, and their progress is read back
+// Proceed: pasted YouTube and X post links become ingested units in TigerData, and their progress is read back
 // from the units, artifacts and video results the processor writes. Nothing here invents progress.
 
+import { isXLink, parseXLink } from "./xpost.js";
 import { parseYouTubeLink } from "./youtube.js";
 
 export const MAX_LINKS = 10;
@@ -15,20 +16,20 @@ export function parseImport(body) {
   const raw = Array.isArray(body.links) ? body.links : typeof body.links === "string" ? body.links.split(/\s+/) : [];
   if (raw.length > MAX_LINKS * 4) return { ok: false, status: 400, error: `Paste at most ${MAX_LINKS} links at a time.` };
   const lines = raw.filter((l) => typeof l === "string" && l.trim() !== "");
-  if (lines.length === 0) return { ok: false, status: 400, error: "Paste at least one YouTube link." };
+  if (lines.length === 0) return { ok: false, status: 400, error: "Paste at least one YouTube or X post link." };
   if (lines.length > MAX_LINKS) return { ok: false, status: 400, error: `Paste at most ${MAX_LINKS} links at a time.` };
   if (lines.some((l) => l.length > MAX_LINK_LENGTH)) return { ok: false, status: 400, error: "One of those links is too long." };
 
   const links = [];
   const invalid = [];
   for (const line of lines) {
-    const parsed = parseYouTubeLink(line);
+    const parsed = isXLink(line) ? parseXLink(line) : parseYouTubeLink(line);
     if (parsed.ok) links.push(parsed.value);
     else invalid.push({ link: line.trim(), error: parsed.error });
   }
   if (invalid.length) return { ok: false, status: 400, error: "Some links can't be imported.", invalid };
 
-  // The same video at the same start time is one unit.
+  // The same video at the same start time (or the same post) is one unit.
   const seen = new Set();
   const unique = links.filter((l) => {
     const key = `${l.source_url}@${l.start_seconds}`;
@@ -45,7 +46,7 @@ export function parseUnitIds(value) {
 }
 
 /**
- * Reuses the newest unit for the same video and start time unless it failed, otherwise inserts a
+ * Reuses the newest unit for the same video (or X post) and start time unless it failed, otherwise inserts a
  * pending one. Reuse means an already processed video shows its results instead of paying for a rerun.
  * Only ids and status come back: a reused unit's submitted_url is another visitor's original link,
  * which can carry their share or playlist parameters, so it never leaves the database.
@@ -62,8 +63,8 @@ export async function createUnits(sql, links, { userId = null } = {}) {
     const [unit] = existing
       ? [{ ...existing, reused: true }]
       : (await sql`
-          INSERT INTO ingested_units (submitted_url, source_url, start_seconds)
-          VALUES (${link.submitted_url}, ${link.source_url}, ${link.start_seconds}::integer)
+          INSERT INTO ingested_units (submitted_url, source_url, start_seconds, content_type)
+          VALUES (${link.submitted_url}, ${link.source_url}, ${link.start_seconds}::integer, ${link.content_type ?? "youtube_video"})
           RETURNING id, status`).map((u) => ({ ...u, reused: false }));
     if (userId) {
       // `linked` is true the first time this user imports the unit, which is when the processor is asked.
@@ -94,7 +95,7 @@ export async function readUnits(sql, ids) {
   if (ids.length === 0) return [];
   const list = ids.join(",");
   const rows = await sql`
-    SELECT u.id, u.source_url, u.start_seconds, u.title, u.status, u.error,
+    SELECT u.id, u.source_url, u.start_seconds, u.title, u.content_type, u.status, u.error,
       COALESCE((SELECT json_agg(e.reason ORDER BY e.created_at) FROM artifact_exclusions e WHERE e.unit_id = u.id), '[]') AS exclusions,
       COALESCE((
         SELECT json_agg(json_build_object(
@@ -124,6 +125,7 @@ export function describeUnit(row) {
     source_url: row.source_url,
     start_seconds: row.start_seconds,
     title: row.title ?? null,
+    content_type: row.content_type ?? "youtube_video",
   };
   const at = (stage, settled, error = null) => ({ ...base, stage, settled, error });
 
