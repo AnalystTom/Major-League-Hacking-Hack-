@@ -2,7 +2,7 @@
 
 This is the single canonical product spec. It supersedes the earlier v0 draft and HTML planning preview.
 
-Status: product scope agreed. The web Worker implements accounts, the project brief, imports and their progress, the feed, and media streaming, as described in [HTTP API](#http-api). The shared schema and accounts migrations are written but not confirmed as applied. The processor, Digestion Prompt, rendering, and workstream 3 are not built yet. Contracts not marked as implemented remain proposals. Migration, provider runs, commits, and deployment require approval.
+Status: product scope agreed. The web Worker implements accounts, the project brief, imports and their progress, the feed, and media streaming, as described in [HTTP API](#http-api). The shared schema and accounts migrations are written but not confirmed as applied. The Node ingestion backend implements Gemini extraction and the Digestion Prompt. It is not connected to web imports; rendering, the end-to-end processor, and workstream 3 are not built yet. Contracts not marked as implemented remain proposals. Migration, provider runs, commits, and deployment require approval.
 
 ## Goal
 
@@ -227,18 +227,18 @@ Browser ──GET /api/imports, /api/feed?scope=mine (polled)──▶ web Worke
 
 ### Web Worker `resurface` (`web/`, same origin as the page)
 
-Static assets serve everything except `/api/*` and `/media/*`: the landing page, `/start` (onboarding: account → project brief → saved links → processing), and `/app` (the signed-in home with the project, links, and reel). Every API response is JSON with `cache-control: no-store`. Every mutation must be `application/json`, which, with the `SameSite=Lax` session cookie, blocks cross-site form posts (`415` otherwise). A missing database connection or query error returns `503` with a safe message; details go to Worker logs only. The database comes from the `HYPERDRIVE` binding when present, otherwise `DATABASE_URL`.
+Static assets serve everything except `/api/*` and `/media/*`: the landing page, `/start` (onboarding: account → saved links → processing), and `/app` (the signed-in home with links and the reel). Project briefs are optional API input and have no onboarding screen. Every API response is JSON with `cache-control: no-store`. Every mutation must be `application/json`, which, with the `SameSite=Lax` session cookie, blocks cross-site form posts (`415` otherwise). A missing database connection or query error returns `503` with a safe message; details go to Worker logs only. The database comes from the `HYPERDRIVE` binding when present, otherwise `DATABASE_URL`.
 
 | Route | Auth | Request → response |
 | --- | --- | --- |
 | `POST /api/auth/signup` | none | `{ email, password, name? }` → `201` onboarding state and session cookie. Password ≥ 10 characters, PBKDF2-SHA256. `409` if the email exists. |
 | `POST /api/auth/login` | none | `{ email, password }` → `200` onboarding state and session cookie. Unknown email and wrong password both get `401`. |
 | `POST /api/auth/logout` | none | Ends the session and clears the cookie. |
-| `GET /api/me` | session | `{ user, project, imports, step }`, where `step` is `project`, `sources`, or `done`. |
+| `GET /api/me` | optional session | Signed in: `{ user, project, imports, step }`, where `step` is `sources` or `done`; signed out: `{ user: null, step: "account" }`. |
 | `PUT /api/project` | session | `{ name, goal?, tools, agents }` → `{ project }`, saved as the next `project_contexts` version. |
-| `POST /api/imports` | session + project | `{ links: string[] \| string, company?: honeypot }` → `201 { units, processor }`. `409` without a project brief. |
+| `POST /api/imports` | session | `{ links: string[] \| string, company?: honeypot }` → `201 { units, processor }`. The project brief is optional. |
 | `GET /api/imports` | session | `{ units }`: the user's 50 most recent imports, newest first. |
-| `GET /api/feed?scope=mine` | session | `{ items }`: the user's ready shorts for their current project, as in the [feed read contract](#feed-read-contract). |
+| `GET /api/feed?scope=mine` | session | `{ items }`: the user's ready shorts for their current project, or generic shorts without a project, as in the [feed read contract](#feed-read-contract). |
 | `GET /api/feed` | none | `{ items }`: the public curated feed (requires `feed_order`). |
 | `GET`/`HEAD /media/<key>` | none | `200` or `206` with `accept-ranges`, `content-range`, `etag`, and `cache-control: public, max-age=3600`; `416` past the end; `404` for an unknown or disallowed key; `503` without the R2 binding. |
 
@@ -246,7 +246,7 @@ Signed-out requests to session routes get `401`. Rate limits: sign-up and sign-i
 
 **Import rules.** Each link must be a single YouTube video (`youtube.com/watch`, `youtu.be`, `/shorts/`, `/live/`, `/embed/` on `www`, `m`, or `music` hosts). It is stored as the canonical `https://www.youtube.com/watch?v=<id>` plus `start_seconds` parsed from `t` or `start` (`90`, `90s`, `1m30s`, `1h2m3s`). The submitted URL is kept in the database but never returned. The same video and start time within one request is one unit. Units are shared across users: the newest non-failed unit for that video and start time is reused, and `user_imports` records who imported it with which project version. Each unit is sent to the processor the first time a given user imports it, even when extraction is reused. Errors: `400` for invalid JSON, no links, more than 10 links, a link over 2,048 characters, or any invalid link (with `invalid: [{ link, error }]` naming each); `413` for a body over 32 KB. A filled honeypot gets `200 { units: [], processor: "not_needed" }` and stores nothing. `processor` is `requested`, `not_needed`, `not_configured` (no `PROCESSOR_URL`), or `unavailable` (error, timeout, or non-2xx).
 
-**Unit shape.** `{ id, source_url, start_seconds, title, stage, settled, error }`. Only artifacts digested for the user's project count, so one user never sees another's digest. `stage` collapses the unit's records into one state. `settled` means nothing more happens without a person. When a unit feeds several artifacts, the one furthest along is reported.
+**Unit shape.** `{ id, source_url, start_seconds, title, stage, settled, error }`. Only artifacts digested for the user's project count; users without a project see generic artifacts only. `stage` collapses the unit's records into one state. `settled` means nothing more happens without a person. When a unit feeds several artifacts, the one furthest along is reported.
 
 | `stage` | Derived from | `settled` |
 | --- | --- | --- |
@@ -292,6 +292,27 @@ This Worker serves the five landing-page sample shorts from a hardcoded list; no
 | `GET /api/shorts/:id/export?agent=` | `{ agent, path, content }`: the file that agent reads. Skill shorts become `.claude/skills/<slug>/SKILL.md`, `.agents/skills/<slug>/SKILL.md`, `.cursor/rules/<slug>.mdc`, or `~/.hermes/skills/<slug>/SKILL.md`; rules shorts become a section of `CLAUDE.md`, `AGENTS.md`, or `.cursor/rules/project.mdc` (Hermes has no rules file, so they become skills). `400` for an unknown agent. |
 
 This is a candidate shape for workstream 3's export, not a delivery route. It writes nothing and produces no receipt.
+
+### Node ingestion backend (`server/src/ingest/`)
+
+The Node server mounts `POST /api/ingest/imports` and `GET /api/ingest/imports/:id`
+when `GEMINI_API_KEY` is configured. Both require `Authorization: Bearer <INGEST_TOKEN>`.
+Set `PROJECT_CONTEXT` to a real project brief JSON file with `name`, nullable `goal`,
+and `facts: [{ fact, source? }]`; startup fails when the token or brief is missing.
+No placeholder project is selected automatically.
+
+The POST body is `{ links, request, window_seconds? }`, where `request` is the
+categorization instruction. It accepts 1–20 links and a 30–3,600 second window.
+Gemini extracts source evidence; `OPENAI_API_KEY` enables digestion (otherwise it
+reports skipped). `GEMINI_MODEL` and `OPENAI_MODEL` select the configured models.
+`DATABASE_URL` selects TigerData storage; without it, results remain in memory.
+Jobs are process-local and are lost on restart. From `server/`, the CLI uses
+`npm run ingest -- "<request>" <youtube-url>...` with the same provider and project configuration.
+
+This backend does not implement the web Worker's `PROCESSOR_URL` contract: it
+accepts URLs, rather than existing `unit_ids` and a per-user project, and does not
+render video. Web imports still need that integration and a real render processor.
+
 
 ## Workflow 3: processed skill and Codex use
 

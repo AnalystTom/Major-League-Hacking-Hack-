@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-// Mirrors db/migrations/001_shared_schema.sql (branch claude/loving-gates-0xec5o).
+// Mirrors db/migrations/001_shared_schema.sql (the canonical shared schema).
 export type ProcessingStatus = "pending" | "running" | "ready" | "failed";
 
 export const EvidenceItem = z.object({

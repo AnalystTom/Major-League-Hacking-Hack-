@@ -21,6 +21,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Funnel+Display:wght@400..800&family=Funnel+Sans:wght@400..700&family=Martian+Mono:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/film.css">
 </head>
 <body>
   <header class="topbar">
@@ -49,7 +50,7 @@
       <p class="lede">Resurface turns the bookmarks, Watch Later videos and conference talks you never got to into 30-second shorts. Keep the good ones and they're installed in your coding agent as skills.</p>
       <div class="hero-cta" id="get-started">
         <a class="btn" href="/start" data-cta>Get started, it's free</a>
-        <p>Create an account, tell us what you're building, paste the videos you saved. Your shorts arrive matched to your project.</p>
+        <p>Create an account, paste the YouTube videos you saved, and watch them back as 30-second shorts.</p>
       </div>
       <div class="works-with">
         <p>Sends to</p>
@@ -61,47 +62,130 @@
         </ul>
       </div>
 
-      <figure class="film" data-film aria-label="Demo: how saved items get stuck, and what Resurface does with them">
-        <div class="film-screen">
-          <div class="scene scene-bookmarks is-on" data-scene data-caption="Cool apps, stuck in your bookmarks.">
-            <div class="stream" aria-hidden="true">
-              <p>A local-first sync engine</p><p>An open-source plugin pack for Cursor</p><p>A CLI that turns any repo into agent context</p><p>A voice agent starter in 200 lines</p><p>Agent skills for real engineering work</p><p>A tiny eval harness</p><p>A local-first sync engine</p><p>An open-source plugin pack for Cursor</p>
+      <figure class="film" data-film aria-label="Demo film: YouTube videos, X bookmarks and Substack posts become a reel of shorts, then skills and tasks your coding agent runs">
+        <svg class="f-glyphs" width="0" height="0" aria-hidden="true">
+          <symbol id="g-youtube" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="5" fill="#ff3b30"/><path d="M10 8.6v6.8l5.8-3.4z" fill="#fff"/></symbol>
+          <symbol id="g-x" viewBox="0 0 24 24"><path fill="currentColor" d="M18.24 2.25h3.31l-7.23 8.26 8.5 11.24h-6.65l-5.21-6.82-5.97 6.82H1.68l7.73-8.84L1.25 2.25h6.83l4.71 6.23zm-1.16 17.52h1.83L7.08 4.13H5.12z"/></symbol>
+          <symbol id="g-substack" viewBox="0 0 24 24"><path fill="#ff6719" d="M22.54 8.24H1.46V5.41h21.08zM1.46 10.81V24L12 18.11 22.54 24V10.81zM22.54 0H1.46v2.84h21.08z"/></symbol>
+          <symbol id="g-resurface" viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 9.5l4.5 2.5-4.5 2.5z" fill="currentColor"/></symbol>
+        </svg>
+
+        <div class="film-screen" data-screen>
+          <div class="f-canvas" data-canvas>
+
+            <!-- 1. Saved: the backlog on YouTube, X and Substack, read into shorts -->
+            <div class="scene is-on" data-scene data-ms="5000" data-caption="You saved them on YouTube, X and Substack. You never went back.">
+              <div class="f-info">
+                <p class="f-chip"><svg><use href="#g-youtube"/></svg><svg class="g-x"><use href="#g-x"/></svg><svg><use href="#g-substack"/></svg>YouTube, X, Substack</p>
+                <p class="f-big"><span data-to="1165">0</span></p>
+                <p class="f-sub">videos, threads and posts saved for later. Still unopened.</p>
+              </div>
+              <ol class="f-vis src" aria-hidden="true">
+                <li class="f-in" style="--d:.1s; --at:1.4s"><svg><use href="#g-youtube"/></svg><p><small>Watch Later · 61 hours</small>Evals for coding agents, end to end</p><span class="src-stage"><b>Unwatched</b><b>Reading</b><b class="src-ready">0:30 short</b></span><i class="src-bar"></i></li>
+                <li class="f-in" style="--d:.25s; --at:1.9s"><svg class="g-x"><use href="#g-x"/></svg><p><small>Bookmarks · 847 threads</small>pstack: design, build, verify (1/9)</p><span class="src-stage"><b>Unread</b><b>Reading</b><b class="src-ready">0:30 short</b></span><i class="src-bar"></i></li>
+                <li class="f-in" style="--d:.4s; --at:2.4s"><svg><use href="#g-substack"/></svg><p><small>Inbox · 132 unread</small>I distilled myself</p><span class="src-stage"><b>Unread</b><b>Reading</b><b class="src-ready">0:30 short</b></span><i class="src-bar"></i></li>
+              </ol>
             </div>
-            <p class="big-count"><span data-to="847">0</span><small>bookmarks, unopened</small></p>
-          </div>
-          <div class="scene scene-watch" data-scene data-caption="Crucial tutorials, stuck in Watch Later.">
-            <div class="queue" aria-hidden="true">
-              <b style="--i:0; --h:250">48:12</b><b style="--i:1; --h:150">1:12:40</b><b style="--i:2; --h:30">36:05</b><b style="--i:3; --h:200">22:18</b><b style="--i:4; --h:290">54:30</b>
+
+            <!-- 2. Reel: the backlog plays as shorts; keeps are collected -->
+            <div class="scene" data-scene data-ms="5500" data-caption="Resurface turns your backlog into a reel. Keep what matters.">
+              <div class="f-info">
+                <p class="f-chip f-brand"><svg><use href="#g-resurface"/></svg>Resurface</p>
+                <p class="f-head">A reel, not a backlog.</p>
+                <p class="f-sub">Each save becomes a 30-second short of the part worth keeping.</p>
+              </div>
+              <div class="f-vis ph-wrap" aria-hidden="true">
+                <div class="ph">
+                  <div class="ph-track">
+                    <section class="ph-short" style="--acc:var(--sh-signal); --from:.1s; --keep:1.05s">
+                      <i class="ph-bar"></i>
+                      <p class="ph-src"><svg><use href="#g-youtube"/></svg>YouTube</p>
+                      <p class="ph-take">Write the check before the agent says done.</p>
+                      <span class="ph-keep">Keep</span>
+                    </section>
+                    <section class="ph-short" style="--acc:var(--sh-sky); --from:1.8s; --keep:2.85s">
+                      <i class="ph-bar"></i>
+                      <p class="ph-src"><svg class="g-x"><use href="#g-x"/></svg>X</p>
+                      <p class="ph-take">Route every task through design, build and verify.</p>
+                      <span class="ph-keep">Keep</span>
+                    </section>
+                    <section class="ph-short" style="--acc:var(--sh-coral); --from:3.7s; --keep:4.6s">
+                      <i class="ph-bar"></i>
+                      <p class="ph-src"><svg><use href="#g-substack"/></svg>Substack</p>
+                      <p class="ph-take">Write down the correction you keep repeating.</p>
+                      <span class="ph-keep">Keep</span>
+                    </section>
+                  </div>
+                </div>
+                <div class="kp">
+                  <p class="kp-head">Kept</p>
+                  <ol>
+                    <li style="--d:1.2s"><svg><use href="#g-youtube"/></svg>Write the check first</li>
+                    <li style="--d:3s"><svg class="g-x"><use href="#g-x"/></svg>Design, build, verify</li>
+                    <li style="--d:4.75s"><svg><use href="#g-substack"/></svg>Write corrections down</li>
+                  </ol>
+                </div>
+              </div>
             </div>
-            <p class="big-count"><span data-to="1180" data-format="hm">0 h 00 m</span><small>of tutorials, still queued</small></p>
-          </div>
-          <div class="scene scene-talks" data-scene data-caption="AI Engineer 2026 is here. Last year's New York talks, still unwatched.">
-            <div class="film-talks" aria-hidden="true">
-              <i style="--i:0; --h:250"></i><i style="--i:1; --h:30"></i><i style="--i:2; --h:200"></i><i style="--i:3; --h:150"></i><i style="--i:4; --h:290"></i><i style="--i:5; --h:100"></i><i style="--i:6; --h:60"></i><i style="--i:7; --h:220"></i>
+
+            <!-- 3. Skills: keeps land in the repo -->
+            <div class="scene" data-scene data-ms="4500" data-caption="What you keep is installed where your agent looks.">
+              <div class="f-info">
+                <p class="f-chip f-brand"><svg><use href="#g-resurface"/></svg>Installed in checkout-api</p>
+                <p class="f-head">Keeps become skills.</p>
+                <p class="f-sub">Each one lands in your repo, linked to the moment it came from.</p>
+              </div>
+              <div class="f-vis repo" aria-hidden="true">
+                <ul class="repo-tree">
+                  <li class="f-in is-open" style="--d:.1s"><svg><use href="#g-youtube"/></svg><code>.claude/skills/verify-journey/SKILL.md</code><b>new</b></li>
+                  <li class="f-in" style="--d:.25s"><svg class="g-x"><use href="#g-x"/></svg><code>.claude/skills/pstack-route/SKILL.md</code><b>new</b></li>
+                  <li class="f-in" style="--d:.4s"><svg><use href="#g-substack"/></svg><code>AGENTS.md</code><b>+3 rules</b></li>
+                </ul>
+                <div class="repo-file f-in" style="--d:.55s">
+                  <p class="repo-tab">verify-journey/SKILL.md</p>
+                  <pre><span style="--d:.75s">---</span><span style="--d:.9s"><i>name:</i> verify-journey</span><span style="--d:1.05s"><i>description:</i> Check before you say done.</span><span style="--d:1.2s"><i>source:</i> YouTube, Evals for coding agents, 12:04</span><span style="--d:1.35s"><i>checked:</i> against today's Playwright docs</span><span style="--d:1.5s">---</span><span style="--d:1.7s">1. Write a failing journey check first.</span><span style="--d:1.9s">2. Build until it passes.</span><span style="--d:2.1s">3. Say done only with the passing output.</span></pre>
+                </div>
+              </div>
             </div>
-            <p class="big-count"><span>0%</span><small>of last year's talks watched</small></p>
-          </div>
-          <div class="scene scene-resurface" data-scene data-caption="Resurface keeps the part worth knowing and sends it to your agent.">
-            <div class="mini-short" aria-hidden="true">
-              <span class="ms-source">YouTube, Watch Later</span>
-              <p class="ms-take">Write the check before the agent says done.</p>
-              <span class="ms-bar"></span>
+
+            <!-- 4. Tasks: the agent runs them -->
+            <div class="scene" data-scene data-ms="5500" data-caption="Your agent runs the tasks. The backlog finally ships.">
+              <div class="f-info">
+                <p class="f-chip"><span class="logo logo-claude-code"></span>Your agent</p>
+                <p class="f-head">Skills become tasks.</p>
+                <p class="f-sub">Claude Code, Codex, Cursor or Hermes runs them and shows its proof.</p>
+              </div>
+              <div class="f-vis term" aria-hidden="true">
+                <p class="term-bar"><i></i><i></i><i></i><span>claude · checkout-api</span></p>
+                <div class="term-body">
+                  <p class="term-cmd f-in" style="--d:.2s">› Run my Resurface tasks</p>
+                  <p class="term-note f-in" style="--d:.45s">3 tasks from the shorts you kept</p>
+                  <ul class="term-tasks">
+                    <li class="f-in" style="--d:.6s; --at:.9s"><i class="tick"></i><p>Add a Playwright check for the checkout journey<small><svg><use href="#g-youtube"/></svg>From YouTube · 3 checks pass</small></p></li>
+                    <li class="f-in" style="--d:.65s; --at:1.7s"><i class="tick"></i><p>Plan refunds as design, build, verify<small><svg class="g-x"><use href="#g-x"/></svg>From X · plan.md written</small></p></li>
+                    <li class="f-in" style="--d:.7s; --at:2.5s"><i class="tick"></i><p>Add 3 review rules to AGENTS.md<small><svg><use href="#g-substack"/></svg>From Substack · pnpm only, no default exports, tests first</small></p></li>
+                  </ul>
+                  <p class="term-done f-in" style="--d:3.5s">Done. 4 files changed, each linked to its source. Ready for review.</p>
+                </div>
+              </div>
             </div>
-            <p class="landed" aria-hidden="true"><span>Sent to Claude Code</span><code>.claude/skills/verify-journey/SKILL.md</code></p>
+
           </div>
           <p class="film-caption" data-caption-out aria-live="polite"></p>
         </div>
+
         <figcaption class="film-controls">
           <button type="button" class="film-toggle" data-toggle aria-label="Pause demo" data-state="playing">
             <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="2" width="3.5" height="12" rx="1"/><rect x="9.5" y="2" width="3.5" height="12" rx="1"/></svg>
             <svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9.5-5.5z"/></svg>
           </button>
           <ol class="chapters">
-            <li><button type="button" data-chapter><span>Bookmarks</span><i></i></button></li>
-            <li><button type="button" data-chapter><span>Watch Later</span><i></i></button></li>
-            <li><button type="button" data-chapter><span>AI Engineer 2025</span><i></i></button></li>
-            <li><button type="button" data-chapter><span>Resurface</span><i></i></button></li>
+            <li><button type="button" data-chapter><span>Saved</span><i></i></button></li>
+            <li><button type="button" data-chapter><span>Reel</span><i></i></button></li>
+            <li><button type="button" data-chapter><span>Skills</span><i></i></button></li>
+            <li><button type="button" data-chapter><span>Tasks</span><i></i></button></li>
           </ol>
+          <p class="film-time" aria-hidden="true" data-time>0:00 / 0:21</p>
         </figcaption>
       </figure>
     </section>
@@ -148,7 +232,7 @@
         </li>
         <li>
           <h3>Watch a short for each one</h3>
-          <p>Every item becomes a 30-second short of the part worth keeping, matched against what you're building. Copy it, or send it straight to your agents.</p>
+          <p>Every item becomes a 30-second short of the part worth keeping. Copy it, or send it straight to your agents.</p>
         </li>
         <li>
           <h3>Check it against today's docs</h3>
