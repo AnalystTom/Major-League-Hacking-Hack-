@@ -3,7 +3,9 @@ import { parseYouTubeUrl } from "./urls.ts";
 import { extractWithGemini, windowFor, GEMINI_MODEL } from "./extract/gemini.ts";
 import { applyValidation, validateExtraction } from "./extract/validate.ts";
 import type { Store } from "./store.ts";
-import type { IngestedUnit } from "./types.ts";
+import { runDigestion, type DigestOptions } from "./digest/run.ts";
+import { promptRevisionText } from "./digest/prompt.ts";
+import type { IngestedUnit, StoredArtifact } from "./types.ts";
 
 export interface IngestOptions {
   geminiKey: string;
@@ -38,4 +40,23 @@ export async function ingestLink(link: string, o: IngestOptions, onUpdate?: (u: 
 
 export async function ingestLinks(links: string[], o: IngestOptions): Promise<IngestedUnit[]> {
   return Promise.all(links.map((l) => ingestLink(l, o)));
+}
+
+export interface DigestAndStoreOptions extends DigestOptions {
+  store: Store;
+}
+
+/** Runs the Digestion Prompt, registers its revision, and stores artifacts and exclusions tied to that revision. */
+export async function digestAndStore(o: DigestAndStoreOptions) {
+  const result = await runDigestion(o);
+  let promptId: string | null = null;
+  let stored: StoredArtifact[] | null = null;
+  let storeError: string | null = null;
+  try {
+    promptId = await o.store.registerPrompt(promptRevisionText(o.request), o.fewShot ?? []);
+    stored = await o.store.saveArtifacts(result.artifacts, result.exclusions, promptId);
+  } catch (e) {
+    storeError = (e as Error).message;
+  }
+  return { result, promptId, stored, storeError };
 }

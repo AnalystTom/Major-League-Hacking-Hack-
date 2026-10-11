@@ -1,8 +1,7 @@
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { randomUUID } from "node:crypto";
 import { MAX_WINDOW_SECONDS, MIN_WINDOW_SECONDS } from "./extract/gemini.ts";
-import { ingestLink, type IngestOptions } from "./pipeline.ts";
-import { runDigestion } from "./digest/run.ts";
+import { digestAndStore, ingestLink, type IngestOptions } from "./pipeline.ts";
 import type { ProjectContext } from "./digest/prompt.ts";
 import type { DigestOutput, IngestedUnit, StoredArtifact } from "./types.ts";
 
@@ -15,6 +14,8 @@ interface ImportJob {
     error: string | null;
     result: DigestOutput | null;
     /** artifact rows as written to the store; null until saved */
+    /** digestion_prompts.id of the revision used; null until registered */
+    digestion_prompt_id: string | null;
     stored_artifacts: StoredArtifact[] | null;
     store_error: string | null;
   };
@@ -27,7 +28,7 @@ export interface ApiOptions extends IngestOptions {
 }
 
 const MAX_LINKS = 20;
-const EMPTY_DIGEST = { error: null, result: null, stored_artifacts: null, store_error: null } as const;
+const EMPTY_DIGEST = { error: null, result: null, digestion_prompt_id: null, stored_artifacts: null, store_error: null } as const;
 
 function view(job: ImportJob) {
   return {
@@ -63,13 +64,8 @@ export function createApi(o: ApiOptions): Server {
     if (ready.length === 0) { job.digest = { ...EMPTY_DIGEST, status: "skipped", error: "no successfully extracted sources" }; return; }
     job.digest.status = "running";
     try {
-      const result = await runDigestion({ apiKey: o.openaiKey, model: o.openaiModel, units: ready, request: job.request, context: o.context, fetchImpl: o.fetchImpl });
-      job.digest = { ...EMPTY_DIGEST, status: "ready", result };
-      try {
-        job.digest.stored_artifacts = await o.store.saveArtifacts(result.artifacts, result.exclusions, null);
-      } catch (e) {
-        job.digest.store_error = (e as Error).message;
-      }
+      const d = await digestAndStore({ apiKey: o.openaiKey, model: o.openaiModel, units: ready, request: job.request, context: o.context, fetchImpl: o.fetchImpl, store: o.store });
+      job.digest = { status: "ready", error: null, result: d.result, digestion_prompt_id: d.promptId, stored_artifacts: d.stored, store_error: d.storeError };
     } catch (e) {
       job.digest = { ...EMPTY_DIGEST, status: "failed", error: (e as Error).message };
     }

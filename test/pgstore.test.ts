@@ -12,7 +12,7 @@ const url = process.env.TEST_DATABASE_URL;
 test("PgStore writes match the shared schema", { skip: !url && "TEST_DATABASE_URL not set" }, async () => {
   const pool = new pg.Pool({ connectionString: url });
   const store = new PgStore(pool);
-  const ids: { unit: string[]; artifact: string[]; prompt?: string } = { unit: [], artifact: [] };
+  const ids: { unit: string[]; artifact: string[]; prompt?: string; prompt2?: string } = { unit: [], artifact: [] };
   try {
     const ok = async () => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({
       source_url: "https://www.youtube.com/watch?v=VQy50fuxI34", content_accessed: true,
@@ -31,8 +31,13 @@ test("PgStore writes match the shared schema", { skip: !url && "TEST_DATABASE_UR
     const ready = await store.listReadyUnits();
     assert.ok(ready.some((u) => u.id === good.id && u.transcript?.evidence_items.length === 1));
 
-    const prompt = await pool.query("insert into digestion_prompts (revision, prompt_text) values ((select coalesce(max(revision),0)+1 from digestion_prompts), 'test') returning id");
-    ids.prompt = prompt.rows[0].id;
+    const text = `test prompt ${Date.now()}`;
+    ids.prompt = await store.registerPrompt(text, []);
+    assert.equal(await store.registerPrompt(text, []), ids.prompt, "same text + few-shot reuses the revision");
+    ids.prompt2 = await store.registerPrompt(text, [{ example: 1 }]);
+    assert.notEqual(ids.prompt2, ids.prompt, "different few-shot set creates a new revision");
+    const revs = await pool.query("select id, revision from digestion_prompts where id = any($1) order by revision", [[ids.prompt, ids.prompt2]]);
+    assert.equal(revs.rows[1].revision, revs.rows[0].revision + 1);
     const digest = validateDigest({
       artifacts: [{ name: "a", source_ids: [good.id], category: "c", processed_text: "t", selection_reason: "r",
         evidence: [{ source_id: good.id, start_seconds: 5, end_seconds: 20, passage: "p" }] }],
@@ -40,6 +45,7 @@ test("PgStore writes match the shared schema", { skip: !url && "TEST_DATABASE_UR
     }, [good, unused]);
     const stored = await store.saveArtifacts(digest.artifacts, digest.exclusions, ids.prompt!);
     ids.artifact = stored.map((s) => s.id);
+    assert.equal(stored[0].digestion_prompt_id, ids.prompt);
     assert.equal(stored[0].review_status, "pending");
     assert.equal(stored[0].version, 1);
     assert.equal(stored[0].sources[0].url, "https://www.youtube.com/watch?v=VQy50fuxI34");
@@ -53,7 +59,7 @@ test("PgStore writes match the shared schema", { skip: !url && "TEST_DATABASE_UR
   } finally {
     if (ids.prompt) await pool.query("delete from artifact_exclusions where digestion_prompt_id = $1", [ids.prompt]);
     if (ids.artifact.length) await pool.query("delete from artifacts where id = any($1)", [ids.artifact]);
-    if (ids.prompt) await pool.query("delete from digestion_prompts where id = $1", [ids.prompt]);
+    if (ids.prompt) await pool.query("delete from digestion_prompts where id = any($1)", [[ids.prompt, ids.prompt2 ?? ids.prompt]]);
     if (ids.unit.length) await pool.query("delete from ingested_units where id = any($1)", [ids.unit]);
     await pool.end();
   }

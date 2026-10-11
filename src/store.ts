@@ -7,6 +7,8 @@ type Exclusion = { unit_id: string; reason: string };
 export interface Store {
   saveUnit(unit: IngestedUnit): Promise<void>;
   listReadyUnits(): Promise<IngestedUnit[]>;
+  /** Returns the id of the digestion_prompts revision for this exact text + few-shot set, creating the next revision if new. */
+  registerPrompt(promptText: string, fewShot: unknown[]): Promise<string>;
   saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null): Promise<StoredArtifact[]>;
 }
 
@@ -14,7 +16,15 @@ export class MemoryStore implements Store {
   units = new Map<string, IngestedUnit>();
   artifacts: StoredArtifact[] = [];
   exclusions: (Exclusion & { promptId: string | null })[] = [];
+  prompts: { id: string; revision: number; promptText: string; fewShot: unknown[] }[] = [];
   async saveUnit(unit: IngestedUnit) { this.units.set(unit.id, unit); }
+  async registerPrompt(promptText: string, fewShot: unknown[]) {
+    const found = this.prompts.find((p) => p.promptText === promptText && JSON.stringify(p.fewShot) === JSON.stringify(fewShot));
+    if (found) return found.id;
+    const p = { id: randomUUID(), revision: this.prompts.length + 1, promptText, fewShot };
+    this.prompts.push(p);
+    return p.id;
+  }
   async listReadyUnits() { return [...this.units.values()].filter((u) => u.status === "ready"); }
   async saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null) {
     const stored = artifacts.map((a): StoredArtifact => {
@@ -43,6 +53,33 @@ export class PgStore implements Store {
        ON CONFLICT (id) DO UPDATE SET title=$5, transcript=$6, extraction_method=$7, extracted_at=$8, status=$9, error=$10`,
       [u.id, u.submittedUrl, u.sourceUrl, u.startSeconds, u.title, u.transcript && JSON.stringify(u.transcript), u.extractionMethod, u.extractedAt, u.status, u.error],
     );
+  }
+
+  async registerPrompt(promptText: string, fewShot: unknown[]) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(hashtext('digestion_prompts'))"); // serialize revision numbering
+      const found = await client.query(
+        `SELECT id FROM digestion_prompts WHERE name = 'Digestion Prompt' AND prompt_text = $1 AND few_shot = $2::jsonb LIMIT 1`,
+        [promptText, JSON.stringify(fewShot)]);
+      let id: string;
+      if (found.rows[0]) id = found.rows[0].id;
+      else {
+        const ins = await client.query(
+          `INSERT INTO digestion_prompts (revision, prompt_text, few_shot)
+           VALUES ((SELECT coalesce(max(revision), 0) + 1 FROM digestion_prompts WHERE name = 'Digestion Prompt'), $1, $2::jsonb) RETURNING id`,
+          [promptText, JSON.stringify(fewShot)]);
+        id = ins.rows[0].id;
+      }
+      await client.query("COMMIT");
+      return id;
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
   }
 
   async listReadyUnits() {

@@ -65,6 +65,10 @@ test("API returns extracted evidence and stores digested artifacts", async () =>
   assert.equal(row.ingestion_status, "ready");
   assert.equal(row.review_status, "pending");
   assert.equal(row.version, 1);
+  assert.ok(body.digest.digestion_prompt_id);
+  assert.equal(row.digestion_prompt_id, body.digest.digestion_prompt_id);
+  assert.equal(store.prompts.length, 1);
+  assert.match(store.prompts[0].promptText, /categorization request ---\nr$/);
   assert.equal(row.sources[0].url, "https://www.youtube.com/watch?v=VQy50fuxI34");
   assert.equal(row.source_url, "https://www.youtube.com/watch?v=VQy50fuxI34");
   assert.equal(store.artifacts.length, 1);
