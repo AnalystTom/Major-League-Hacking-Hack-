@@ -45,9 +45,11 @@ test("validateMotion accepts a grounded FILM and rejects what it must not run", 
   assert.throws(() => checkFilm(`window.FILM = { draw: [() => fetch("https://evil.example")] };`), /forbidden construct/);
   assert.throws(() => checkFilm(`window.FILM = { x: ({}).constructor.constructor("return 1") };`), /forbidden construct: constructor/);
   assert.throws(() => checkFilm(`const film = 1;`), /doesn't assign window\.FILM/);
-  assert.throws(() => checkFilm(`window.FILM = { x: eval("1") };`), /forbidden construct: eval\(/);
+  assert.throws(() => checkFilm(`window.FILM = { x: eval("1") };`), /forbidden construct: eval/);
   assert.throws(() => checkFilm(`window.FILM = { x: Function ("return 1") };`), /forbidden construct/);
-  assert.doesNotThrow(() => checkFilm(`const evalRing = 1; const eval_ = 2; window.FILM = { label: "eval" };`), "a beat about evaluation can name things eval");
+  assert.throws(() => checkFilm(`const f = eval; window.FILM = { x: f("1") };`), /forbidden construct: eval/, "aliasing eval is caught too");
+  assert.throws(() => checkFilm(`const F = Function; window.FILM = {};`), /forbidden construct: Function/);
+  assert.doesNotThrow(() => checkFilm(`const evalRing = 1; const s = { eval: 2 }; s.eval; window.FILM = { label: "eval" };`), "a beat about evaluation can use eval as a key, property or word");
   const bad = motionReply(a); bad.beats[1].source_ids = ["not-a-source"];
   assert.throws(() => validateMotion(bad, a), /cites not-a-source/);
   const few = motionReply(a); few.beats = few.beats.slice(0, 3);
@@ -109,6 +111,39 @@ test("renders a FILM frame by frame into a 1080x1920 short with narration, effec
       assert.equal(v.script.scenes.length, 5);
       assert.ok(Math.abs(v.script.scenes.at(-1)!.end_seconds - v.duration_seconds) < 0.1);
     } finally {
+      await rm(out, { recursive: true, force: true });
+    }
+  });
+
+test("a disguised fetch in a FILM never reaches the network",
+  { skip: (!hasFfmpeg || !chromiumPath) && "needs ffmpeg and CHROMIUM_PATH", timeout: 300_000 }, async () => {
+    const { createServer } = await import("node:http");
+    let hits = 0;
+    const server = createServer((_, res) => { hits++; res.end("ok"); });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const port = (server.address() as { port: number }).port;
+    const out = await mkdtemp(join(tmpdir(), "resurface-motion-net-"));
+    try {
+      const a = artifact();
+      // Built from pieces so checkFilm's lint doesn't see it: the sandbox has to hold on its own.
+      const leak = `const w = window, u = "ht" + "tp://127.0.0.1:${port}/leak";
+        try { w["fe" + "tch"](u).catch(() => {}); } catch (e) {}
+        try { const x = new w["XMLHttp" + "Request"](); x.open("GET", u); x.send(); } catch (e) {}
+        try { w["ev" + "al"]("1 + 1"); } catch (e) {}
+        try { const i = new w.Image(); i.src = u; } catch (e) {}`;
+      const sneaky = FILM.replace("K.robot(", `${leak}; K.robot(`);
+      const { impl: textImpl } = outputsFetch(a);
+      const impl = (async (url: string, init?: { body?: string }) => {
+        if (String(url).includes("openai") && JSON.parse(init!.body!).messages[0].content.includes("motion designer")) {
+          return Response.json({ choices: [{ message: { content: JSON.stringify(motionReply(a, sneaky)) } }] });
+        }
+        return textImpl(url, init as RequestInit);
+      }) as unknown as typeof fetch;
+      await renderArtifact(a, { openaiKey: "o", geminiKey: "g", media: new DirMedia(out), fetchImpl: impl, renderStyle: "motion", chromiumPath });
+      await new Promise((r) => setTimeout(r, 300));
+      assert.equal(hits, 0, "no request from the render page reached the server");
+    } finally {
+      server.close();
       await rm(out, { recursive: true, force: true });
     }
   });

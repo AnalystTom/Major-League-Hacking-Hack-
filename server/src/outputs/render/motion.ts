@@ -82,7 +82,7 @@ const SFX = ["pop", "tick", "thud", "whoosh", "swipe", "chime", "coin"] as const
 
 // What a generated program must never reach for: nondeterminism, the network, code loading, or the raw memory and JIT
 // surfaces an exploit would need. Chromium also runs with the network blocked and V8's JIT off.
-const FORBIDDEN = /\b(?:Math\.random|Date|performance|setTimeout|setInterval|requestAnimationFrame|fetch|XMLHttpRequest|WebSocket|EventSource|import|Worker|SharedWorker|WebAssembly|ArrayBuffer|SharedArrayBuffer|DataView|(?:Ui|I)nt(?:8|16|32)Array|Uint8ClampedArray|Float(?:32|64)Array|Big(?:Ui|I)nt64Array|Atomics|document|navigator|location|localStorage|indexedDB|postMessage|opener|globalThis|constructor|__proto__)\b|\b(?:eval|Function)\s*\(|\bnew\s+Function\b|https?:/;
+const FORBIDDEN = /\b(?:Math\.random|Date|performance|setTimeout|setInterval|requestAnimationFrame|fetch|XMLHttpRequest|WebSocket|EventSource|import|Worker|SharedWorker|WebAssembly|ArrayBuffer|SharedArrayBuffer|DataView|(?:Ui|I)nt(?:8|16|32)Array|Uint8ClampedArray|Float(?:32|64)Array|Big(?:Ui|I)nt64Array|Atomics|document|navigator|location|localStorage|indexedDB|postMessage|opener|globalThis|constructor|__proto__)\b|(?<![.\w$"'`])(?:eval|Function)\b(?!\s*:)|https?:/;
 
 const Beat = z.object({
   narration_text: z.string().trim().min(1).max(400),
@@ -150,6 +150,9 @@ const HARNESS = `(() => {
 })();`;
 
 // __name: esbuild (tsx, in dev and tests) wraps functions handed to page.evaluate with it.
+// Function.prototype.constructor is locked before FILM runs. eval can't be removed (Playwright's evaluate uses it), and
+// DevTools-driven calls are exempt from the CSP's eval rule, so checkFilm is only a lint: what contains a program is
+// the browser having no network, no secrets, no JIT, and Chromium's sandbox.
 export function pageHtml(film: string, timeline: { total: number; beats: { start: number; end: number }[] }): string {
   const { kit: k, fonts } = kit();
   // FILM is stored as data and run by the page; "</script" can't end the tag early.
@@ -158,7 +161,7 @@ export function pageHtml(film: string, timeline: { total: number; beats: { start
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; font-src data:; img-src data:; connect-src 'none'; media-src 'none'; worker-src 'none'; frame-src 'none'">
 <style>${fonts}</style>
 <style>html,body{margin:0;width:${W}px;height:${H}px;overflow:hidden;background:#0d0d0d}</style>
-<script>window.__name=(f)=>f;window.TIMELINE=${JSON.stringify(timeline)};${safe(k)}</script></head>
+<script>window.__name=(f)=>f;(()=>{const no=()=>{throw new Error("Function is disabled")};Object.defineProperty(Function.prototype,"constructor",{value:no,writable:false,configurable:false});})();window.TIMELINE=${JSON.stringify(timeline)};${safe(k)}</script></head>
 <body><canvas id="c" width="${W}" height="${H}"></canvas>
 <script>${safe(film)}</script><script>${HARNESS}</script></body></html>`;
 }
