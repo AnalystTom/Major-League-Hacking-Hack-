@@ -8,6 +8,7 @@ import type { IngestedUnit } from "./types.js";
 export interface ProcessorOptions extends IngestOptions {
   openaiKey?: string;
   openaiModel?: string;
+  openaiMaxOutputTokens?: number;
   /** The categorization request for digests; DIGESTION_REQUEST or a built-in default. */
   categorizationRequest?: string;
   /** How long to wait for units another worker is extracting, and how often to check. */
@@ -67,7 +68,7 @@ export async function processUnits(unitIds: string[], o: ProcessorOptions): Prom
     const request = o.categorizationRequest ?? DEFAULT_CATEGORIZATION_REQUEST;
     const toDigest = units.filter((u) => needing.includes(u.id));
     try {
-      const d = await digestAndStore({ apiKey: o.openaiKey, model: o.openaiModel, units: toDigest, request, fetchImpl: o.fetchImpl, store: o.store });
+      const d = await digestAndStore({ apiKey: o.openaiKey, model: o.openaiModel, maxOutputTokens: o.openaiMaxOutputTokens, units: toDigest, request, fetchImpl: o.fetchImpl, store: o.store });
       if (d.storeError) throw new Error(`could not store digest: ${d.storeError}`);
       summary.digested = d.stored?.length ?? 0;
     } catch (e) {
