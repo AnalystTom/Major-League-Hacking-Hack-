@@ -20,9 +20,12 @@
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Processor"] }],
   // Once a day, wake the processor so its sweeps retry pending work. Imports wake it immediately anyway.
   "triggers": { "crons": ["0 9 * * *"] },
+  // WINDOW_SECONDS: read only the first 5 minutes of each video. About $0.12 a short in provider costs,
+  // against about $0.21 at the processor's one-hour default, to keep the whole bill under $10 a month.
   "vars": {
     "R2_BUCKET": "resurface-media",
-    "WEB_ORIGINS": "https://resurface.thomasmann2001.workers.dev"
+    "WEB_ORIGINS": "https://resurface.thomasmann2001.workers.dev",
+    "WINDOW_SECONDS": "300"
   },
   // Secrets, set once with `npx wrangler secret put <NAME>`: GEMINI_API_KEY, OPENAI_API_KEY, INGEST_TOKEN
   // (checked here before waking the container; the web Worker's PROCESSOR_TOKEN must equal it), DATABASE_URL (TigerData), R2_ACCOUNT_ID,
