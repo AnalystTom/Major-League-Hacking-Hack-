@@ -15,8 +15,13 @@ export interface Store {
   claimPendingUnits(ids?: string[], limit?: number): Promise<IngestedUnit[]>;
   /** Pending units that some user has imported (dev-route units nobody imported are left alone). */
   listPendingUnitIds(limit: number): Promise<string[]>;
-  /** Ready imported units with no digest or exclusion yet, after fewer than MAX_DIGEST_ATTEMPTS failed digests. */
-  listUnitsNeedingDigest(limit: number): Promise<string[]>;
+  /**
+   * Ready imported units, each with an importer who can't see a digest of it yet (none exists, or every one also
+   * uses videos that person didn't import), after fewer than MAX_DIGEST_ATTEMPTS failed digests.
+   */
+  listUnitsNeedingDigest(limit: number): Promise<{ unitId: string; userId: string | null }[]>;
+  /** The user behind each unit's newest import, so the sweep never digests different people's videos together. */
+  newestImporters(unitIds: string[]): Promise<Map<string, string>>;
   /** Of these ready units, the ones with no non-failed artifact and no exclusion yet. Digests are shared by everyone. */
   unitsNeedingDigest(unitIds: string[]): Promise<string[]>;
   /** Returns the id of the digestion_prompts revision for this exact text + few-shot set, creating the next revision if new. */
@@ -54,8 +59,10 @@ export class MemoryStore implements Store {
   async listUnitsNeedingDigest(limit: number) {
     const ids = [...this.units.values()].filter((u) => this.imported.has(u.id)).map((u) => u.id);
     const failures = (id: string) => this.artifacts.filter((a) => a.source_ids.includes(id) && a.ingestion_status === "failed").length;
-    return (await this.unitsNeedingDigest(ids)).filter((id) => failures(id) < MAX_DIGEST_ATTEMPTS).slice(0, limit);
+    return (await this.unitsNeedingDigest(ids)).filter((id) => failures(id) < MAX_DIGEST_ATTEMPTS).slice(0, limit)
+      .map((unitId) => ({ unitId, userId: null }));
   }
+  async newestImporters() { return new Map<string, string>(); }
   async unitsNeedingDigest(unitIds: string[]) {
     return unitIds.filter((id) => this.units.get(id)?.status === "ready"
       && !this.artifacts.some((a) => a.source_ids.includes(id) && a.ingestion_status !== "failed")
@@ -111,6 +118,12 @@ const ARTIFACT_RETURNING = "id, version, source_url, sources, ingestion_status, 
 // Needs claimed_at from db/migrations/005_outputs.sql. A claim older than this belongs to a processor that died.
 const CLAIMABLE = `(status = 'pending' OR (status = 'running' AND (claimed_at IS NULL OR claimed_at < now() - interval '20 minutes')))`;
 
+// A user sees an artifact only when they imported every video it was built from (web/src/feed.js and skills.js),
+// so a digest never shows one person's videos to another. This is "no visible digest of u for that user".
+const UNSEEN_BY = (user: string) => `NOT EXISTS (
+  SELECT 1 FROM artifacts a WHERE u.id = ANY (a.source_ids) AND a.ingestion_status <> 'failed'
+    AND a.source_ids <@ ARRAY(SELECT x.unit_id FROM user_imports x WHERE x.user_id = ${user}))`;
+
 export class PgStore implements Store {
   private pool: pg.Pool;
   constructor(pool: pg.Pool) { this.pool = pool; }
@@ -153,21 +166,29 @@ export class PgStore implements Store {
 
   async listUnitsNeedingDigest(limit: number) {
     const { rows } = await this.pool.query(
-      `SELECT u.id FROM ingested_units u
-       WHERE u.status = 'ready' AND EXISTS (SELECT 1 FROM user_imports ui WHERE ui.unit_id = u.id)
-         AND NOT EXISTS (SELECT 1 FROM artifacts a WHERE u.id = ANY (a.source_ids) AND a.ingestion_status <> 'failed')
+      `SELECT DISTINCT ON (u.id) u.id, ui.user_id FROM ingested_units u JOIN user_imports ui ON ui.unit_id = u.id
+       WHERE u.status = 'ready' AND ${UNSEEN_BY("ui.user_id")}
          AND NOT EXISTS (SELECT 1 FROM artifact_exclusions e WHERE e.unit_id = u.id)
          AND (SELECT count(*) FROM artifacts a WHERE u.id = ANY (a.source_ids) AND a.ingestion_status = 'failed') < $2
-       ORDER BY u.created_at LIMIT $1`, [limit, MAX_DIGEST_ATTEMPTS]);
-    return rows.map((r) => r.id as string);
+       ORDER BY u.id, ui.created_at DESC LIMIT $1`, [limit, MAX_DIGEST_ATTEMPTS]);
+    return rows.map((r) => ({ unitId: r.id as string, userId: r.user_id as string }));
   }
 
+  async newestImporters(unitIds: string[]) {
+    const { rows } = await this.pool.query(
+      `SELECT DISTINCT ON (unit_id) unit_id, user_id FROM user_imports WHERE unit_id = ANY($1::uuid[]) ORDER BY unit_id, created_at DESC`, [unitIds]);
+    return new Map(rows.map((r) => [r.unit_id as string, r.user_id as string]));
+  }
+
+  // A unit needs a digest while someone who imported it can't see one; with no importer (CLI), while none exists.
   async unitsNeedingDigest(unitIds: string[]) {
     const { rows } = await this.pool.query(
       `SELECT u.id FROM ingested_units u
        WHERE u.id = ANY($1::uuid[]) AND u.status = 'ready'
-         AND NOT EXISTS (SELECT 1 FROM artifacts a WHERE u.id = ANY (a.source_ids) AND a.ingestion_status <> 'failed')
-         AND NOT EXISTS (SELECT 1 FROM artifact_exclusions e WHERE e.unit_id = u.id)`,
+         AND NOT EXISTS (SELECT 1 FROM artifact_exclusions e WHERE e.unit_id = u.id)
+         AND (EXISTS (SELECT 1 FROM user_imports ui WHERE ui.unit_id = u.id AND ${UNSEEN_BY("ui.user_id")})
+              OR (NOT EXISTS (SELECT 1 FROM user_imports ui WHERE ui.unit_id = u.id)
+                  AND NOT EXISTS (SELECT 1 FROM artifacts a WHERE u.id = ANY (a.source_ids) AND a.ingestion_status <> 'failed')))`,
       [unitIds]);
     return rows.map((r) => r.id as string);
   }

@@ -72,6 +72,12 @@ export async function processUnits(unitIds: string[], o: ProcessorOptions): Prom
       const d = await digestAndStore({ apiKey: o.openaiKey, model: o.openaiModel, units: toDigest, request, fetchImpl: o.fetchImpl, store: o.store });
       if (d.storeError) throw new Error(`could not store digest: ${d.storeError}`);
       summary.digested = d.stored?.length ?? 0;
+      // A video the digest neither used nor excluded would otherwise be retried forever; record that plainly.
+      const used = new Set([...d.result.artifacts.flatMap((a) => a.source_ids), ...d.result.exclusions.map((e) => e.unit_id)]);
+      const unaccounted = needing.filter((id) => !used.has(id));
+      if (unaccounted.length && d.promptId) {
+        await o.store.saveArtifacts([], unaccounted.map((unit_id) => ({ unit_id, reason: "The Digestion Prompt didn't use this video and gave no reason." })), d.promptId);
+      }
       const ready = (d.stored ?? []).filter((a) => a.ingestion_status === "ready");
       if (ready.length && o.onArtifacts) o.onArtifacts(ready).catch((e: Error) => o.log?.(`outputs failed: ${e.message}`));
     } catch (e) {
@@ -87,14 +93,23 @@ export async function processUnits(unitIds: string[], o: ProcessorOptions): Prom
 
 /**
  * One sweep: pending units that someone imported and no request picked up (or whose processor died), and ready
- * units whose digest never happened or failed, up to MAX_DIGEST_ATTEMPTS.
+ * units someone imported but can't see a digest of yet (never digested, failed up to MAX_DIGEST_ATTEMPTS, or only
+ * digested together with videos they didn't import).
  */
 export async function sweepOnce(o: ProcessorOptions, limit = 20): Promise<number> {
+  // One batch per person: a digest can combine videos, and it must only combine one person's.
+  const groups = new Map<string, Set<string>>();
+  const add = (user: string | null | undefined, id: string) => (groups.get(user ?? "") ?? groups.set(user ?? "", new Set()).get(user ?? "")!).add(id);
   const pending = await o.store.listPendingUnitIds(limit);
-  const undigested = o.openaiKey ? await o.store.listUnitsNeedingDigest(limit) : [];
-  const ids = [...new Set([...pending, ...undigested])];
-  if (ids.length) await processUnits(ids, o);
-  return ids.length;
+  const owners = await o.store.newestImporters(pending);
+  for (const id of pending) add(owners.get(id), id);
+  if (o.openaiKey) for (const { unitId, userId } of await o.store.listUnitsNeedingDigest(limit)) add(userId, unitId);
+  let n = 0;
+  for (const ids of groups.values()) {
+    n += ids.size;
+    await processUnits([...ids], o);
+  }
+  return n;
 }
 
 /** Runs sweepOnce on a timer (skipping a tick while one is still running). Returns a stop function. */

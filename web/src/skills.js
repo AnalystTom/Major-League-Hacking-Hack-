@@ -2,7 +2,8 @@
 // is separate from the video: a skill can be ready while its short is still rendering, or after it failed.
 
 /**
- * The newest skill result per ready artifact revision built from these units, newest artifact first, with its
+ * The newest skill result per ready artifact revision built only from these units (all of the user's imports),
+ * newest artifact first, with its
  * tasks in order and the contributing videos (so tasks can link their evidence to the right moment).
  */
 export async function readSkills(sql, unitIds) {
@@ -26,7 +27,8 @@ export async function readSkills(sql, unitIds) {
       FROM artifacts a
       JOIN skill_results s ON s.artifact_id = a.id AND s.artifact_version = a.version
       WHERE a.ingestion_status = 'ready'
-        AND a.source_ids && string_to_array(${list}::text, ',')::uuid[]
+        -- Only digests built entirely from this user's videos: a shared digest never shows another person's imports.
+        AND a.source_ids <@ string_to_array(${list}::text, ',')::uuid[]
       ORDER BY a.id, a.version, s.created_at DESC, s.id DESC
     ) newest
     ORDER BY created_at DESC, artifact_id`;

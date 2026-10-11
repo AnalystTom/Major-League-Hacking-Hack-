@@ -24,7 +24,7 @@ test("outputs, stale claims and digest retries against the shared schema", { ski
       await pool.query(`INSERT INTO user_imports (user_id, unit_id) VALUES ($1, $2)`, [made.user, id]);
       return id;
     };
-    made.prompt = (await pool.query(`INSERT INTO digestion_prompts (revision, prompt_text) VALUES ((SELECT coalesce(max(revision),0)+1 FROM digestion_prompts), $1) RETURNING id`, [`t-${randomUUID()}`])).rows[0].id;
+    made.prompt = (await pool.query(`INSERT INTO digestion_prompts (name, revision, prompt_text) VALUES ($1, 1, $1) RETURNING id`, [`test-${randomUUID()}`])).rows[0].id;
 
     // A unit its processor abandoned mid-extraction is claimable again; a fresh claim is not.
     const stale = await unit("running", "now() - interval '1 hour'");
@@ -36,9 +36,9 @@ test("outputs, stale claims and digest retries against the shared schema", { ski
 
     // A ready unit with no digest is retried until it has failed MAX_DIGEST_ATTEMPTS times.
     const ready = await unit("ready");
-    assert.ok((await store.listUnitsNeedingDigest(500)).includes(ready));
+    assert.ok((await store.listUnitsNeedingDigest(500)).some((r) => r.unitId === ready));
     for (let i = 0; i < 3; i++) await store.saveFailedArtifacts([ready], "boom", made.prompt);
-    assert.ok(!(await store.listUnitsNeedingDigest(500)).includes(ready));
+    assert.ok(!(await store.listUnitsNeedingDigest(500)).some((r) => r.unitId === ready));
 
     // A ready artifact gets exactly one skill and one video row; both settle with their content.
     const a = (await pool.query(
@@ -81,6 +81,43 @@ test("outputs, stale claims and digest retries against the shared schema", { ski
     await pool.query(`DELETE FROM ingested_units WHERE id = ANY($1::uuid[])`, [made.units]);
     await pool.query(`DELETE FROM users WHERE id = $1`, [made.user]);
     if (made.prompt) await pool.query(`DELETE FROM digestion_prompts WHERE id = $1`, [made.prompt]);
+    await pool.end();
+  }
+});
+
+test("a digest that also uses someone else's video doesn't count for a person who didn't import it", { skip: !url && "TEST_DATABASE_URL not set" }, async () => {
+  const pool = new pg.Pool({ connectionString: url });
+  const store = new PgStore(pool);
+  const users: string[] = [], units: string[] = [];
+  let prompt = "";
+  try {
+    for (const who of ["a", "b"]) users.push((await pool.query(`INSERT INTO users (email, password_hash) VALUES ($1, 'x') RETURNING id`, [`${who}-${randomUUID()}@example.com`])).rows[0].id);
+    const [a, b] = users;
+    const ready = async () => {
+      const id = (await pool.query(`INSERT INTO ingested_units (submitted_url, source_url, status, transcript) VALUES ('u', 'https://www.youtube.com/watch?v=VQy50fuxI34', 'ready', '{"window":[0,300]}') RETURNING id`)).rows[0].id as string;
+      units.push(id);
+      return id;
+    };
+    const shared = await ready(), onlyA = await ready();
+    await pool.query(`INSERT INTO user_imports (user_id, unit_id, created_at) VALUES ($1, $2, now() - interval '1 hour'), ($1, $3, now() - interval '1 hour'), ($4, $2, now())`, [a, shared, onlyA, b]);
+    prompt = (await pool.query(`INSERT INTO digestion_prompts (name, revision, prompt_text) VALUES ($1, 1, $1) RETURNING id`, [`test-${randomUUID()}`])).rows[0].id;
+
+    // A's digest combined both of A's videos. B imported only the shared one, so it doesn't count for B.
+    await pool.query(`INSERT INTO artifacts (name, source_url, source_ids, processed_text, digestion_prompt_id, ingestion_status) VALUES ('combined', 'x', $1, 't', $2, 'ready')`, [[shared, onlyA], prompt]);
+    assert.deepEqual(await store.unitsNeedingDigest([shared, onlyA]), [shared]);
+    const listed = (await store.listUnitsNeedingDigest(500)).filter((r) => units.includes(r.unitId));
+    assert.deepEqual(listed, [{ unitId: shared, userId: b }], "the sweep digests it in B's own batch");
+    assert.equal((await store.newestImporters([shared])).get(shared), b);
+
+    // Once there's a digest of the shared video alone, everyone who imported it can see one.
+    await pool.query(`INSERT INTO artifacts (name, source_url, source_ids, processed_text, digestion_prompt_id, ingestion_status) VALUES ('alone', 'x', $1, 't', $2, 'ready')`, [[shared], prompt]);
+    assert.deepEqual(await store.unitsNeedingDigest([shared, onlyA]), []);
+  } finally {
+    await pool.query(`DELETE FROM artifacts WHERE source_ids && $1::uuid[]`, [units]);
+    await pool.query(`DELETE FROM user_imports WHERE user_id = ANY($1::uuid[])`, [users]);
+    await pool.query(`DELETE FROM ingested_units WHERE id = ANY($1::uuid[])`, [units]);
+    await pool.query(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [users]);
+    if (prompt) await pool.query(`DELETE FROM digestion_prompts WHERE id = $1`, [prompt]);
     await pool.end();
   }
 });

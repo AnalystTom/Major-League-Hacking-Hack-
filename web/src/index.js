@@ -80,7 +80,7 @@ async function startImport(request, env, sql, user) {
   }
   const units = await createUnits(sql, parsed.value.links, { userId: user.id });
   const processor = await requestProcessing(env, units.filter((u) => u.linked).map((u) => u.id));
-  return json({ units: await readUnits(sql, units.map((u) => u.id)), processor }, 201);
+  return json({ units: await readUnits(sql, units.map((u) => u.id), await userUnitIds(sql, user.id)), processor }, 201);
 }
 
 async function api(request, env, url, sql) {

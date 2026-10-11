@@ -32,12 +32,14 @@ export class R2Media implements MediaStore {
 
 /**
  * Local development: writes into the web Worker's local R2 simulation with `wrangler r2 object put --local`,
- * the same store `npm run dev` in web/ serves /media/ from. MEDIA_LOCAL_WEB_DIR points at web/.
+ * the same store `npm run dev` in web/ serves /media/ from. MEDIA_LOCAL_WEB_DIR points at web/; set
+ * MEDIA_LOCAL_PERSIST_TO when that dev server runs with --persist-to.
  */
 export class WranglerLocalMedia implements MediaStore {
-  constructor(private o: { webDir: string; bucket: string }) {}
+  constructor(private o: { webDir: string; bucket: string; persistTo?: string }) {}
   private wrangler(args: string[]) {
-    return run(join(this.o.webDir, "node_modules", ".bin", "wrangler"), [...args, "--local"], { cwd: this.o.webDir, timeoutMs: 120_000 });
+    const persist = this.o.persistTo ? ["--persist-to", this.o.persistTo] : [];
+    return run(join(this.o.webDir, "node_modules", ".bin", "wrangler"), [...args, "--local", ...persist], { cwd: this.o.webDir, timeoutMs: 120_000 });
   }
   async put(key: string, file: string, contentType: string) {
     await this.wrangler(["r2", "object", "put", `${this.o.bucket}/${key}`, "--file", file, "--content-type", contentType]);
@@ -58,6 +60,6 @@ export function mediaFromEnv(env: NodeJS.ProcessEnv = process.env): MediaStore |
   if (env.R2_ACCOUNT_ID && env.R2_ACCESS_KEY_ID && env.R2_SECRET_ACCESS_KEY) {
     return new R2Media({ accountId: env.R2_ACCOUNT_ID, accessKeyId: env.R2_ACCESS_KEY_ID, secretAccessKey: env.R2_SECRET_ACCESS_KEY, bucket });
   }
-  if (env.MEDIA_LOCAL_WEB_DIR) return new WranglerLocalMedia({ webDir: env.MEDIA_LOCAL_WEB_DIR, bucket });
+  if (env.MEDIA_LOCAL_WEB_DIR) return new WranglerLocalMedia({ webDir: env.MEDIA_LOCAL_WEB_DIR, bucket, persistTo: env.MEDIA_LOCAL_PERSIST_TO });
   return null;
 }
