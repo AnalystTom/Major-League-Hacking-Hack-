@@ -1,0 +1,87 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { frontmatter, serializeSkill } from "../src/skills.js";
+import { evidenceLink, skillFile, skillSlug, taskPrompt } from "../public/agents.js";
+import { followImports } from "../public/units.js";
+
+const UNIT = "6f1c2a52-8d0e-4f3b-9a51-0c6d2e7b9a10";
+const MD = `---\nname: verify-before-done\ndescription: "Make the agent prove a change: \\"red\\" first."\n---\n\n# Verify before done\n\n## Sources\n\n- [Evals](https://www.youtube.com/watch?v=VQy50fuxI34)\n`;
+
+const row = (over = {}) => ({
+  id: "s1", status: "ready", error: null, skill_markdown: MD,
+  artifact_id: "a1", artifact_version: 2, artifact_name: "Write the check first", category: "Evals",
+  videos: [{ id: UNIT, url: "https://www.youtube.com/watch?v=VQy50fuxI34", title: "Evals talk" }, { id: "x", url: "javascript:alert(1)", title: "bad" }],
+  action_items: [{
+    id: "t1", task: "Add a failing test", prerequisites: ["A test runner"], steps: ["Inspect the test setup", "Write the test"],
+    completion_check: "It fails before and passes after.", source_refs: [UNIT],
+    evidence: [{ source_id: UNIT, passage: "write the failing test first", start_seconds: 95, end_seconds: 130 }],
+  }],
+  ...over,
+});
+
+test("frontmatter reads name and a quoted description", () => {
+  assert.deepEqual(frontmatter(MD), { name: "verify-before-done", description: 'Make the agent prove a change: "red" first.' });
+  assert.deepEqual(frontmatter("no frontmatter"), { name: null, description: null });
+});
+
+test("a ready skill carries its markdown, tasks and only real YouTube sources", () => {
+  const s = serializeSkill(row());
+  assert.equal(s.name, "verify-before-done");
+  assert.deepEqual(s.artifact, { id: "a1", version: 2, name: "Write the check first", category: "Evals" });
+  assert.equal(s.videos.length, 1);
+  assert.equal(s.action_items[0].evidence[0].start_seconds, 95);
+});
+
+test("a skill that isn't ready shows no markdown or tasks, and only a failure shows its error", () => {
+  const running = serializeSkill(row({ status: "running", error: "stale" }));
+  assert.equal(running.markdown, null);
+  assert.deepEqual(running.action_items, []);
+  assert.equal(running.error, null);
+  assert.equal(serializeSkill(row({ status: "failed", error: "OpenAI HTTP 500", skill_markdown: null })).error, "OpenAI HTTP 500");
+});
+
+test("each agent gets its own path; Cursor gets rule frontmatter", () => {
+  const s = serializeSkill(row());
+  assert.equal(skillFile(s, "claude-code").path, ".claude/skills/verify-before-done/SKILL.md");
+  assert.equal(skillFile(s, "codex").path, ".agents/skills/verify-before-done/SKILL.md");
+  assert.equal(skillFile(s, "hermes").path, "~/.hermes/skills/verify-before-done/SKILL.md");
+  const cursor = skillFile(s, "cursor");
+  assert.equal(cursor.path, ".cursor/rules/verify-before-done.mdc");
+  assert.match(cursor.content, /^---\ndescription: "Make the agent prove a change: \\"red\\" first\."\nalwaysApply: false\n---\n\n# Verify before done/);
+  assert.equal(skillFile(s, "unknown").path, ".claude/skills/verify-before-done/SKILL.md");
+  assert.equal(skillSlug({ id: "1234567890", name: "../etc" }), "resurface-skill-12345678");
+});
+
+test("a task prompt says what to do, why, how it's checked, and links the moment in the video", () => {
+  const s = serializeSkill(row());
+  const text = taskPrompt(s.action_items[0], s, "codex");
+  assert.match(text, /^Task from Resurface: Add a failing test/);
+  assert.match(text, /Skill: \.agents\/skills\/verify-before-done\/SKILL\.md/);
+  assert.match(text, /"write the failing test first" \(Evals talk, 1:35–2:10: https:\/\/www\.youtube\.com\/watch\?v=VQy50fuxI34&t=95s\)/);
+  assert.match(text, /inspect this repository/);
+  assert.match(text, /Steps:\n1\. Inspect the test setup\n2\. Write the test/);
+  assert.match(text, /Done when: It fails before and passes after\./);
+  assert.equal(evidenceLink({ source_id: "nope", passage: "p", start_seconds: null, end_seconds: null }, []), null);
+});
+
+test("polling keeps going while a skill is still being written after its short is ready", async (t) => {
+  let skillCalls = 0;
+  t.mock.method(globalThis, "fetch", async (url) => {
+    if (url === "/api/imports") return Response.json({ units: [{ stage: "ready", settled: true }] });
+    if (url === "/api/feed?scope=mine") return Response.json({ items: [] });
+    skillCalls++;
+    return Response.json({ skills: [{ status: skillCalls === 1 ? "running" : "ready" }] });
+  });
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  globalThis.document = { hidden: false };
+  t.after(() => delete globalThis.document);
+  const seen = [];
+  let resolveSecond;
+  const second = new Promise((r) => (resolveSecond = r));
+  followImports({ onUnits: () => {}, onItems: () => {}, onSkills: (s) => { seen.push(s[0].status); if (seen.length === 2) resolveSecond(); } });
+  for (let i = 0; i < 20 && seen.length < 1; i++) await new Promise((r) => setImmediate(r));
+  assert.deepEqual(seen, ["running"]);
+  t.mock.timers.tick(4000);
+  await second;
+  assert.deepEqual(seen, ["running", "ready"]);
+});

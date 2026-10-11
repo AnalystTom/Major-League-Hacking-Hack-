@@ -6,6 +6,7 @@ import { renderArtifact } from "./render/render.js";
 import type { MediaStore } from "./render/media.js";
 import type { Kind, OutputStore } from "./store.js";
 import type { ReadyArtifact } from "./types.js";
+import type { StoredArtifact } from "../ingest/types.js";
 
 export interface OutputOptions {
   outputs: OutputStore;
@@ -74,4 +75,30 @@ export async function sweepOutputs(o: OutputOptions, limit = 10): Promise<number
     ...videos.map((a) => queueRender(a, o)),
   ]);
   return skills.length + videos.length;
+}
+
+/** The digest's stored artifact in the shape the outputs read. */
+export const toReadyArtifact = (a: StoredArtifact): ReadyArtifact => ({
+  id: a.id, version: a.version, name: a.name, category: a.category || null, processed_text: a.processed_text,
+  selection_reason: a.selection_reason || null, source_ids: a.source_ids,
+  sources: a.sources.map((s) => ({ url: s.url, title: s.title ?? null })), evidence: a.evidence,
+});
+
+/** Runs sweepOutputs on a timer, skipping a tick while one is still running. Returns a stop function. */
+export function startOutputSweep(o: OutputOptions, intervalMs = 60_000): () => void {
+  let running = false;
+  const timer = setInterval(async () => {
+    if (running) return;
+    running = true;
+    try {
+      const n = await sweepOutputs(o);
+      if (n) o.log?.(`output sweep handled ${n} artifact output(s)`);
+    } catch (e) {
+      o.log?.(`output sweep failed: ${(e as Error).message}`);
+    } finally {
+      running = false;
+    }
+  }, intervalMs);
+  timer.unref();
+  return () => clearInterval(timer);
 }

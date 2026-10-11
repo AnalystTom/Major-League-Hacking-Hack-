@@ -49,11 +49,13 @@ export function renderUnits(list, units) {
   );
 }
 
+const writing = (s) => s.status === "pending" || s.status === "running";
+
 /**
- * Polls the user's imports and shorts every 4 s while something is moving,
- * and not at all once everything has settled.
+ * Polls the user's imports and shorts (and skills, with onSkills) every 4 s while something is moving,
+ * and not at all once everything has settled. A skill can still be writing after its short is ready.
  */
-export function followImports({ onUnits, onItems, onError }) {
+export function followImports({ onUnits, onItems, onSkills, onError }) {
   let timer = null;
   async function refresh() {
     clearTimeout(timer);
@@ -61,9 +63,11 @@ export function followImports({ onUnits, onItems, onError }) {
       // Read the feed after progress so a final ready update cannot stop polling before its clip arrives.
       const { units } = await api("/api/imports");
       const { items } = await api("/api/feed?scope=mine");
+      const { skills } = onSkills ? await api("/api/skills") : { skills: [] };
       onUnits(units);
       onItems(items);
-      const waiting = units.some((u) => !u.settled);
+      onSkills?.(skills);
+      const waiting = units.some((u) => !u.settled) || skills.some(writing);
       const delay = waiting ? POLL_MS : null;
       if (delay) timer = setTimeout(refresh, document.hidden ? delay * 4 : delay);
     } catch (err) {

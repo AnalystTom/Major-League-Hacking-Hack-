@@ -2,10 +2,14 @@
 
 import { serve } from "@hono/node-server";
 import pg from "pg";
+import type { StoredArtifact } from "./ingest/types.js";
 import { createApp, parseOrigins } from "./app.js";
 import { createIngestApp } from "./ingest/api.js";
 import { startSweep } from "./ingest/processor.js";
 import { MemoryStore, PgStore } from "./ingest/store.js";
+import { mediaFromEnv } from "./outputs/render/media.js";
+import { produceOutputs, startOutputSweep, toReadyArtifact } from "./outputs/run.js";
+import { MemoryOutputStore, PgOutputStore } from "./outputs/store.js";
 
 const app = createApp({ webOrigins: parseOrigins(process.env.WEB_ORIGINS) });
 
@@ -28,9 +32,27 @@ if (process.env.GEMINI_API_KEY) {
     store: pool ? new PgStore(pool) : new MemoryStore(),
     log: (m: string) => console.log(`[ingest] ${m}`),
   };
-  app.route("/api/ingest", createIngestApp(options));
-  if (pool) startSweep(options, Number(process.env.SWEEP_INTERVAL_MS ?? 60_000));
-  console.log(`Ingestion mounted at /api/ingest (${pool ? "Postgres, sweeping pending units" : "in-memory"})`);
+  // Each ready artifact gets a skill with tasks and a rendered short (src/outputs). Renders need ffmpeg on
+  // this host and media storage: R2_* for the bucket, or MEDIA_LOCAL_WEB_DIR for local wrangler dev.
+  const outputs = {
+    outputs: pool ? new PgOutputStore(pool) : new MemoryOutputStore(),
+    openaiKey: options.openaiKey,
+    openaiModel: options.openaiModel,
+    geminiKey: options.geminiKey,
+    ttsModel: process.env.GEMINI_TTS_MODEL,
+    ttsVoice: process.env.GEMINI_TTS_VOICE,
+    media: mediaFromEnv(),
+    log: (m: string) => console.log(`[outputs] ${m}`),
+  };
+  const processor = { ...options, onArtifacts: (a: StoredArtifact[]) => produceOutputs(a.map(toReadyArtifact), outputs) };
+  app.route("/api/ingest", createIngestApp(processor));
+  const interval = Number(process.env.SWEEP_INTERVAL_MS ?? 60_000);
+  if (pool) {
+    startSweep(processor, interval);
+    startOutputSweep(outputs, interval);
+  }
+  console.log(`Ingestion mounted at /api/ingest (${pool ? "Postgres, sweeping pending units and outputs" : "in-memory"}); ` +
+    `media: ${outputs.media ? outputs.media.constructor.name : "not configured, renders will fail with that reason"}`);
 }
 
 const port = Number(process.env.PORT ?? 3000);

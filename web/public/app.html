@@ -33,7 +33,15 @@
   <main class="home" data-home>
     <p class="onboard-loading" data-loading>Loading your feed…</p>
 
-    <div class="home-grid" data-home-body hidden>
+    <div data-home-body hidden>
+    <nav class="journey" aria-label="Your Resurface steps">
+      <a href="#links-title" data-step="saved"><span>Saved</span><b data-count></b></a>
+      <a href="#feed-title" data-step="reel"><span>Reel</span><b data-count></b></a>
+      <a href="#skills-title" data-step="skills"><span>Skills</span><b data-count></b></a>
+      <a href="#tasks-title" data-step="tasks"><span>Tasks</span><b data-count></b></a>
+    </nav>
+
+    <div class="home-grid">
       <div class="home-side">
         <section class="home-head" aria-labelledby="home-title">
           <h1 id="home-title" data-home-title>Your shorts</h1>
@@ -64,6 +72,34 @@
           <p>Each one shows up as soon as it's rendered. The list on the left shows where every link is.</p>
         </div>
       </section>
+    </div>
+
+    <section class="journey-section" aria-labelledby="skills-title" data-skills-section hidden>
+      <div class="journey-section-head">
+        <div>
+          <h2 id="skills-title">Skills</h2>
+          <p class="hint">What each short teaches, written as a skill your coding agent reads. Add it to your repo at the path shown.</p>
+        </div>
+        <label class="agent-pick">Install for
+          <select data-agent></select>
+        </label>
+      </div>
+      <p class="form-status" role="status" aria-live="polite" data-skills-status></p>
+      <ol class="skills" data-skills></ol>
+      <p class="journey-empty" data-skills-empty>Skills show up here as each video is digested, usually before its short finishes rendering.</p>
+    </section>
+
+    <section class="journey-section" aria-labelledby="tasks-title" data-tasks-section hidden>
+      <div class="journey-section-head">
+        <div>
+          <h2 id="tasks-title">Tasks</h2>
+          <p class="hint">Concrete changes from those skills, ready to paste into your agent. Each one is done when its check passes.</p>
+        </div>
+      </div>
+      <p class="form-status" role="status" aria-live="polite" data-tasks-status></p>
+      <ol class="tasks" data-tasks></ol>
+      <p class="journey-empty" data-tasks-empty>Tasks come from ready skills. A skill gets up to three, or none when its sources don't support one.</p>
+    </section>
     </div>
   </main>
 

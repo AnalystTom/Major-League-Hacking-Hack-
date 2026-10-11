@@ -3,7 +3,7 @@
 
 import { digestAndStore, extractUnit, type IngestOptions } from "./pipeline.js";
 import { DEFAULT_CATEGORIZATION_REQUEST, promptRevisionText } from "./digest/prompt.js";
-import type { IngestedUnit } from "./types.js";
+import type { IngestedUnit, StoredArtifact } from "./types.js";
 
 export interface ProcessorOptions extends IngestOptions {
   openaiKey?: string;
@@ -14,6 +14,8 @@ export interface ProcessorOptions extends IngestOptions {
   waitTimeoutMs?: number;
   pollMs?: number;
   log?: (msg: string) => void;
+  /** Called with each new ready artifact set, without waiting: the skill and short are made from these. */
+  onArtifacts?: (artifacts: StoredArtifact[]) => Promise<void>;
 }
 
 export interface ProcessSummary {
@@ -70,6 +72,8 @@ export async function processUnits(unitIds: string[], o: ProcessorOptions): Prom
       const d = await digestAndStore({ apiKey: o.openaiKey, model: o.openaiModel, units: toDigest, request, fetchImpl: o.fetchImpl, store: o.store });
       if (d.storeError) throw new Error(`could not store digest: ${d.storeError}`);
       summary.digested = d.stored?.length ?? 0;
+      const ready = (d.stored ?? []).filter((a) => a.ingestion_status === "ready");
+      if (ready.length && o.onArtifacts) o.onArtifacts(ready).catch((e: Error) => o.log?.(`outputs failed: ${e.message}`));
     } catch (e) {
       const promptId = await o.store.registerPrompt(promptRevisionText(request), []).catch(() => null);
       await o.store.saveFailedArtifacts(needing, (e as Error).message, promptId);
@@ -81,9 +85,14 @@ export async function processUnits(unitIds: string[], o: ProcessorOptions): Prom
   return summary;
 }
 
-/** One sweep: pending units that someone imported and no request has picked up yet. */
+/**
+ * One sweep: pending units that someone imported and no request picked up (or whose processor died), and ready
+ * units whose digest never happened or failed, up to MAX_DIGEST_ATTEMPTS.
+ */
 export async function sweepOnce(o: ProcessorOptions, limit = 20): Promise<number> {
-  const ids = await o.store.listPendingUnitIds(limit);
+  const pending = await o.store.listPendingUnitIds(limit);
+  const undigested = o.openaiKey ? await o.store.listUnitsNeedingDigest(limit) : [];
+  const ids = [...new Set([...pending, ...undigested])];
   if (ids.length) await processUnits(ids, o);
   return ids.length;
 }

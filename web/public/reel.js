@@ -121,6 +121,10 @@ export function createReel(root) {
           soundBtn,
           el("button", { type: "button", class: "reel-btn", "aria-expanded": "false", text: "View sources",
             onclick: (e) => { sheet.hidden = !sheet.hidden; e.currentTarget.setAttribute("aria-expanded", String(!sheet.hidden)); } }),
+          // The skill and its tasks sit below the reel; only a ready skill gets a way there.
+          item.skill?.status === "ready"
+            ? el("a", { class: "reel-btn", href: `#skill-${item.id}-${item.version}`, text: "View skill & tasks" })
+            : null,
           el("button", { type: "button", class: "reel-btn", text: "Skip", onclick: () => go(1) })
         )
       )

@@ -4,6 +4,9 @@ import type { DigestArtifact, IngestedUnit, StoredArtifact } from "./types.js";
 
 type Exclusion = { unit_id: string; reason: string };
 
+/** Failed digests per unit before the sweep stops retrying it; the unit keeps showing the last error. */
+export const MAX_DIGEST_ATTEMPTS = 3;
+
 export interface Store {
   saveUnit(unit: IngestedUnit): Promise<void>;
   getUnits(ids: string[]): Promise<IngestedUnit[]>;
@@ -12,6 +15,8 @@ export interface Store {
   claimPendingUnits(ids?: string[], limit?: number): Promise<IngestedUnit[]>;
   /** Pending units that some user has imported (dev-route units nobody imported are left alone). */
   listPendingUnitIds(limit: number): Promise<string[]>;
+  /** Ready imported units with no digest or exclusion yet, after fewer than MAX_DIGEST_ATTEMPTS failed digests. */
+  listUnitsNeedingDigest(limit: number): Promise<string[]>;
   /** Of these ready units, the ones with no non-failed artifact and no exclusion yet. Digests are shared by everyone. */
   unitsNeedingDigest(unitIds: string[]): Promise<string[]>;
   /** Returns the id of the digestion_prompts revision for this exact text + few-shot set, creating the next revision if new. */
@@ -45,6 +50,11 @@ export class MemoryStore implements Store {
   }
   async listPendingUnitIds(limit: number) {
     return [...this.units.values()].filter((u) => u.status === "pending" && this.imported.has(u.id)).slice(0, limit).map((u) => u.id);
+  }
+  async listUnitsNeedingDigest(limit: number) {
+    const ids = [...this.units.values()].filter((u) => this.imported.has(u.id)).map((u) => u.id);
+    const failures = (id: string) => this.artifacts.filter((a) => a.source_ids.includes(id) && a.ingestion_status === "failed").length;
+    return (await this.unitsNeedingDigest(ids)).filter((id) => failures(id) < MAX_DIGEST_ATTEMPTS).slice(0, limit);
   }
   async unitsNeedingDigest(unitIds: string[]) {
     return unitIds.filter((id) => this.units.get(id)?.status === "ready"
@@ -98,6 +108,9 @@ function rowToUnit(r: any): IngestedUnit {
 const ARTIFACT_RETURNING = "id, version, source_url, sources, ingestion_status, review_status, digestion_prompt_id, project_context_id, project_context_version, error";
 
 /** Writes to the shared TigerData schema (db/migrations). Workflow 1 owns these tables only. */
+// Needs claimed_at from db/migrations/005_outputs.sql. A claim older than this belongs to a processor that died.
+const CLAIMABLE = `(status = 'pending' OR (status = 'running' AND (claimed_at IS NULL OR claimed_at < now() - interval '20 minutes')))`;
+
 export class PgStore implements Store {
   private pool: pg.Pool;
   constructor(pool: pg.Pool) { this.pool = pool; }
@@ -121,10 +134,11 @@ export class PgStore implements Store {
     return rows.map(rowToUnit);
   }
 
+  // A unit claimed longer ago than STALE_CLAIM is treated as pending again: its processor died mid-extraction.
   async claimPendingUnits(ids?: string[], limit = 50) {
     const { rows } = await this.pool.query(
-      `UPDATE ingested_units SET status = 'running'
-       WHERE id IN (SELECT id FROM ingested_units WHERE status = 'pending' AND ($1::uuid[] IS NULL OR id = ANY($1::uuid[]))
+      `UPDATE ingested_units SET status = 'running', claimed_at = now()
+       WHERE id IN (SELECT id FROM ingested_units WHERE ${CLAIMABLE} AND ($1::uuid[] IS NULL OR id = ANY($1::uuid[]))
                     ORDER BY created_at LIMIT $2 FOR UPDATE SKIP LOCKED)
        RETURNING *`, [ids ?? null, limit]);
     return rows.map(rowToUnit);
@@ -132,8 +146,19 @@ export class PgStore implements Store {
 
   async listPendingUnitIds(limit: number) {
     const { rows } = await this.pool.query(
-      `SELECT u.id FROM ingested_units u WHERE u.status = 'pending' AND EXISTS (SELECT 1 FROM user_imports ui WHERE ui.unit_id = u.id)
+      `SELECT u.id FROM ingested_units u WHERE ${CLAIMABLE} AND EXISTS (SELECT 1 FROM user_imports ui WHERE ui.unit_id = u.id)
        ORDER BY u.created_at LIMIT $1`, [limit]);
+    return rows.map((r) => r.id as string);
+  }
+
+  async listUnitsNeedingDigest(limit: number) {
+    const { rows } = await this.pool.query(
+      `SELECT u.id FROM ingested_units u
+       WHERE u.status = 'ready' AND EXISTS (SELECT 1 FROM user_imports ui WHERE ui.unit_id = u.id)
+         AND NOT EXISTS (SELECT 1 FROM artifacts a WHERE u.id = ANY (a.source_ids) AND a.ingestion_status <> 'failed')
+         AND NOT EXISTS (SELECT 1 FROM artifact_exclusions e WHERE e.unit_id = u.id)
+         AND (SELECT count(*) FROM artifacts a WHERE u.id = ANY (a.source_ids) AND a.ingestion_status = 'failed') < $2
+       ORDER BY u.created_at LIMIT $1`, [limit, MAX_DIGEST_ATTEMPTS]);
     return rows.map((r) => r.id as string);
   }
 

@@ -1,5 +1,5 @@
 // Reads ready artifacts and writes the processor's outputs: video_results (workflow 2), skill_results and
-// action_items (workflow 3). Needs db/migrations/004_outputs.sql for the one-result-per-revision keys.
+// action_items (workflow 3). Needs db/migrations/005_outputs.sql for the one-result-per-revision keys.
 
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
