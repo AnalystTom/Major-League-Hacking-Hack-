@@ -21,6 +21,8 @@ export interface GeminiRequestOptions {
   model?: string;
   fetchImpl?: typeof fetch;
   retries?: number;
+  /** Base delay before a retry, doubled each attempt (default 2000). */
+  retryDelayMs?: number;
   timeoutMs?: number;
 }
 
@@ -45,14 +47,26 @@ export function buildRequestBody(sourceUrl: string, window: [number, number]) {
   };
 }
 
-/** Calls Gemini and returns the parsed model output, or throws with the actual failure detail. Retries 429/5xx. */
+/** A short excerpt of a bad reply (around the parse error when it names a position) so failures can be diagnosed. */
+function excerpt(out: string, err: unknown): string {
+  const pos = Number(/position (\d+)/.exec(String((err as Error)?.message))?.[1]);
+  const at = Number.isFinite(pos) ? pos : 0;
+  const clip = out.slice(Math.max(0, at - 80), at + 80).replace(/\s+/g, " ");
+  return `near char ${at} of ${out.length}: "${clip}"`;
+}
+
+/**
+ * Calls Gemini and returns the parsed model output, or throws with the actual failure detail.
+ * Retries 429/5xx, network errors, and replies that are not valid JSON or do not match the expected shape
+ * (the model occasionally emits malformed JSON), each with backoff.
+ */
 export async function extractWithGemini(opts: GeminiRequestOptions): Promise<{ extraction: ModelExtraction; responseId: string | null }> {
   const f = opts.fetchImpl ?? fetch;
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${opts.model ?? GEMINI_MODEL}:generateContent`;
   const retries = opts.retries ?? 3;
   let lastError = "unknown error";
   for (let attempt = 0; attempt <= retries; attempt++) {
-    if (attempt > 0) await new Promise((r) => setTimeout(r, 2000 * 2 ** (attempt - 1)));
+    if (attempt > 0) await new Promise((r) => setTimeout(r, (opts.retryDelayMs ?? 2000) * 2 ** (attempt - 1)));
     let res: Response;
     try {
       res = await f(url, {
@@ -74,8 +88,18 @@ export async function extractWithGemini(opts: GeminiRequestOptions): Promise<{ e
     const body = JSON.parse(text);
     const out = body?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("");
     if (!out) throw new Error("Gemini returned no content");
-    const parsed = ModelExtraction.safeParse(JSON.parse(out));
-    if (!parsed.success) throw new Error(`Gemini output did not match the extraction shape: ${parsed.error.message.slice(0, 300)}`);
+    let json: unknown;
+    try {
+      json = JSON.parse(out);
+    } catch (e) {
+      lastError = `Gemini reply was not valid JSON (${(e as Error).message}); ${excerpt(out, e)}`;
+      continue;
+    }
+    const parsed = ModelExtraction.safeParse(json);
+    if (!parsed.success) {
+      lastError = `Gemini output did not match the extraction shape: ${parsed.error.message.slice(0, 300)}`;
+      continue;
+    }
     return { extraction: parsed.data, responseId: body.responseId ?? null };
   }
   throw new Error(lastError);
