@@ -63,10 +63,15 @@ async function authorized(request, env) {
 // saved, and the processor's first sweep, a second after it starts, picks them up either way.
 const ANSWER_WITHIN_MS = 6000;
 
+// The only routes callers need: the web Worker's processing and handoff requests, and a health check.
+// Anything else (such as the processor's dev import route, which skips the processing limits) never
+// reaches the container.
+const ROUTES = new Set(["GET /health", "POST /api/ingest/process", "POST /api/ingest/handoff"]);
+
 export default {
   async fetch(request, env, ctx) {
     const { pathname } = new URL(request.url);
-    if (pathname !== "/health" && !pathname.startsWith("/api/ingest/")) return new Response("Not found", { status: 404 });
+    if (!ROUTES.has(`${request.method} ${pathname}`)) return new Response("Not found", { status: 404 });
     if (!(await authorized(request, env))) return new Response("Unauthorized", { status: 401 });
 
     const reply = getContainer(env.PROCESSOR).fetch(request)
