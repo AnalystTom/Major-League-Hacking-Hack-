@@ -5,6 +5,7 @@ import pg from "pg";
 import type { StoredArtifact } from "./ingest/types.js";
 import { createApp, parseOrigins } from "./app.js";
 import { setUsageSink } from "./usage.js";
+import { limitsFromEnv } from "./ingest/limits.js";
 import { createIngestApp } from "./ingest/api.js";
 import { startSweep } from "./ingest/processor.js";
 import { MemoryStore, PgStore } from "./ingest/store.js";
@@ -33,6 +34,8 @@ if (process.env.GEMINI_API_KEY) {
     openaiModel: process.env.OPENAI_MODEL,
     openaiMaxOutputTokens: process.env.OPENAI_MAX_OUTPUT_TOKENS ? Number(process.env.OPENAI_MAX_OUTPUT_TOKENS) : undefined,
     categorizationRequest: process.env.DIGESTION_REQUEST,
+    // A hard cap on provider spend: new units per UTC day and month across all users (DAILY_/MONTHLY_VIDEO_LIMIT).
+    limits: limitsFromEnv(),
     store: pool ? new PgStore(pool) : new MemoryStore(),
     log: (m: string) => console.log(`[ingest] ${m}`),
   };
@@ -55,6 +58,7 @@ if (process.env.GEMINI_API_KEY) {
     startSweep(processor, interval);
     startOutputSweep(outputs, interval);
   }
+  console.log(`Processing limits: ${options.limits.daily} new units a day, ${options.limits.monthly} a month (UTC)`);
   console.log(`Ingestion mounted at /api/ingest (${pool ? "Postgres, sweeping pending units and outputs" : "in-memory"}); ` +
     `media: ${outputs.media ? outputs.media.constructor.name : "not configured, renders will fail with that reason"}`);
 }

@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import type { DigestArtifact, IngestedUnit, StoredArtifact } from "./types.js";
+import { remaining, resumesAt, type Limits } from "./limits.js";
+
+export interface Claimed { claimed: IngestedUnit[]; deferred: string[]; resumesAt: Date | null }
 import { STALE_CLAIM_MINUTES } from "../claims.js";
 
 type Exclusion = { unit_id: string; reason: string };
@@ -14,6 +17,11 @@ export interface Store {
   listReadyUnits(): Promise<IngestedUnit[]>;
   /** Atomically moves pending units (optionally only these ids) to running and returns the ones this caller now owns. */
   claimPendingUnits(ids?: string[], limit?: number): Promise<IngestedUnit[]>;
+  /**
+   * claimPendingUnits within the processing limits: claims at most what today's and this month's limits leave, and
+   * when the limit runs out, marks the requested pending units it couldn't claim as deferred until room opens up.
+   */
+  claimWithinLimits(ids: string[], limits: Limits): Promise<Claimed>;
   /** Pending units that some user has imported (dev-route units nobody imported are left alone). */
   listPendingUnitIds(limit: number): Promise<string[]>;
   /**
@@ -37,6 +45,9 @@ export class MemoryStore implements Store {
   artifacts: StoredArtifact[] = [];
   exclusions: (Exclusion & { promptId: string | null })[] = [];
   prompts: { id: string; revision: number; promptText: string; fewShot: unknown[] }[] = [];
+  /** When each unit was last claimed, for the processing limits; and when deferred ones may start. */
+  claimedAt = new Map<string, Date>();
+  deferredUntil = new Map<string, Date>();
   /** Test/dev stand-in for user_imports: units some user has imported. */
   imported = new Set<string>();
 
@@ -51,8 +62,23 @@ export class MemoryStore implements Store {
       const running = { ...u, status: "running" as const };
       this.units.set(u.id, running);
       claimed.push(running);
+      this.claimedAt.set(u.id, new Date());
     }
     return claimed;
+  }
+  async claimWithinLimits(ids: string[], limits: Limits): Promise<Claimed> {
+    const now = new Date();
+    const day = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    const month = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+    const at = [...this.claimedAt.values()].map((d) => d.getTime());
+    const used = { today: at.filter((t) => t >= day).length, month: at.filter((t) => t >= month).length };
+    const room = remaining(limits, used);
+    const claimed = room > 0 ? await this.claimPendingUnits(ids, Math.min(50, room)) : [];
+    if (claimed.length < room) return { claimed, deferred: [], resumesAt: null };
+    const until = resumesAt(limits, { today: used.today + claimed.length, month: used.month + claimed.length }, now);
+    const deferred = ids.filter((id) => this.units.get(id)?.status === "pending");
+    deferred.forEach((id) => this.deferredUntil.set(id, until));
+    return { claimed, deferred, resumesAt: deferred.length ? until : null };
   }
   async listPendingUnitIds(limit: number) {
     return [...this.units.values()].filter((u) => u.status === "pending" && this.imported.has(u.id)).slice(0, limit).map((u) => u.id);
@@ -126,6 +152,9 @@ const UNSEEN_BY = (user: string) => `NOT EXISTS (
     AND a.source_ids <@ ARRAY(SELECT x.unit_id FROM user_imports x WHERE x.user_id = ${user}))`;
 
 /** Writes to the shared TigerData schema (db/migrations). Workflow 1 owns these tables only. */
+const UTC_DAY = `(date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')`;
+const UTC_MONTH = `(date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')`;
+
 export class PgStore implements Store {
   private pool: pg.Pool;
   constructor(pool: pg.Pool) { this.pool = pool; }
@@ -156,6 +185,42 @@ export class PgStore implements Store {
                     ORDER BY created_at LIMIT $2 FOR UPDATE SKIP LOCKED)
        RETURNING *`, [ids ?? null, limit]);
     return rows.map(rowToUnit);
+  }
+
+  async claimWithinLimits(ids: string[], limits: Limits): Promise<Claimed> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      // One claimer at a time counts and claims, so concurrent requests can't both take the last slot.
+      await client.query(`SELECT pg_advisory_xact_lock(hashtext('resurface:processing-limits'))`);
+      const { rows: [c] } = await client.query(
+        `SELECT count(*) FILTER (WHERE claimed_at >= ${UTC_DAY})::int AS today, count(*)::int AS month
+         FROM ingested_units WHERE claimed_at >= ${UTC_MONTH}`);
+      const used = { today: c.today as number, month: c.month as number };
+      const room = remaining(limits, used);
+      const { rows } = room > 0
+        ? await client.query(
+            `UPDATE ingested_units SET status = 'running', claimed_at = now(), deferred_until = NULL
+             WHERE id IN (SELECT id FROM ingested_units WHERE ${CLAIMABLE} AND id = ANY($1::uuid[])
+                          ORDER BY created_at LIMIT $2 FOR UPDATE SKIP LOCKED)
+             RETURNING *`, [ids, Math.min(50, room)])
+        : { rows: [] };
+      let deferred: string[] = [];
+      let until: Date | null = null;
+      if (rows.length >= room) {
+        until = resumesAt(limits, { today: used.today + rows.length, month: used.month + rows.length }, new Date());
+        const marked = await client.query(
+          `UPDATE ingested_units SET deferred_until = $2 WHERE status = 'pending' AND id = ANY($1::uuid[]) RETURNING id`, [ids, until]);
+        deferred = marked.rows.map((r) => r.id as string);
+      }
+      await client.query("COMMIT");
+      return { claimed: rows.map(rowToUnit), deferred, resumesAt: deferred.length ? until : null };
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
   }
 
   async listPendingUnitIds(limit: number) {

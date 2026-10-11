@@ -54,12 +54,15 @@ function render(units, items) {
   }
 
   const waiting = units.some((u) => !u.settled);
-  const title = units.length === 0 ? "Paste your first links" : waiting ? "Making your shorts" : "No shorts from these links yet";
+  const limited = !waiting && units.some((u) => u.stage === "limited");
+  const title = units.length === 0 ? "Paste your first links" : waiting ? "Making your shorts" : limited ? "Your links are in the queue" : "No shorts from these links yet";
   const lede = units.length === 0
     ? "Each YouTube video or X post becomes a short, narrated clip of the part worth keeping."
     : waiting
       ? "Your first short starts playing here as soon as it's ready. You can leave; processing carries on."
-      : "Each link below says what happened. Try other videos.";
+      : limited
+        ? "Resurface makes a limited number of shorts each day. These start on their own when there's room; you can leave."
+        : "Each link below says what happened. Try other videos.";
   $("[data-first-title]").textContent = title;
   $("[data-first-lede]").textContent = lede;
   const list = $("[data-first-units]");

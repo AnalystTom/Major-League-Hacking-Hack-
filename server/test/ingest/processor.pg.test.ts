@@ -79,3 +79,30 @@ test("processor against the shared schema", { skip: !url && "TEST_DATABASE_URL n
     await pool.end();
   }
 });
+
+test("the processing limits hold across concurrent claims and mark the rest deferred", { skip: !url && "TEST_DATABASE_URL not set" }, async () => {
+  const pool = new pg.Pool({ connectionString: url });
+  const store = new PgStore(pool);
+  const ids: string[] = [];
+  try {
+    for (const v of ["VQy50fuxI34", "V-EDrhIhHzQ", "dQw4w9WgXcQ", "aaaaaaaaaaa"]) {
+      ids.push((await pool.query(`INSERT INTO ingested_units (submitted_url, source_url) VALUES ($1, $1) RETURNING id`, [`https://www.youtube.com/watch?v=${v}`])).rows[0].id);
+    }
+    // Whatever this database already claimed today counts too, so allow exactly one more.
+    const { rows: [c] } = await pool.query(`SELECT count(*)::int AS n FROM ingested_units WHERE claimed_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`);
+    const limits = { daily: c.n + 1, monthly: 100_000 };
+    const [x, y] = await Promise.all([store.claimWithinLimits(ids.slice(0, 2), limits), store.claimWithinLimits(ids.slice(2), limits)]);
+    assert.equal(x.claimed.length + y.claimed.length, 1, "one slot, one claim");
+    const deferred = [...x.deferred, ...y.deferred];
+    assert.equal(deferred.length, 3);
+    const rows = (await pool.query(`SELECT id, status, deferred_until FROM ingested_units WHERE id = ANY($1::uuid[])`, [ids])).rows;
+    assert.equal(rows.filter((r) => r.status === "running").length, 1);
+    for (const r of rows.filter((r) => r.status === "pending")) assert.ok(r.deferred_until > new Date());
+    const again = await store.claimWithinLimits(deferred, { daily: c.n + 4, monthly: 100_000 });
+    assert.equal(again.claimed.length, 3);
+    assert.equal((await pool.query(`SELECT count(*)::int AS n FROM ingested_units WHERE id = ANY($1::uuid[]) AND deferred_until IS NOT NULL`, [ids])).rows[0].n, 0, "claiming clears the deferral");
+  } finally {
+    await pool.query(`DELETE FROM ingested_units WHERE id = ANY($1::uuid[])`, [ids]);
+    await pool.end();
+  }
+});

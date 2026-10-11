@@ -56,6 +56,12 @@ links and shorts from updating.
 
 Rate limits: sign-up and sign-in 10 per IP per minute (`AUTH_LIMITER`), imports 5 per account per minute (`IMPORT_LIMITER`).
 
+Processing limits cap provider spend across all users: the processor starts at most `DAILY_VIDEO_LIMIT` new units
+per UTC day (default 10) and `MONTHLY_VIDEO_LIMIT` per UTC month (default 40, about $5 at ~$0.12 a short with the
+5-minute window). Every source type, sweep and retry counts; `0` pauses processing. Links over the limit stay saved,
+show **Limit reached** with when they'll start (`ingested_units.deferred_until`, `db/migrations/006_processing_limits.sql`),
+and the sweep starts them once there's room.
+
 ## Who sees what
 
 Units are shared: a video imported by two people is read once. A digest (artifact) can combine several videos,

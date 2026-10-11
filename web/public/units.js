@@ -10,6 +10,7 @@ export const FAILED_STAGES = new Set(["failed", "render_failed", "not_selected"]
 
 export const STAGE = {
   queued: "Queued",
+  limited: "Limit reached",
   fetching: "Reading the source",
   digesting: "Picking out what's useful",
   rendering: "Rendering the short",
