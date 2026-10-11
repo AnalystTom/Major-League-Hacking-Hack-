@@ -200,25 +200,6 @@ Nimble's [Extract docs](https://docs.nimbleway.com/nimble-sdk/web-tools/extract/
 
 **Test status:** not run through Nimble. No Nimble credential was found in the current project's checked environment/config files. The earlier supplied key is described as for motion/video generation; its provider remains unnamed and it was not sent to Nimble. Required next step: configure the Nimble credential, then test both canonical URLs and record returned content, timestamps where available, and actual failure reasons. If only titles/descriptions are returned, record insufficient content and test a separate extraction API before sending anything to Digestion Prompt.
 
-## Earlier source inventory — reference only
-
-Research access is not a completed ingestion pipeline. User descriptions do not substitute for retrieved content.
-
-| Source | Current evidence |
-| --- | --- |
-| [Matt Pocock skills](https://github.com/mattpocock/skills) | README inspected: clarification, testing, debugging, architecture. |
-| [pstack](https://github.com/cursor/plugins/tree/main/pstack) | README/guide inspected: routing, playbooks, verification, engineering principles. |
-| [Kun Chen article](http://substack.com/@kunchenguid/p-214840284) | Redirected to [I distilled myself, and you should too](https://blog.kunchenguid.com/p/i-distilled-myself-and-you-should); discussion of reusable judgment inspected. |
-| [Stephan Livera](https://x.com/stephanlivera/status/2103315922098470926) | Fetch returned 403; contents unread. |
-| [achxvi](https://x.com/achxvi/status/2103918792845963545?s=20) | Fetch returned 403; contents unread. |
-| [LLMJunky](https://x.com/LLMJunky/status/2106411941497389342?s=20) | Fetch returned 403; contents unread. |
-| [robj3d3](https://x.com/robj3d3/status/2108272246804648049) | Research fetch failed; contents unread. |
-| [0xSero](https://x.com/0xSero/status/2107737091199435072) | Research fetch failed; local-device example is user-described. |
-| [Dan Kulkov](https://x.com/DanKulkov/status/2107039901653127650) | Research fetch failed; contents unread. |
-| [witcheer](https://x.com/witcheer/status/2107069151583846516) | Research fetch failed; Pocket Charm example is user-described. |
-| [Ernesto](https://x.com/ErnestoSOFTWARE/status/2106079377129685305) | Research fetch failed; growth example is user-described. |
-| [X history](https://x.com/i/history) | Private content not inspected; this is not the documented bookmark API endpoint. |
-| [YouTube Watch Later](https://www.youtube.com/playlist?list=WL) | Private list not inspected; official API cannot retrieve Watch Later. Use direct public video URLs or a regular playlist. |
 
 ## Open questions
 
@@ -268,7 +249,7 @@ Checked on 2026-10-11 through the authenticated Cloudflare account and public HT
 - Served `feed.js` uses the static shorts collection; served `shorts.js` identifies it as sample content. Send changes browser state without a delivery request. `/api/feed` returns 404.
 - Therefore the deployed page exists, but a real TigerData-backed video feed and Codex handoff have not been verified or implemented by this spec update. The planned feed must replace sample content with real records or explicit empty states.
 
-Remote SSH to big-machine-1 timed out, so Playwright has not run. No local app/browser windows were launched. No Cloudflare deployment or account setting was changed.
+
 
 ## References
 
