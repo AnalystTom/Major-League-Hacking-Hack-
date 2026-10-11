@@ -1,38 +1,64 @@
-# Proceed, processing, and where shorts live
+# Onboarding, processing, and where shorts live
 
-Proceed replaces the waitlist. A visitor pastes up to 10 YouTube links, the Worker stores them as
-`ingested_units` in TigerData and asks the processor to start, then the page follows each link until
-its short is rendered and approved, and plays the approved shorts in a vertical reel.
+The landing page's **Get started** button opens `/start`, a four-step onboarding:
+
+1. **Account**: email and password, stored in TigerData (`users`, `sessions`; `db/migrations/002_accounts.sql`).
+2. **Your project**: name, what you're working on, stack and tools, coding agents. Saved as a new
+   `project_contexts` version each time, so every result is tied to the brief it was made for.
+3. **Your saves**: up to 10 YouTube links. Stored as `ingested_units` and linked to the user in `user_imports`.
+4. **Processing**: each link's real stage, until shorts are approved. Then `/app`, the signed-in home with
+   the project, the links and the user's reel.
+
+Leaving part-way resumes at the first unfinished step. Signed-in visitors see "Open your feed" on the landing page.
 
 ```
-Browser ──POST /api/imports──▶ Worker ──INSERT ingested_units──▶ TigerData
-                                  └──POST PROCESSOR_URL {unit_ids}──▶ Processor
-Processor: Gemini extraction → Digestion Prompt → artifacts → Opus script → narration/music/render
+Browser ──POST /api/auth/signup──▶ Worker ──INSERT users, sessions──▶ TigerData   (httpOnly cookie back)
+        ──PUT /api/project──▶ Worker ──INSERT project_contexts (next version)──▶ TigerData
+        ──POST /api/imports──▶ Worker ──INSERT ingested_units, user_imports──▶ TigerData
+                                  └──POST PROCESSOR_URL {unit_ids, project}──▶ Processor
+Processor: Gemini extraction → Digestion Prompt against the project → artifacts → Opus script → render
            ──PUT mp4 + vtt──▶ R2 (resurface-media)   ──UPDATE/INSERT──▶ TigerData
-Browser ──GET /api/imports?units=…  (every 4 s until settled)──▶ Worker ──▶ TigerData
-        ──GET /api/feed?units=…──▶ Worker ──▶ TigerData (ready + approved only)
+Browser ──GET /api/imports, /api/feed?scope=mine (every 4 s; 15 s while in review)──▶ Worker ──▶ TigerData
         ──GET /media/videos/…mp4 (Range)──▶ Worker ──▶ R2
 ```
 
 ## Endpoints (web Worker, same origin as the page)
 
+Every mutation must be `application/json`; with the `SameSite=Lax` session cookie that blocks cross-site forms.
+
 | Route | Does |
 | --- | --- |
-| `POST /api/imports` `{ links }` | Validates and canonicalises links, reuses a non-failed unit for the same video and start time, inserts the rest as `pending`, POSTs the pending ids to the processor. Returns `{ units, processor }` where `processor` is `requested`, `not_configured`, `unavailable` or `not_needed`. |
-| `GET /api/imports?units=a,b` | Each unit's stage: `queued`, `fetching`, `digesting`, `rendering`, `in_review`, `ready`, `failed`, `render_failed`, `rejected`, `not_selected`, plus the actual error. |
-| `GET /api/feed?units=a,b` | Shorts built from those units whose artifact and video are both `ready` and `approved`. Without `units`, the curated feed, which also needs `feed_order`. |
+| `POST /api/auth/signup` `{ email, password, name? }` | Creates the account (password ≥ 10 chars, PBKDF2-SHA256, 100k iterations) and signs in. `409` if the email is taken. |
+| `POST /api/auth/login` `{ email, password }` | Signs in. Wrong password and unknown email get the same `401`. |
+| `POST /api/auth/logout` | Ends the session. |
+| `GET /api/me` | `{ user, project, imports, step }`, where `step` is `project`, `sources` or `done`. `401` when signed out. |
+| `PUT /api/project` `{ name, goal?, tools, agents }` | Saves the next version of the user's brief. |
+| `POST /api/imports` `{ links }` | Needs a project. Canonicalises links, reuses a non-failed unit for the same video and start time, links each to the user, and sends units new to this user to the processor with the brief. Returns `{ units, processor }`. |
+| `GET /api/imports` | The user's links with their stage: `queued`, `fetching`, `digesting`, `rendering`, `in_review`, `ready`, `failed`, `render_failed`, `rejected`, `not_selected`, plus the actual error. |
+| `GET /api/feed?scope=mine` | The user's shorts: artifacts for their project whose artifact and video are both `ready` and `approved`. |
+| `GET /api/feed` | The public curated feed (needs `feed_order`); no account. |
 | `GET /media/<key>` | Streams `videos/`, `captions/` or `posters/` objects from R2 with byte ranges (Safari and seeking need them). |
+
+Rate limits: sign-up and sign-in 10 per IP per minute (`AUTH_LIMITER`), imports 5 per account per minute (`IMPORT_LIMITER`).
 
 ## What the processor must do
 
-It receives `POST PROCESSOR_URL` with `Authorization: Bearer PROCESSOR_TOKEN` and `{ "unit_ids": [...] }`.
+It receives `POST PROCESSOR_URL` with `Authorization: Bearer PROCESSOR_TOKEN` and
+`{ "unit_ids": [...], "project": { "id", "version", "name", "goal", "tools", "agents" } }`.
 Reply `202` quickly and work asynchronously. The same id can arrive twice, so be idempotent.
-Only newly created units are sent; resubmitting a queued link doesn't resend it. So also sweep
-`ingested_units WHERE status = 'pending'` on a timer, which picks up anything a failed request missed.
+A unit is sent the first time a user imports it; resubmitting doesn't resend it. Also sweep
+`ingested_units WHERE status = 'pending'` on a timer (take the project from the newest `user_imports` row),
+which picks up anything a failed request missed.
+
+Extraction is shared, digestion is per project. A unit may arrive already `ready` because someone else
+imported the same video: skip extraction and digest it for the project in the request, unless an
+artifact for that unit and project already exists.
 
 1. Set the unit to `running`, extract, then `ready` with `transcript` or `raw_artifact_ref`, or
    `failed` with the actual `error`.
-2. Write `artifacts` (with `source_ids` containing the unit ids) or `artifact_exclusions` with a reason.
+2. Write `artifacts` with `source_ids` containing the unit ids and `project_context_id` /
+   `project_context_version` from the request (users only see artifacts for their own project),
+   or `artifact_exclusions` with a reason.
 3. Render, then upload to R2 under:
    - `videos/<artifact_id>/<version>/short.mp4`: H.264 + AAC, 1080×1920, `-movflags +faststart`
    - `captions/<artifact_id>/<version>/short.vtt`: WebVTT (the browser `<track>` only reads VTT)
@@ -57,6 +83,8 @@ and delivered, and it re-encodes the uploads. 30 to 45 s progressive MP4s don't 
 
 ## Setup before deploy
 
+Apply `db/migrations/002_accounts.sql` to TigerData (it only adds `users`, `sessions` and `user_imports`).
+
 ```
 cd web
 npx wrangler r2 bucket create resurface-media
@@ -75,7 +103,8 @@ It refuses any database that isn't on this machine, labels every record `[Simula
 at one test clip, and approves clips itself in place of a teammate.
 
 ```
-createdb resurface_dev && psql -d resurface_dev -f db/migrations/001_shared_schema.sql
+createdb resurface_dev
+psql -d resurface_dev -f db/migrations/001_shared_schema.sql -f db/migrations/002_accounts.sql
 # web/.dev.vars (gitignored):
 #   DATABASE_URL=postgres://you@127.0.0.1:5432/resurface_dev
 #   PROCESSOR_URL=http://127.0.0.1:8799/process
@@ -89,8 +118,9 @@ npm run dev     # http://localhost:8787
 ## Known gaps
 
 - No processor exists yet: links queue in TigerData and show `Queued` until one is connected.
-- `POST /api/imports` is public. It's rate limited to 5 imports per IP per minute (`IMPORT_LIMITER`),
-  bodies are capped at 32 KB and links at 2,048 characters. Consider Turnstile too before announcing the URL.
+- Sign-up reveals whether an email already has an account (`409`), which is normal sign-up UX but lets
+  someone test emails; it's rate limited. There's no email verification or password reset yet.
+- Bodies are capped at 32 KB and links at 2,048 characters. Consider Turnstile on sign-up before announcing the URL.
 - The API never returns `submitted_url`: a reused unit's original link belongs to whoever pasted it first.
 - Source links in the reel are only rendered when they're `http(s)`; they come from model output.
 - The D1 waitlist binding is kept so existing signups stay reachable; nothing writes to it.
