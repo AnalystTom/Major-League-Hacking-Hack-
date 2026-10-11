@@ -2,7 +2,7 @@
 
 This is the single canonical product spec. It supersedes the earlier v0 draft and HTML planning preview.
 
-Status: updated with the agreed YouTube-only v0, import UI, Digestion Prompt, dynamic categories, and voice plus music. The three workflows remain independent. Contracts and provider choices below are proposed; this document does not implement them.
+Status: product scope agreed; implementation and database contracts proposed. Workstream 2 now defines its input, timed script, video record, and feed response. This update changes the spec only; migration, provider runs, commits, and deployment require approval.
 
 ## Goal
 
@@ -36,26 +36,15 @@ V1 adds Codex-led source acquisition (give Codex a prompt and have it fetch mate
 
 Prepare a small collection of actual videos/clips for the demo and label prepared output. Demonstrate a real import if the provider test passes. A curated URL list or fixed demo order is allowed; fabricated transcripts, media, metrics, and delivery receipts are not. For the action demo, show the actual project artifact/diff and check; generation or prompt delivery alone does not establish improvement.
 
-## Categories across the collection
+## Categories
 
-The LLM reads the successfully retrieved units across the whole collection and generates category names according to the Digestion Prompt. One source can support several topics. Display only categories with real, ready recommendations, with counts computed from those records. The six topics below are earlier brainstorming examples, not a fixed taxonomy or claims about the selected YouTube videos.
-
-| Topic | Candidate material | Evidence status |
-| --- | --- | --- |
-| Agent workflows | Planning, testing, routing, architecture, reusable judgment | Matt Pocock, pstack, and Kun Chen were read. Recommendations are not yet extracted or tested. |
-| SEO and distribution | SEO page techniques and related tutorials | User-described topic; X content and link-to-topic mapping remain unverified. |
-| Building apps | iOS guides and implementation ideas | User-described topic; specific source and project fit need confirmation. |
-| Local AI and infrastructure | Trying tools on an available device | User-described example involving 0xSero; content and requirements unverified. |
-| Business growth | Applying learnings from Ernesto's post | User-described example; the meaning of “zero to 150” and its evidence are unverified. |
-| Hardware | Pocket Charm and device-specific ideas | User-described example involving witcheer. Exclude from actionable recommendations when the required device is absent. |
-
-Category values are dynamic; schema field names and workflow interfaces remain stable. The demo may use a preset prompt and curated real inputs. Unsupported material gets an exclusion reason rather than an invented project application.
+Digestion Prompt derives categories from the successfully extracted collection and the user's prompt. A source can support several topics; related sources may form one artifact. Category names are free text, not an enum. Show only categories with ready, reviewed clips and compute counts from those records. Unsupported material retains its actual exclusion reason.
 
 ## Visual flow
 
 ```mermaid
 flowchart TD
-  R["Import UI: individual YouTube links"] --> I["Workflow 1: YouTube content extraction; Nimble or tested fallback"]
+  R["Import UI: individual YouTube links"] --> I["Workstream 1: Gemini extraction and source review"]
   I --> U["Ingested units: one source per unit; actual status/error"]
   U -->|Usable content only| D["Digestion Prompt: select, group, categorize, synthesize"]
   P["One real project and a user-supplied prompt"] --> D
@@ -95,12 +84,12 @@ The prompt guides recommendation selection as well as grouping. Workflow 1 produ
 
 **Prompt refinement tasks:** build real input → reviewed output few-shot examples from the selected videos; include a useful single source, a justified multi-source combination if the collection supports it, and a rejected source. Check unavailable-source handling separately. Record reviewer approval/rejection and the reason, revise the prompt, and rerun the same collection. Do not combine the two selected videos merely to demonstrate multi-source support.
 
-## Three workflows and ownership
+## Three workstreams and ownership
 
 | Workflow | Owns | Input | Output | Independent completion check |
 | --- | --- | --- | --- | --- |
-| 1. Ingestion | Import UI/API, supplied-YouTube retrieval test with Nimble, extraction, Digestion Prompt, grouping/categories, TigerData schema and contracts | Individual YouTube links, prompt, and authorized project context | Per-source units/errors and reviewed final artifacts | A real video yields usable extracted content and a traceable artifact; unread sources retain actual errors. |
-| 2. Video and feed | Opus scripts/style prompts, animation code, narration/music/captions, isolated rendering, publication, Cloudflare feed/player and CTAs | Ready ingestion artifacts | Actual media, video metadata, TikTok-style browsing | A generated clip plays with voice/music/captions on the deployed page using backend data; CTAs reflect actual skill readiness. |
+| 1. Ingestion | Import UI/API, Gemini extraction and source review, Digestion Prompt, grouping/categories, TigerData schema and contracts | Individual YouTube links, prompt, and authorized project context | Per-source units/errors and reviewed final artifacts | A real video yields usable extracted content and a traceable artifact; unread sources retain actual errors. |
+| 2. Video and feed | Opus timed scripts and animation, narration/music/captions, isolated rendering, video results, Cloudflare feed/player and CTAs | Versioned ingestion artifacts with ready processing and approved review | Actual media, video records, and the feed response defined below | A generated clip plays with voice/music/captions on the deployed page using backend data; CTAs reflect actual skill readiness. |
 | 3. Skills and actions | Skill generation, project action items, skill review/export, Codex delivery adapter and receipts | Ready ingestion records and project context | Processed skills, action items, actual handoff/result records | A real artifact produces a reviewable skill and executable task that can be used in Codex without any video being generated. |
 
 Workflow 1 owns schema migrations, ingestion writes, and the import screen/module. Workflow 2 owns the feed/player, media pipeline, and deployment wiring; it mounts the import module through an agreed route without rewriting it. Workflow 3 owns skill generation and delivery code and does not edit either screen. Agree exact file ownership before parallel work. Each workflow updates only its own output records, avoiding replacement of another workflow's work.
@@ -127,7 +116,7 @@ The final artifact represents one processed topic, potentially assembled from se
 | `evidence` | Source passages or video timestamps supporting the synthesis; preserve conflicts | Workflow 1 |
 | `project_context_id`, `project_context_version` | Actual project context used for applicability, when the artifact is project-specific | Workflow 1 |
 | `version` | Input version tying downstream results to the material they used | Workflow 1 |
-| `digestion_prompt_ref` | Stored prompt revision and reviewed few-shot set used to produce this artifact | Workflow 1 |
+| `digestion_prompt_id` | Reference to the stored prompt revision and reviewed few-shot set | Workflow 1 |
 | `ingestion_status`, `review_status`, `processed_at`, `error` | Actual processing/review state, timestamp, and failure details | Workflow 1 |
 | `video` | Nullable joined video result; never imply media exists before rendering succeeds | Workflow 2 |
 | `processed_skill` | Nullable joined skill result/status; Markdown is absent until actually generated | Workflow 3 |
@@ -136,7 +125,7 @@ These field names are the proposed shared interface, not invented example data. 
 
 Processing states are `pending`, `running`, `ready`, and `failed`; review states are `pending`, `approved`, and `rejected`, with actual reviewer feedback. Status records can exist before output content. Consumption requires a matching input version, `ready` processing, and `approved` review. Do not mark a unit ready merely because its page metadata was retrieved: the pipeline needs usable source content.
 
-- **Video result:** artifact ID/version, project-context version when used, timed script and Opus prompt revision, actual media/caption/narration/music references, music provenance, measured duration, render/review status, actual error.
+- **Video result:** the `video_results` record defined in workstream 2 below. The artifact's `video` is a joined response field, not a second copy of media metadata.
 - **Skill result:** artifact ID/version, project-context version, `skill_markdown`, project `action_items`, supporting references, generation/review status, actual error.
 - **Action item:** chosen task, applicability evidence, prerequisites, steps, source references, and a checkable result. Use fewer than three when evidence supports fewer.
 - **Handoff:** selected skill/action, exact reviewed payload, destination, delivery status/receipt, result reference, and verification evidence when available.
@@ -147,23 +136,78 @@ Large media/files live in storage; TigerData stores their real references and me
 
 Later candidates: X threads, linked pages, GitHub READMEs/docs/skills, newsletters, notes, PDFs, and screenshots. Additional primary-source research can strengthen a recommendation in V1. None is part of v0 input support.
 
-## Workflow 2: feed and CTAs
+## Workstream 2: artifact → video → feed
 
-Serve ready, reviewed 30–45 second vertical videos on the existing Cloudflare page using backend data. Show one active clip at a time. Use muted autoplay for the visible clip, tap to enable sound, scroll/next, pause/play, captions, sources, dynamic category controls, and reduced-motion support. Keep a stable, manually reviewed order for the demo.
+### Input contract
 
-While feed metadata loads, show loading. If loading fails, show the actual safe error and retry. If no reviewed clips are ready, show an empty state. Failed playback shows a clip error and allows moving on; the end of the feed shows an explicit end state without fabricated clips or counters.
+Read one immutable artifact revision from TigerData. Only consume `ingestion_status = ready` and `review_status = approved`. Workstream 2 does not rewrite ingestion or skill records.
 
-### Voice, music, and visual references
+| Input field | Use |
+| --- | --- |
+| `id`, `version` | Source of `artifact_id` and `artifact_version`; assigned by the backend |
+| `name`, `category`, `selection_reason` | Grounded title, feed category, and explanation |
+| `processed_text` | Reviewed synthesis supplied to Opus; must be nonempty |
+| `source_ids`, `sources`, `evidence` | Contributing units, source URLs, and supporting passages/timestamps; must reference actual stored evidence |
+| `project_context_id`, `project_context_version` | Exact project context used, if project-specific |
+| `digestion_prompt_id` | Provenance of the synthesis; kept on the artifact |
 
-Both narration and music are required. The simplest proposed setup is [Gemini TTS](https://ai.google.dev/gemini-api/docs/speech-generation) for narration, one team-supplied/licensed instrumental track, and [FFmpeg](https://ffmpeg.org/ffmpeg-filters.html#sidechaincompress) to mix it, lower music under speech, and fade the ending. Gemini generates speech from text; it does not replace the animation renderer. An open-source narration option is [Kokoro](https://github.com/hexgrad/kokoro), with Apache-licensed code and weights. Choose a provider after a real audio test; access is not yet verified.
+The backend resolves references and verifies readiness before generation. Model output cannot replace artifact IDs, source IDs, URLs, or input versions. Style references inform appearance only and cannot supply factual claims.
 
-Generate narration from the final timed script, measure its duration, and align scene timing and captions to the actual audio. Revise an overlong script rather than claiming the clip meets the target. Missing narration/music or a failed render is a processing failure, not a completed clip.
+### Generation and timed-script contract
 
-Use the already supplied motion references to derive style prompts for the team's Opus generation prompt after inspecting their actual media. The X references have not been retrieved successfully, so style derivation remains an action item. Keep style examples separate from factual source evidence. Review grounding, readability, pacing, audio balance, and mobile playback before selecting demo clips.
+1. Create a `pending` video record for the selected artifact revision, then mark it `running` when processing starts.
+2. Opus turns `processed_text` into a timed script and animation code using a stored prompt revision. Target a 30–45 second vertical video.
+3. Generate narration from the script and choose an actual licensed music track. Measure the audio and revise scene timing and captions to match it.
+4. Render in an isolated environment; store the actual animation code, video, captions, narration, and music files.
+5. Validate references, timing, playback, and audio before marking processing `ready`. Review remains `pending` until a teammate approves the rendered clip.
 
-CTAs: **Skip**, **View sources**, **View skill/action items**, and **Use in Codex**. A CTA must read the real skill status: show loading, empty, or error when no usable result exists. Do not mark a click as “Sent,” “Installed,” or “Completed.” The backend owns those states and must provide the corresponding receipt or result.
+`script` is JSON with a nonempty `scenes` array. Each scene contains `start_seconds`, `end_seconds`, `narration_text`, `on_screen_text`, `visual_instruction`, and `source_ids`. Speech or screen text may be empty when the scene does not use it; factual claims still require traceable source evidence. Scene times must be finite, nonnegative, ordered, and nonoverlapping, with `end_seconds > start_seconds`. Every `source_id` must belong to the input artifact. Final scene timing and caption cues must fit the measured render duration. Unsupported claims, unknown source IDs, or invalid timing cause a failure rather than publication.
 
-Workflow 2 consumes the skill result contract but does not generate the skill. Workflow 3 also offers skill preview/export directly, allowing development and use without the feed.
+### Output: `video_results`
+
+One video result per `(artifact_id, artifact_version)` in v0. Retry updates that record; a new approved artifact revision gets a separate record. Rerendering resets review to `pending` so an earlier approval cannot publish changed media.
+
+| Columns | Type / requirement |
+| --- | --- |
+| `id` | UUID; backend-generated identity |
+| `artifact_id`, `artifact_version` | UUID and integer; reference the exact input artifact revision |
+| `project_context_version` | Integer or null; copied from the input and checked when reading |
+| `script` | JSONB; validated timed scenes |
+| `opus_prompt_revision` | Text; revision actually used for generation |
+| `animation_code_ref` | Text; stored generated code, required before processing is ready; **proposed addition** |
+| `media_ref` | Text; actual playable final video with narration and music mixed in |
+| `caption_ref`, `narration_ref`, `music_ref` | Text; actual stored assets |
+| `music_provenance` | Text; track identity/source and permission or license evidence |
+| `duration_seconds` | Numeric; measured positive duration, never the target duration |
+| `status` | `pending`, `running`, `ready`, or `failed` |
+| `review_status` | `pending`, `approved`, or `rejected` |
+| `review_feedback` | Text or null; actual reviewer feedback |
+| `feed_order` | Integer or null; team-assigned demo order, required for inclusion in the feed |
+| `error` | Text or null; actual safe failure details |
+| `created_at`, `updated_at` | Timestamps maintained by the backend on actual writes |
+
+Processing `ready` requires valid script, prompt revision, nonempty code/media/asset references, music provenance, and positive measured duration. A storage reference alone is insufficient: the pipeline must verify the files exist and the final video plays with narration, music, and usable captions. Approval requires review of grounding, readability, pacing, audio balance, and duration. A failed step records `failed` and its actual error; it does not manufacture missing assets.
+
+**Proposed migration changes, not applied:** add `animation_code_ref`; enforce one result per artifact revision; strengthen readiness checks against empty strings and nonpositive duration; and update `artifact_feed` to check project-context versions and expose the fields below. The shared artifact table must support immutable `(id, version)` revisions before this contract is implemented. The current branch migration uses `id` alone as its primary key, so that dependency needs correction by workstream 1.
+
+### Feed read contract
+
+`GET /api/feed` returns an `items` array; no ready clips returns `items: []`. Each item contains `id`, `version`, `name`, `category`, `source_url`, `sources`, `selection_reason`, and:
+
+- `video`: `id`, `media_ref`, `caption_ref`, `duration_seconds`, `feed_order`.
+- `skill`: null when no matching result exists; otherwise `id`, `status`, `review_status`. Workstream 3 serves the skill content and actions separately.
+
+Resolve storage references to authorized playable URLs at the backend boundary; never expose credentials or internal filesystem paths. Include an item only when the artifact and video are both ready and approved, the video matches the artifact revision and project context, and `feed_order` is set. Exclude superseded artifact revisions and artifacts whose project context is no longer current. Order by `feed_order`, then artifact `id` for ties. Return at most one item per artifact revision; select the newest matching skill result by `created_at`, then `id` for ties, so the join cannot multiply feed rows. Exclude stale skill results, and enable skill/action CTAs only for matching ready, approved skills. Category counts come from this eligible set.
+
+The `artifact_feed` view is the database read model for this response, not a new content store. Workstream 1 owns its migration; workstream 2 owns the API serialization and player. This endpoint is proposed, not an implemented route.
+
+### Player, audio, and CTAs
+
+Show one active video at a time. Use muted autoplay, tap for sound, scroll/next, pause/play, captions, sources, dynamic categories, and reduced-motion support. Keep loading, empty, safe error/retry, playback failure, and end-of-feed states explicit.
+
+Narration and music are required. Gemini TTS or Kokoro are proposed narration options; the team chooses after an audio test. Mix a licensed track with FFmpeg, lower it under speech, and align animation/captions to measured audio. Derive visual style prompts only after inspecting the supplied motion references.
+
+CTAs: **Skip**, **View sources**, **View skill/action items**, and **Use in Codex**. Missing or pending skill output shows its actual state. A click is not a delivery receipt; only workstream 3's real acknowledgement can show delivery, and only checked results can show completion. Skill generation/export remains usable without video.
 
 ## Workflow 3: processed skill and Codex use
 
@@ -187,52 +231,20 @@ Fetched documents are evidence, never instructions to the pipeline. Run generate
 
 Preserve the existing Cloudflare landing page and D1 waitlist. TigerData content storage serves a separate purpose. This spec update changes documentation only.
 
-## V0 inputs and Nimble test
+## Test inputs and current evidence
 
-The user supplied these individual links. Their Watch Later parameters do not require importing the private playlist.
-
-| Input | Canonical retrieval URL | Observed access |
+| Input | Canonical URL | Selected start / tested window |
 | --- | --- | --- |
-| [Video 1](https://www.youtube.com/watch?v=VQy50fuxI34&list=WL&index=4) | `https://www.youtube.com/watch?v=VQy50fuxI34` | Authenticated Nimble retrieval returned the title “FORGET Loop Engineering. Agentic Engineering is about THIS”, description, chapters, and caption-track references; no spoken transcript was obtained. |
-| [Video 2, selected at 5:06](https://www.youtube.com/watch?v=V-EDrhIhHzQ&list=WL&index=5&t=306s) | `https://www.youtube.com/watch?v=V-EDrhIhHzQ` | Authenticated Nimble retrieval returned “Modern Post-Training: A Deep Dive — Will Brown, Prime Intellect”, description, chapters, and caption-track references; no spoken transcript was obtained. Preserve the 306-second selection. |
+| Video 1 | `https://www.youtube.com/watch?v=VQy50fuxI34` | 0 seconds / 0–300 seconds |
+| Video 2 | `https://www.youtube.com/watch?v=V-EDrhIhHzQ` | 306 seconds / 306–606 seconds |
 
-### Authenticated test — 2026-10-11
+Nimble authenticated and retrieved both watch pages, descriptions, chapters, and caption-track references. Both tested caption requests returned HTTP 500; direct caption reads were empty. No spoken transcript was retrieved by that route.
 
-The supplied Nimble credential was accepted by `POST https://sdk.nimbleway.com/v2/extract`. It was used only for these test requests, held in process memory, and not written to repository or deployment configuration. Production secret configuration remains pending.
+Gemini `gemini-3.8-flash:generateContent` returned model extraction for both explicit five-minute windows. Five observations passed source-identity and timestamp-window checks; one out-of-window observation was rejected. All remaining content still needs review against the actual video. Some `technique` fields describe presentation styles rather than engineering lessons; refine the prompt before digestion.
 
-For each canonical watch URL, the request used `render: true` and `formats: ["html", "markdown"]`. Both returned HTTP 200, `status: success`, target `status_code: 200`, and the actual page HTML/Markdown. The returned content includes video metadata, descriptions, chapter labels, and English auto-generated caption-track URLs. Neither response contained spoken transcript segments. Descriptions and chapter labels are source material, but cannot substantiate claims about speech or demonstrations absent from that material.
+[Extraction output and checks](evidence/gemini-ingestion-2026-10-11.json) retain the model observations, response IDs, usage, and review states. Initial attempts also encountered HTTP 503, timeouts, a wrong generated source URL, and an unsupported Interactions `processing` parameter. Successful requests used explicit `videoMetadata` offsets. Preserve submitted source identity/start time and reject mismatched model metadata.
 
-| Video | Watch-page task ID | Caption-fetch task ID | Result |
-| --- | --- | --- | --- |
-| `VQy50fuxI34` | `0143bc01-e2a5-4c85-9052-2d5dd2dfd9bb` | `d85b64c0-c976-43ba-a18c-06bc1e8b0401` | Page retrieved; 5,368 Markdown characters. English caption request through Nimble returned HTTP 500. |
-| `V-EDrhIhHzQ` | `33122728-d865-49a6-bb6f-f27780cfec5d` | `4752239a-4c68-47a7-9f4d-3fb8ed526377` | Page retrieved; 2,437 Markdown characters. English caption request through Nimble returned HTTP 500. Preserve the submitted 306-second start. |
-
-The follow-up Nimble requests used the actual English caption-track URLs discovered in those responses, requesting `fmt=json3`, `render: false`, and HTML output. Both returned `success: "false"` and the message `can't download the query response - please try again`. Direct HTTP reads of those same caption URLs returned HTTP 200 with an empty body. The underlying caption failure reason remains unknown. These results establish page retrieval and a failed caption route; they do not establish that every possible Nimble transcript route fails. Browser-action transcript extraction was not tested.
-
-At the end of the Nimble test, neither source was fully ingested for video-grounded synthesis: no spoken transcript or inspected video content was obtained through that route. Do not infer missing dialogue from the descriptions, titles, chapter labels, or the presence of a caption URL.
-
-### Do we need Gemini for ingestion?
-
-**Gemini returned timestamped model extraction for both test segments; source review remains pending.** Google's [video-understanding documentation](https://ai.google.dev/gemini-api/docs/video-understanding#pass-youtube-urls) supports passing public YouTube URLs directly to the API; that feature is in preview. Nimble's [Extract API](https://docs.nimbleway.com/nimble-sdk/web-tools/extract/quickstart) retrieves webpage content. Its [Media API](https://docs.nimbleway.com/nimble-sdk/web-tools/media) downloads media-file URLs and does not itself provide video understanding.
-
-### Gemini test — 2026-10-11
-
-The supplied Gemini key authenticated successfully (`GET /v1beta/models`, HTTP 200). It was held in process memory and not saved in the repository or deployment configuration. Production secret configuration is still pending.
-
-Successful requests used `gemini-3.8-flash:generateContent` with the canonical YouTube URL in `fileData` and explicit `videoMetadata.startOffset`/`endOffset`. JSON output used temperature 0 and a 2,000-token output limit. The prompt requested timestamped speech paraphrases and visual observations, not a verbatim transcript. Source URLs and selected times were compared with the submitted inputs; each timestamp was checked against its requested window.
-
-| Input | Requested segment | HTTP / time | Response ID | Validation |
-| --- | --- | --- | --- | --- |
-| `VQy50fuxI34` | 0–300 seconds | 200 / 14.2 seconds | `X7_Lav6jLb7W-sAPnfae2AQ` | Correct source URL and start. Two of three observations are within the window; the 338–435 second item is rejected. |
-| `V-EDrhIhHzQ` | 306–606 seconds | 200 / 13.0 seconds | `iL_Laq6-CbyI1MkPge_msAs` | Correct source URL and selected start. All three observations are within the window. |
-
-The [returned extraction and validation records](evidence/gemini-ingestion-2026-10-11.json) preserve actual model output, response IDs, token usage, and review states. Five observations passed structural/source-identity/window checks. They remain pending source review: a model's `content_accessed: true` assertion and valid timestamps do not independently prove accuracy. Do not publish them or mark them approved until their speech/visual claims are checked against the video. Some `technique` fields describe presentation or analysis styles rather than actionable engineering lessons; refine that extraction instruction before using it as Digestion Prompt input.
-
-Earlier attempts: the first unbounded `gemini-3.8-flash` request returned HTTP 503 (`UNAVAILABLE`, high demand). The second returned HTTP 200 but claimed a different source URL (`0k1j_1m1i0E`), so that response was rejected. Both `gemini-2.5-flash` fallback requests timed out. An Interactions API request using its documented `processing` object returned HTTP 400 (`Invalid input at 'input[0].processing'`). The successful requests used the [Generate Content video-metadata contract](https://ai.google.dev/gemini-api/docs/generate-content/video-understanding) instead. Full-video content was submitted in the earlier requests; requesting a five-minute focus in prompt text alone did not limit input processing.
-
-**Ingestion direction:** use explicit-window Gemini extraction as the v0 video-content candidate, with validation and source review before Digestion Prompt. Keep Nimble for page metadata and V1 supporting-web research. Preserve request-derived source identity and selected time; never let model-generated metadata replace them. Reject wrong identities and out-of-window evidence, retain actual failure details, and retry without fabricating content. A working transcript provider or supplied transcript remains another route.
-
-This test extracted two five-minute segments only. It did not create a full transcript, run Digestion Prompt, write TigerData records, generate clips/skills, or change the deployed app. Remote SSH to big-machine-1 timed out, so no Playwright or remote video review ran; no test browser/app/server was launched.
+No full transcript, Digestion Prompt run, TigerData write, clip, skill, or deployment was produced by these tests. Supplied keys were used in process memory and not saved to repository or deployment configuration. Gemini is the tested extraction candidate; Nimble remains useful for metadata and V1 supporting-web research.
 
 ## Open questions
 
@@ -246,13 +258,16 @@ These replace the answered 20-question backlog. Recommended answers remain propo
 6. **Which Codex destination and delivery route?** Recommend a reviewed skill/task export first; direct delivery needs a real acknowledgement. Confirm whether direct delivery must be in the live v0 demo.
 7. **Where are rendered media stored?** Use actual storage URLs and metadata in TigerData. Cloudflare is the presentation surface; choose the media storage service before publishing.
 
-## Next actions
+## Approval checkpoints and next work
 
-- Review the five structurally valid Gemini observations against the actual video moments; exclude the out-of-window item and refine the prompt to extract engineering lessons. Expand beyond the two test windows only after review passes.
-- Refine Digestion Prompt with real few-shot examples and approval/rejection feedback; retain prompt revisions and output provenance.
-- Inspect the supplied motion examples and derive style instructions for the team's Opus prompt.
-- Test one narration/music mix and align captions/scenes to measured audio; select and review the real demo clips.
-- Agree the schema and exact file ownership, then build the three independent workflows.
+Run each step past the owner before proceeding. Preparing this spec does not authorize a database write, implementation run, commit/push, or deployment.
+
+1. **Database preflight:** read-only service, connectivity, and existing-schema checks for Tiger Cloud `mlh-aie-hackathon` (`kc5lnts1vn`). The [branch migration](https://github.com/AnalystTom/Major-League-Hacking-Hack-/blob/claude/loving-gates-0xec5o/db/migrations/001_shared_schema.sql) defines nine tables and `artifact_feed`; its live application is unverified.
+2. **Schema review:** prepare the migration corrections and the workstream 2 additions above; show the diff before applying anything.
+3. **Ingestion and digestion:** review the five candidate observations, refine extraction/few-shot examples, approve the project brief and Digestion Prompt, then validate and store real artifacts.
+4. **Workstream 2:** approve the Opus prompt, narration provider, music track, and storage destination. Produce one real clip, review it, then wire the eligible feed response and player.
+5. **Workstream 3:** agree one export/delivery route; generate reviewed skills and actions independently from the same artifact revision.
+6. **Verification and delivery:** test the approved user journey on big-machine-1, clean up owned test processes, and run ponytail-review before any approved commit/push. Ask separately before deployment.
 
 ## Acceptance and verification
 
@@ -272,17 +287,11 @@ These replace the answered 20-question backlog. Recommended answers remain propo
 - Clean up only sessions/servers created by the run and verify exit; preserve pre-existing sessions.
 - Run ponytail-review before commits/pushes; preserve hooks and unrelated changes.
 
-## Verified Cloudflare deployment
+## Last observed deployment and verification limits
 
-Checked on 2026-10-11 through the authenticated Cloudflare account and public HTTP reads:
+On 2026-10-11, the Cloudflare Worker `resurface` served [resurface.thomasmann2001.workers.dev](https://resurface.thomasmann2001.workers.dev/) with static assets and a separate D1 waitlist. Served scripts used sample shorts and browser-only Send state; `/api/feed` returned 404. That observation does not establish a real TigerData-backed feed or Codex delivery, and has not been refreshed for this spec edit.
 
-- Worker: `resurface`; live page: [resurface.thomasmann2001.workers.dev](https://resurface.thomasmann2001.workers.dev/).
-- At inspection, the deployment served 100% version `a8630cd0-183c-45f6-a8d6-64c5cd74fd4c`; its bindings reported the D1 waitlist database and static assets.
-- The page and its app/feed scripts respond with HTTP 200 using a browser user agent.
-- Served `feed.js` uses the static shorts collection; served `shorts.js` identifies it as sample content. Send changes browser state without a delivery request. `/api/feed` returns 404.
-- Therefore the deployed page exists, but a real TigerData-backed video feed and Codex handoff have not been verified or implemented by this spec update. The planned feed must replace sample content with real records or explicit empty states.
-
-
+Remote SSH timed out during the prior verification attempts. No Playwright or independent video review ran, and no local app/browser was launched. Live TigerData schema and migration application remain unchecked. This document contains proposed contracts, not proof of implemented behavior.
 
 ## References
 
