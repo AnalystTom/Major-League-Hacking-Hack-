@@ -1,4 +1,4 @@
-import { ModelExtraction } from "../types.ts";
+import { ModelExtraction } from "../types.js";
 
 export const GEMINI_MODEL = "gemini-3.5-flash-lite";
 export const DEFAULT_WINDOW_SECONDS = 300;

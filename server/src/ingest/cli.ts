@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import pg from "pg";
-import { digestAndStore, ingestLinks } from "./pipeline.ts";
-import { MemoryStore, PgStore, type Store } from "./store.ts";
+import { digestAndStore, ingestLinks } from "./pipeline.js";
+import { MemoryStore, PgStore, type Store } from "./store.js";
 
 // usage: node src/cli.ts "<categorization request>" <youtube-url>...
 // env: GEMINI_API_KEY, OPENAI_API_KEY, optional DATABASE_URL (otherwise in-memory), PROJECT_CONTEXT (json path)

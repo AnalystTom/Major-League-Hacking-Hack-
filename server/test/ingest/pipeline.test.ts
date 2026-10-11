@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ingestLink } from "../src/pipeline.ts";
-import { MemoryStore } from "../src/store.ts";
-import { validateDigest } from "../src/digest/validate.ts";
+import { ingestLink } from "../../src/ingest/pipeline.js";
+import { MemoryStore } from "../../src/ingest/store.js";
+import { validateDigest } from "../../src/ingest/digest/validate.js";
 
 const geminiReply = (body: object) => async () =>
   new Response(JSON.stringify({ responseId: "r1", candidates: [{ content: { parts: [{ text: JSON.stringify(body) }] } }] }));

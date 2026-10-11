@@ -1,4 +1,4 @@
-import type { IngestedUnit } from "../types.ts";
+import type { IngestedUnit } from "../types.js";
 
 /** Fixed contract + grounding rules. The user's categorization request is inserted only as bounded data. */
 export const SYSTEM_PROMPT = `You are the Digestion step of a pipeline that turns extracted video evidence into project-specific recommendations.

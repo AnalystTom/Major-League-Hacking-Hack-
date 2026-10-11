@@ -10,19 +10,23 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test test/*.test.ts",
+    "test": "node --import tsx --test \"test/**/*.test.ts\"",
     "deploy": "wrangler deploy",
-    "dev:worker": "wrangler dev"
+    "dev:worker": "wrangler dev",
+    "ingest": "tsx src/ingest/cli.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.4",
-    "hono": "^4.13.13"
+    "hono": "^4.13.13",
+    "pg": "^8.23.1",
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261011.1",
     "@types/node": "^22.20.5",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
-    "wrangler": "^4.149.0"
+    "wrangler": "^4.149.0",
+    "@types/pg": "^8.15.0"
   }
 }

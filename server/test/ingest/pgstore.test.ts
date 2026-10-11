@@ -3,9 +3,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import pg from "pg";
-import { PgStore } from "../src/store.ts";
-import { ingestLink } from "../src/pipeline.ts";
-import { validateDigest } from "../src/digest/validate.ts";
+import { PgStore } from "../../src/ingest/store.js";
+import { ingestLink } from "../../src/ingest/pipeline.js";
+import { validateDigest } from "../../src/ingest/digest/validate.js";
 
 const url = process.env.TEST_DATABASE_URL;
 

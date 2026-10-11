@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { parseYouTubeUrl } from "./urls.ts";
-import { extractWithGemini, windowFor, GEMINI_MODEL } from "./extract/gemini.ts";
-import { applyValidation, validateExtraction } from "./extract/validate.ts";
-import type { Store } from "./store.ts";
-import { runDigestion, type DigestOptions } from "./digest/run.ts";
-import { promptRevisionText } from "./digest/prompt.ts";
-import type { IngestedUnit, StoredArtifact } from "./types.ts";
+import { parseYouTubeUrl } from "./urls.js";
+import { extractWithGemini, windowFor, GEMINI_MODEL } from "./extract/gemini.js";
+import { applyValidation, validateExtraction } from "./extract/validate.js";
+import type { Store } from "./store.js";
+import { runDigestion, type DigestOptions } from "./digest/run.js";
+import { promptRevisionText } from "./digest/prompt.js";
+import type { IngestedUnit, StoredArtifact } from "./types.js";
 
 export interface IngestOptions {
   geminiKey: string;

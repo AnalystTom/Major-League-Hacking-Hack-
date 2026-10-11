@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseYouTubeUrl } from "../src/urls.ts";
+import { parseYouTubeUrl } from "../../src/ingest/urls.js";
 
 test("strips Watch Later params and keeps submitted URL", () => {
   const link = "https://www.youtube.com/watch?v=VQy50fuxI34&list=WL&index=4";

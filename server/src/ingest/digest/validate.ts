@@ -1,4 +1,4 @@
-import { DigestOutput, type IngestedUnit } from "../types.ts";
+import { DigestOutput, type IngestedUnit } from "../types.js";
 
 /** Validates shape, referenced ids and that cited timestamps lie within a contributing unit's window. */
 export function validateDigest(raw: unknown, units: IngestedUnit[]): DigestOutput {

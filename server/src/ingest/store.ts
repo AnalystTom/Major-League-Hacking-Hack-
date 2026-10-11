@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
-import type { DigestArtifact, IngestedUnit, StoredArtifact } from "./types.ts";
+import type { DigestArtifact, IngestedUnit, StoredArtifact } from "./types.js";
 
 type Exclusion = { unit_id: string; reason: string };
 

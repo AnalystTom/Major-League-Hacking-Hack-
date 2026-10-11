@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { validateExtraction } from "../src/extract/validate.ts";
-import type { ModelExtraction } from "../src/types.ts";
+import { validateExtraction } from "../../src/ingest/extract/validate.js";
+import type { ModelExtraction } from "../../src/ingest/types.js";
 
 const item = (s: number, e: number) => ({ start_seconds: s, end_seconds: e, observed_spoken_content: "x" });
 const req = { sourceUrl: "https://www.youtube.com/watch?v=VQy50fuxI34", window: [0, 300] as [number, number] };
@@ -22,14 +22,14 @@ test("not ready without content or any valid item", () => {
   assert.equal(validateExtraction(ex({ evidence_items: [item(400, 410)] }), req).ok, false);
 });
 
-import { buildRequestBody } from "../src/extract/gemini.ts";
+import { buildRequestBody } from "../../src/ingest/extract/gemini.js";
 test("extraction prompt names the video and window so the model can echo them", () => {
   const body = buildRequestBody(req.sourceUrl, [306, 606]);
   const text = body.contents[0].parts[1].text!;
   assert.ok(text.includes(req.sourceUrl) && text.includes("306 to 606"));
 });
 
-import { windowFor, MAX_WINDOW_SECONDS } from "../src/extract/gemini.ts";
+import { windowFor, MAX_WINDOW_SECONDS } from "../../src/ingest/extract/gemini.js";
 test("window is bounded to 1 hour and starts at the selected time", () => {
   assert.deepEqual(windowFor(306), [306, 606]);
   assert.deepEqual(windowFor(null, MAX_WINDOW_SECONDS), [0, 3600]);

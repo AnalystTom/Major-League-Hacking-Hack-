@@ -1,4 +1,4 @@
-import type { EvidenceItem, IngestedUnit, ModelExtraction } from "../types.ts";
+import type { EvidenceItem, IngestedUnit, ModelExtraction } from "../types.js";
 
 /** Compare ids, so www/short-link spellings of the same video match. */
 function videoIdOf(url: string): string | null {
