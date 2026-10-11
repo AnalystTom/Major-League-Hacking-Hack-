@@ -70,12 +70,12 @@ async function run(id, sentProject) {
 
     const [artifact] = await sql`
       INSERT INTO artifacts (name, source_url, source_ids, sources, processed_text, category, selection_reason,
-                             project_context_id, project_context_version, ingestion_status, review_status, processed_at)
+                             project_context_id, project_context_version, ingestion_status, processed_at)
       VALUES (${`[Simulated] Takeaway from ${vid}`}, ${unit.source_url}, ${sql.array([id], 2950)},
               ${sql.json([{ url: unit.source_url, title: `YouTube ${vid}` }])},
               'Simulated digest from the local dev processor.', 'Simulation',
               ${`Simulated match for ${project?.name ?? "your project"}. Local dev output, not a real digest; the clip is a test pattern.`},
-              ${project?.id ?? null}, ${project?.version ?? null}, 'ready', 'approved', now())
+              ${project?.id ?? null}, ${project?.version ?? null}, 'ready', now())
       RETURNING id, version`;
     const [video] = await sql`
       INSERT INTO video_results (artifact_id, artifact_version, status)
@@ -88,11 +88,6 @@ async function run(id, sentProject) {
       SET status = 'ready', media_ref = ${MEDIA}, caption_ref = ${CAPTIONS}, narration_ref = 'simulated',
           music_ref = 'simulated', music_provenance = 'test tone', duration_seconds = 12, updated_at = now()
       WHERE id = ${video.id}`;
-    console.log(`unit ${id}: in review`);
-    await wait(STEP * 2);
-
-    // Stands in for a teammate approving the clip.
-    await sql`UPDATE video_results SET review_status = 'approved', updated_at = now() WHERE id = ${video.id}`;
     console.log(`unit ${id}: ready`);
   } catch (err) {
     console.error(`unit ${id}:`, err.message);

@@ -100,9 +100,9 @@ export async function readUnits(sql, ids, projectId = null) {
       COALESCE((
         SELECT json_agg(json_build_object(
           'id', a.id, 'version', a.version, 'name', a.name,
-          'ingestion_status', a.ingestion_status, 'review_status', a.review_status, 'error', a.error,
+          'ingestion_status', a.ingestion_status, 'error', a.error,
           'video', (
-            SELECT json_build_object('status', v.status, 'review_status', v.review_status, 'error', v.error)
+            SELECT json_build_object('status', v.status, 'error', v.error)
             FROM video_results v
             WHERE v.artifact_id = a.id AND v.artifact_version = a.version
             ORDER BY v.created_at DESC, v.id DESC LIMIT 1)
@@ -118,7 +118,7 @@ export async function readUnits(sql, ids, projectId = null) {
 
 /**
  * Collapses a unit's records into the one stage the page shows. `settled` means nothing more will
- * happen without a person: a failure, an exclusion, a rejection, a clip awaiting review, or a ready clip.
+ * happen automatically: a failure, an exclusion, or a ready clip.
  */
 export function describeUnit(row) {
   const base = {
@@ -142,14 +142,11 @@ export function describeUnit(row) {
   const stages = artifacts.map((a) => {
     const v = a.video;
     if (a.ingestion_status === "failed") return at("failed", true, a.error ?? null);
-    if (a.review_status === "rejected") return at("rejected", true);
     if (a.ingestion_status !== "ready") return at("digesting", false);
     if (!v || v.status === "pending" || v.status === "running") return at("rendering", false);
     if (v.status === "failed") return at("render_failed", true, v.error ?? null);
-    if (v.review_status === "rejected") return at("rejected", true);
-    if (v.review_status === "approved" && a.review_status === "approved") return at("ready", true);
-    return at("in_review", true);
+    return at("ready", true);
   });
-  const rank = ["failed", "render_failed", "rejected", "digesting", "rendering", "in_review", "ready"];
+  const rank = ["failed", "render_failed", "digesting", "rendering", "ready"];
   return stages.reduce((best, s) => (rank.indexOf(s.stage) > rank.indexOf(best.stage) ? s : best));
 }

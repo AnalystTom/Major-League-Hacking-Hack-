@@ -23,8 +23,8 @@ const SKILL_LABEL = {
 
 function skillChip(skill) {
   if (!skill) return null;
-  const ready = skill.status === "ready" && skill.review_status === "approved";
-  const label = ready ? "Skill ready" : skill.status === "ready" ? "Skill awaiting review" : SKILL_LABEL[skill.status];
+  const ready = skill.status === "ready";
+  const label = ready ? "Skill ready" : SKILL_LABEL[skill.status];
   return label ? el("span", { class: "reel-chip", "data-ready": ready ? "true" : null, text: label }) : null;
 }
 

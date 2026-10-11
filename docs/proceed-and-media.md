@@ -6,7 +6,7 @@ The landing page's **Get started** button opens `/start`, a four-step onboarding
 2. **Your project**: name, what you're working on, stack and tools, coding agents. Saved as a new
    `project_contexts` version each time, so every result is tied to the brief it was made for.
 3. **Your saves**: up to 10 YouTube links. Stored as `ingested_units` and linked to the user in `user_imports`.
-4. **Processing**: each link's real stage, until shorts are approved. Then `/app`, the signed-in home with
+4. **Processing**: each link's real stage, until shorts are rendered. Then `/app`, the signed-in home with
    the project, the links and the user's reel.
 
 Leaving part-way resumes at the first unfinished step. Signed-in visitors see "Open your feed" on the landing page.
@@ -18,7 +18,7 @@ Browser ──POST /api/auth/signup──▶ Worker ──INSERT users, sessions
                                   └──POST PROCESSOR_URL {unit_ids, project}──▶ Processor
 Processor: Gemini extraction → Digestion Prompt against the project → artifacts → Opus script → render
            ──PUT mp4 + vtt──▶ R2 (resurface-media)   ──UPDATE/INSERT──▶ TigerData
-Browser ──GET /api/imports, /api/feed?scope=mine (every 4 s; 15 s while in review)──▶ Worker ──▶ TigerData
+Browser ──GET /api/imports, /api/feed?scope=mine (every 4 s while processing)──▶ Worker ──▶ TigerData
         ──GET /media/videos/…mp4 (Range)──▶ Worker ──▶ R2
 ```
 
@@ -34,8 +34,8 @@ Every mutation must be `application/json`; with the `SameSite=Lax` session cooki
 | `GET /api/me` | `{ user, project, imports, step }`, where `step` is `project`, `sources` or `done`. `401` when signed out. |
 | `PUT /api/project` `{ name, goal?, tools, agents }` | Saves the next version of the user's brief. |
 | `POST /api/imports` `{ links }` | Needs a project. Canonicalises links, reuses a non-failed unit for the same video and start time, links each to the user, and sends units new to this user to the processor with the brief. Returns `{ units, processor }`. |
-| `GET /api/imports` | The user's links with their stage: `queued`, `fetching`, `digesting`, `rendering`, `in_review`, `ready`, `failed`, `render_failed`, `rejected`, `not_selected`, plus the actual error. |
-| `GET /api/feed?scope=mine` | The user's shorts: artifacts for their project whose artifact and video are both `ready` and `approved`. |
+| `GET /api/imports` | The user's links with their stage: `queued`, `fetching`, `digesting`, `rendering`, `ready`, `failed`, `render_failed`, `not_selected`, plus the actual error. |
+| `GET /api/feed?scope=mine` | The user's shorts: artifacts for their project whose artifact and video are both `ready`. |
 | `GET /api/feed` | The public curated feed (needs `feed_order`); no account. |
 | `GET /media/<key>` | Streams `videos/`, `captions/` or `posters/` objects from R2 with byte ranges (Safari and seeking need them). |
 
@@ -64,8 +64,7 @@ artifact for that unit and project already exists.
    - `captions/<artifact_id>/<version>/short.vtt`: WebVTT (the browser `<track>` only reads VTT)
    - optional `posters/<artifact_id>/<version>/poster.jpg`
 4. Write `video_results` with `media_ref = 'r2:videos/…/short.mp4'` and `caption_ref = 'r2:captions/…/short.vtt'`,
-   `status = 'ready'` only after the uploaded file is verified playable, and `review_status = 'pending'`.
-5. A teammate sets `review_status = 'approved'` on the artifact and the video. Only then does it reach the reel.
+   `status = 'ready'` only after the uploaded file is verified playable. Ready artifacts and videos reach the reel automatically.
 
 Refs are resolved at the Worker, so the bucket stays private and no credentials reach the browser.
 Anything other than `r2:<allowed key>` or an `https://` URL is treated as unplayable and left out of the feed.
@@ -84,6 +83,8 @@ and delivered, and it re-encodes the uploads. 30 to 45 s progressive MP4s don't 
 ## Setup before deploy
 
 Apply `db/migrations/002_accounts.sql` to TigerData (it only adds `users`, `sessions` and `user_imports`).
+Existing databases also need `db/migrations/003_ready_feed.sql` to remove approval gates from the shared feed view.
+Historical review columns remain for compatibility; they do not gate processing, playback, or skill readiness.
 
 ```
 cd web
@@ -100,7 +101,7 @@ bound as `HYPERDRIVE` is preferred over `DATABASE_URL` (pooled connections); `sr
 
 `web/scripts/dev-processor.mjs` stands in for the processor so the whole journey can be walked locally.
 It refuses any database that isn't on this machine, labels every record `[Simulated]`, points every short
-at one test clip, and approves clips itself in place of a teammate.
+at one test clip. It has no manual review step.
 
 ```
 createdb resurface_dev

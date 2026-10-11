@@ -4,18 +4,15 @@
 import { api } from "./api.js";
 
 const POLL_MS = 4000;
-const REVIEW_POLL_MS = 15000;
 
 export const STAGE = {
   queued: "Queued",
   fetching: "Reading the video",
   digesting: "Picking out what's useful",
   rendering: "Rendering the short",
-  in_review: "Rendered, waiting for a teammate to approve it",
   ready: "Ready to watch",
   failed: "Couldn't read this video",
   render_failed: "Rendering failed",
-  rejected: "Rejected in review",
   not_selected: "Nothing in it fit your project",
 };
 
@@ -54,20 +51,21 @@ export function renderUnits(list, units) {
 }
 
 /**
- * Polls the user's imports and shorts: every 4 s while something is moving, every 15 s while a clip
- * awaits review (approval can land any time), and not at all once everything has settled.
+ * Polls the user's imports and shorts every 4 s while something is moving,
+ * and not at all once everything has settled.
  */
 export function followImports({ onUnits, onItems, onError }) {
   let timer = null;
   async function refresh() {
     clearTimeout(timer);
     try {
-      const [{ units }, { items }] = await Promise.all([api("/api/imports"), api("/api/feed?scope=mine")]);
+      // Read the feed after progress so a final ready update cannot stop polling before its clip arrives.
+      const { units } = await api("/api/imports");
+      const { items } = await api("/api/feed?scope=mine");
       onUnits(units);
       onItems(items);
       const waiting = units.some((u) => !u.settled);
-      const inReview = units.some((u) => u.stage === "in_review");
-      const delay = waiting ? POLL_MS : inReview ? REVIEW_POLL_MS : null;
+      const delay = waiting ? POLL_MS : null;
       if (delay) timer = setTimeout(refresh, document.hidden ? delay * 4 : delay);
     } catch (err) {
       onError?.(err);
