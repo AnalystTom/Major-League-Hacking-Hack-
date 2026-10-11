@@ -2,6 +2,7 @@
 // ready units. Extraction and digests are shared: a video imported twice is read and digested once.
 
 import { digestAndStore, extractUnit, type IngestOptions } from "./pipeline.js";
+import { recordError } from "../activity.js";
 import { DEFAULT_CATEGORIZATION_REQUEST, promptRevisionText } from "./digest/prompt.js";
 import type { IngestedUnit, StoredArtifact } from "./types.js";
 import { tracked } from "../activity.js";
@@ -108,6 +109,7 @@ async function processNow(unitIds: string[], o: ProcessorOptions): Promise<Proce
     } catch (e) {
       const promptId = await o.store.registerPrompt(promptRevisionText(request), []).catch(() => null);
       await o.store.saveFailedArtifacts(needing, (e as Error).message, promptId);
+      recordError("digest failed", e);
       o.log?.(`digest failed for ${needing.length} unit(s): ${(e as Error).message}`);
     }
   } finally {
@@ -147,6 +149,7 @@ export function startSweep(o: ProcessorOptions, intervalMs = 60_000): () => void
       const n = await sweepOnce(o);
       if (n) o.log?.(`sweep processed ${n} pending unit(s)`);
     } catch (e) {
+      recordError("sweep failed", e);
       o.log?.(`sweep failed: ${(e as Error).message}`);
     } finally {
       running = false;

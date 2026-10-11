@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { recordError } from "../activity.js";
 import { bearerAuth } from "hono/bearer-auth";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -93,7 +94,7 @@ export function createIngestApp(o: ApiOptions): Hono {
     const { unit_ids } = parsed.data;
     void processUnits(unit_ids, o)
       .then((s) => o.log?.(`processed ${unit_ids.length} unit(s): ${JSON.stringify(s)}`))
-      .catch((e: Error) => o.log?.(`processing failed: ${e.message}`));
+      .catch((e: Error) => { recordError("processing failed", e); o.log?.(`processing failed: ${e.message}`); });
     return c.json({ accepted: unit_ids.length }, 202);
   });
 

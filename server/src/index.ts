@@ -2,6 +2,8 @@
 
 import { serve } from "@hono/node-server";
 import pg from "pg";
+import { recordError } from "./activity.js";
+import { poolConfig } from "./db.js";
 import type { StoredArtifact } from "./ingest/types.js";
 import { createApp, parseOrigins } from "./app.js";
 import { setUsageSink } from "./usage.js";
@@ -15,7 +17,7 @@ import { MemoryOutputStore, PgOutputStore } from "./outputs/store.js";
 import { createHandoffApp } from "./outputs/handoff-api.js";
 import { PgHandoffStore } from "./outputs/handoff-store.js";
 
-const app = createApp({ webOrigins: parseOrigins(process.env.WEB_ORIGINS) });
+const app = createApp({ webOrigins: parseOrigins(process.env.WEB_ORIGINS), healthToken: process.env.INGEST_TOKEN });
 setUsageSink((u) => console.log(`[usage] ${JSON.stringify(u)}`));
 
 // Ingestion (workflow 1) runs on Node only: it needs pg and requests that outlive a Worker's limits.
@@ -25,7 +27,9 @@ setUsageSink((u) => console.log(`[usage] ${JSON.stringify(u)}`));
 if (process.env.GEMINI_API_KEY) {
   const token = process.env.INGEST_TOKEN;
   if (!token) throw new Error("INGEST_TOKEN is required when ingestion is enabled");
-  const pool = process.env.DATABASE_URL ? new pg.Pool({ connectionString: process.env.DATABASE_URL }) : null;
+  const pool = process.env.DATABASE_URL ? new pg.Pool(poolConfig(process.env.DATABASE_URL)) : null;
+  // An idle client losing its connection emits here; without a listener it would crash the process.
+  pool?.on("error", (e) => { recordError("database", e); console.log(`[db] ${e.message}`); });
   const options = {
     token,
     geminiKey: process.env.GEMINI_API_KEY,

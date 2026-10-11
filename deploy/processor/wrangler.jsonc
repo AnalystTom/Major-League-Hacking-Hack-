@@ -26,6 +26,11 @@
     "R2_BUCKET": "resurface-media",
     "WEB_ORIGINS": "https://resurface.thomasmann2001.workers.dev",
     "WINDOW_SECONDS": "300",
+    // Digest, skills, scripts and handoffs: GPT 6.1 at extra-high reasoning, with room in the output cap for its
+    // hidden reasoning tokens (they count against max_completion_tokens).
+    "OPENAI_MODEL": "gpt-6.1-sol",
+    "OPENAI_REASONING_EFFORT": "xhigh",
+    "OPENAI_MAX_OUTPUT_TOKENS": "40000",
     // Hard cap on provider spend across all users, at ~$0.12 a short. Raised to 100/400 (about $48 a month at the cap)
     // for the demo only: put it back to 10/40 afterwards.
     "DAILY_VIDEO_LIMIT": "100",

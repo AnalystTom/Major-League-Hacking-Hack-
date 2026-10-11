@@ -2,6 +2,7 @@
 // Called after each digest and by the sweep, which also picks up claims a crashed processor left behind.
 
 import { generateSkill } from "./skills.js";
+import { recordError } from "../activity.js";
 import { renderArtifact } from "./render/render.js";
 import type { MediaStore } from "./render/media.js";
 import { LostClaim, type Kind, type OutputStore } from "./store.js";
@@ -51,9 +52,11 @@ async function produceNow(kind: Kind, a: ReadyArtifact, o: OutputOptions) {
     } catch (e) {
       // A worker whose claim was taken over leaves the row to the one that took it.
       const recorded = !(e instanceof LostClaim) && (await o.outputs.fail(kind, claim, (e as Error).message));
+      recordError(`${kind} failed`, e);
       o.log?.(`${kind} ${recorded ? "failed" : "not recorded"} for artifact ${a.id} v${a.version}: ${(e as Error).message}`);
     }
   } catch (e) {
+    recordError(`${kind} claim failed`, e);
     o.log?.(`${kind} for artifact ${a.id} v${a.version} couldn't be claimed or recorded: ${(e as Error).message}`);
   } finally {
     inFlight.delete(key);
@@ -101,6 +104,7 @@ export function startOutputSweep(o: OutputOptions, intervalMs = 60_000): () => v
       const n = await sweepOutputs(o);
       if (n) o.log?.(`output sweep handled ${n} artifact output(s)`);
     } catch (e) {
+      recordError("output sweep failed", e);
       o.log?.(`output sweep failed: ${(e as Error).message}`);
     } finally {
       running = false;
