@@ -176,6 +176,15 @@ async function launch(o: ProviderOptions): Promise<Browser> {
 
 interface Stage { page: Page; errors: string[] }
 
+/** Rejects when p doesn't settle in time. A FILM that loops forever hangs page.evaluate, so every call into the page is
+ * bounded; the caller then closes the context or browser, which kills the renderer. */
+export function bounded<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const limit = new Promise<never>((_, fail) => { timer = setTimeout(() => fail(new Error(`${what} took longer than ${ms / 1000}s`)), ms); });
+  return Promise.race([p, limit]).finally(() => clearTimeout(timer));
+}
+const CALL_MS = 5_000;
+
 /** Loads FILM on a page with no network; returns the errors from loading and from painting a frame in each beat. */
 async function stage(browser: Browser, film: string, tl: { total: number; beats: { start: number; end: number }[] }): Promise<Stage> {
   // The program is untrusted code: no network at any layer (offline context, every request aborted, WebSockets closed,
@@ -186,32 +195,40 @@ async function stage(browser: Browser, film: string, tl: { total: number; beats:
   await page.routeWebSocket("**", (ws) => ws.close());
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.setContent(pageHtml(film, tl), { waitUntil: "load" });
-  await page.evaluate(async () => {
-    await Promise.all(['800 100px "Funnel Display"', 'italic 400 100px "Instrument Serif"', '500 20px "Martian Mono"'].map((f) => document.fonts.load(f)));
-  });
-  const shape = await page.evaluate((n) => {
-    const F = (window as any).FILM;
-    if (!F || typeof (window as any).seek !== "function") return "window.FILM is missing or invalid";
-    if (!Array.isArray(F.draw) || F.draw.length !== n || F.draw.some((d: unknown) => typeof d !== "function")) return `FILM.draw must hold ${n} functions`;
-    if (!Array.isArray(F.bg) || !Array.isArray(F.chapters)) return "FILM.bg and FILM.chapters must be arrays";
-    return "";
-  }, tl.beats.length);
-  if (shape) errors.push(shape);
-  else {
-    for (const b of tl.beats) {
-      for (const t of [b.start + 0.05, (b.start + b.end) / 2, b.end - 0.05]) {
-        const e = await page.evaluate((x) => { try { (window as any).seek(x); return ""; } catch (err) { return String((err as Error)?.message ?? err); } }, t);
-        if (e) errors.push(`at ${t.toFixed(2)}s: ${e}`);
+  try {
+    await bounded(page.setContent(pageHtml(film, tl), { waitUntil: "load" }), 15_000, "loading the motion program");
+    await bounded(page.evaluate(async () => {
+      await Promise.all(['800 100px "Funnel Display"', 'italic 400 100px "Instrument Serif"', '500 20px "Martian Mono"'].map((f) => document.fonts.load(f)));
+    }), 15_000, "loading fonts");
+    const shape = await bounded(page.evaluate((n) => {
+      const F = (window as any).FILM;
+      if (!F || typeof (window as any).seek !== "function") return "window.FILM is missing or invalid";
+      if (!Array.isArray(F.draw) || F.draw.length !== n || F.draw.some((d: unknown) => typeof d !== "function")) return `FILM.draw must hold ${n} functions`;
+      if (!Array.isArray(F.bg) || !Array.isArray(F.chapters)) return "FILM.bg and FILM.chapters must be arrays";
+      return "";
+    }, tl.beats.length), CALL_MS, "checking FILM");
+    if (shape) errors.push(shape);
+    else {
+      for (const b of tl.beats) {
+        for (const t of [b.start + 0.05, (b.start + b.end) / 2, b.end - 0.05]) {
+          const e = await bounded(page.evaluate((x) => { try { (window as any).seek(x); return ""; } catch (err) { return String((err as Error)?.message ?? err); } }, t), CALL_MS, `painting ${t.toFixed(2)}s`);
+          if (e) errors.push(`at ${t.toFixed(2)}s: ${e}`);
+        }
       }
     }
+  } catch (e) {
+    await context.close().catch(() => {});
+    throw e;
   }
   return { page, errors: [...new Set(errors)].slice(0, 8) };
 }
 
-const frame = (page: Page, t: number) =>
-  page.evaluate((x) => { (window as any).seek(x); return (document.getElementById("c") as HTMLCanvasElement).toDataURL("image/jpeg", 0.92); }, t)
-    .then((url) => Buffer.from(url.slice(url.indexOf(",") + 1), "base64"));
+// Frames come from the browser's own screenshot, not from page JavaScript (which FILM could override), so ffmpeg only
+// ever decodes JPEGs Chromium encoded.
+async function frame(page: Page, t: number): Promise<Buffer> {
+  await bounded(page.evaluate((x) => { (window as any).seek(x); }, t), CALL_MS, `painting ${t.toFixed(2)}s`);
+  return bounded(page.screenshot({ type: "jpeg", quality: 92 }), 15_000, "capturing a frame");
+}
 
 /** Paints every frame into ffmpeg (no disk round trip) and returns the silent video's path. */
 async function encodeFrames(page: Page, total: number, out: string) {
@@ -221,9 +238,15 @@ async function encodeFrames(page: Page, total: number, out: string) {
   ff.stderr.on("data", (d) => (err += d));
   const done = new Promise<void>((ok, fail) => ff.on("close", (c) => (c === 0 ? ok() : fail(new Error(`ffmpeg frames exited ${c}: ${err.slice(-300)}`)))));
   const n = Math.ceil(total * FPS);
-  for (let f = 0; f < n; f++) {
-    const jpg = await frame(page, f / FPS);
-    if (!ff.stdin.write(jpg)) await new Promise((r) => ff.stdin.once("drain", r));
+  try {
+    for (let f = 0; f < n; f++) {
+      const jpg = await frame(page, f / FPS);
+      if (!ff.stdin.write(jpg)) await new Promise((r) => ff.stdin.once("drain", r));
+    }
+  } catch (e) {
+    ff.kill("SIGKILL");
+    await done.catch(() => {});
+    throw e;
   }
   ff.stdin.end();
   await done;
@@ -231,7 +254,7 @@ async function encodeFrames(page: Page, total: number, out: string) {
 
 /** The FILM's cues as 48 kHz mono WAV, synthesized offline in the page. */
 async function soundEffects(page: Page, total: number): Promise<Buffer> {
-  const b64 = await page.evaluate(async ({ total, kinds }) => {
+  const b64 = await bounded(page.evaluate(async ({ total, kinds }) => {
     const F = (window as any).FILM, TL = (window as any).TIMELINE, rate = 48000;
     const ac = new OfflineAudioContext(1, Math.ceil((total + 1) * rate), rate);
     const level = ac.createGain(); level.gain.value = 0.55;
@@ -263,8 +286,13 @@ async function soundEffects(page: Page, total: number): Promise<Buffer> {
       bin += String.fromCharCode(...bytes);
     }
     return btoa(bin);
-  }, { total, kinds: [...SFX] as string[] });
+  }, { total, kinds: [...SFX] as string[] }), 60_000, "synthesizing sound effects");
+  // The samples come from page JavaScript, so only the exact expected amount of 16-bit PCM is accepted; the WAV header
+  // is ours.
+  const expected = Math.ceil((total + 1) * 48000) * 2;
+  if (typeof b64 !== "string" || b64.length > Math.ceil(expected / 3) * 4 + 4) throw new Error("sound effects came back the wrong size");
   const pcm = Buffer.from(b64, "base64"), h = Buffer.alloc(44);
+  if (pcm.length !== expected) throw new Error(`sound effects came back the wrong size (${pcm.length} bytes, expected ${expected})`);
   h.write("RIFF", 0); h.writeUInt32LE(36 + pcm.length, 4); h.write("WAVE", 8); h.write("fmt ", 12); h.writeUInt32LE(16, 16); h.writeUInt16LE(1, 20); h.writeUInt16LE(1, 22);
   h.writeUInt32LE(48000, 24); h.writeUInt32LE(96000, 28); h.writeUInt16LE(2, 32); h.writeUInt16LE(16, 34); h.write("data", 36); h.writeUInt32LE(pcm.length, 40);
   return Buffer.concat([h, pcm]);

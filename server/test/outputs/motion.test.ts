@@ -109,3 +109,23 @@ test("renders a FILM frame by frame into a 1080x1920 short with narration, effec
       await rm(out, { recursive: true, force: true });
     }
   });
+
+test("a FILM that never returns times out and the short falls back to text",
+  { skip: (!hasFfmpeg || !chromiumPath) && "needs ffmpeg and CHROMIUM_PATH", timeout: 300_000 }, async () => {
+    const out = await mkdtemp(join(tmpdir(), "resurface-motion-hang-"));
+    try {
+      const a = artifact();
+      const hang = FILM.replace("K.robot(", "for (;;) {} K.robot(");
+      const { impl: textImpl } = outputsFetch(a);
+      const impl = (async (url: string, init?: { body?: string }) => {
+        if (String(url).includes("openai") && JSON.parse(init!.body!).messages[0].content.includes("motion designer")) {
+          return Response.json({ choices: [{ message: { content: JSON.stringify(motionReply(a, hang)) } }] });
+        }
+        return textImpl(url, init as RequestInit);
+      }) as unknown as typeof fetch;
+      const v = await renderArtifact(a, { openaiKey: "o", geminiKey: "g", media: new DirMedia(out), fetchImpl: impl, renderStyle: "motion", chromiumPath });
+      assert.match(v.prompt_revision, /motion fell back: .*took longer than 5s/);
+    } finally {
+      await rm(out, { recursive: true, force: true });
+    }
+  });
