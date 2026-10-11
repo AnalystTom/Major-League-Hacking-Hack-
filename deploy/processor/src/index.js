@@ -50,28 +50,33 @@ export class Processor extends Container {
     return {
       sent: await short(sent),
       held: await short(this.envVars),
-      started_with: ((await this.ctx.storage.get("settingsHash")) ?? "none").slice(0, 12),
+      started_with: ((await this.ctx.storage.get("appliedSettings")) ?? "none").slice(0, 12),
       container: (await this.getState()).status,
+      running: Boolean(this.ctx.container?.running),
     };
   }
 
-  // A container keeps the settings it started with, so once a secret or var changes, restart it on the next
-  // request, as long as it isn't mid-job (otherwise it carries on and the next request checks again).
+  // A container keeps the settings it started with. Record them when this object starts one, never in onStart,
+  // which the library also calls when it re-attaches to a container that's already running. A running container
+  // with other settings (or none recorded) is restarted on the next request, unless it's mid-job: then it
+  // carries on and the next request checks again.
   async fetch(request) {
-    if ((await this.ctx.storage.get("settingsHash")) !== (await settingsHash(this.envVars))) {
-      const { status } = await this.getState();
-      if ((status === "running" || status === "healthy") && !(await this.busy())) {
-        await this.stop();
-        for (let i = 0; i < 20 && !["stopped", "stopped_with_code"].includes((await this.getState()).status); i++) {
-          await new Promise((resolve) => setTimeout(resolve, 500));
-        }
+    const wanted = await settingsHash(this.envVars);
+    // The runtime's own flag, not the stored state, which can still say "healthy" after a container has gone.
+    if (this.ctx.container?.running) {
+      if ((await this.ctx.storage.get("appliedSettings")) === wanted || (await this.busy())) return super.fetch(request);
+      await this.stop();
+      for (let i = 0; i < 20 && this.ctx.container?.running; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
       }
     }
+    // Not running, so whatever starts it next starts it with these settings.
+    await this.ctx.storage.put("appliedSettings", wanted);
     return super.fetch(request);
   }
 
   async onStart() {
-    await this.ctx.storage.put({ awakeSince: Date.now(), settingsHash: await settingsHash(this.envVars) });
+    await this.ctx.storage.put("awakeSince", Date.now());
   }
 
   // Imports run for many minutes without any request reaching the container, so an idle timer alone would
