@@ -52,22 +52,22 @@ test("outputs, stale claims and digest retries against the shared schema", { ski
 
     const [s1, s2] = await Promise.all([outputs.claim("skill", art), outputs.claim("skill", art)]);
     assert.ok((s1 === null) !== (s2 === null), "one claim wins");
-    const skillId = (s1 ?? s2)!;
-    await outputs.finishSkill(skillId, {
+    const skillClaim = (s1 ?? s2)!;
+    await outputs.finishSkill(skillClaim, {
       skill_markdown: "---\nname: check-first\ndescription: \"x\"\n---\n\nbody\n", supporting_refs: art.sources,
       action_items: [{ task: "Add a failing test", applicability_evidence: [], prerequisites: [], steps: ["Inspect"], source_refs: [ready], completion_check: "It fails, then passes" }],
     });
-    const items = (await pool.query(`SELECT task, position FROM action_items WHERE skill_result_id = $1`, [skillId])).rows;
+    const items = (await pool.query(`SELECT task, position FROM action_items WHERE skill_result_id = $1`, [skillClaim.id])).rows;
     assert.deepEqual(items, [{ task: "Add a failing test", position: 0 }]);
     assert.ok(!(await outputs.artifactsNeeding("skill", 500)).some((x) => x.id === a.id));
 
-    const videoId = (await outputs.claim("video", art))!;
-    await assert.rejects(pool.query(`UPDATE video_results SET status = 'ready' WHERE id = $1`, [videoId]), /video_ready_has_media/);
-    await outputs.finishVideo(videoId, {
+    const videoClaim = (await outputs.claim("video", art))!;
+    await assert.rejects(pool.query(`UPDATE video_results SET status = 'ready' WHERE id = $1`, [videoClaim.id]), /video_ready_has_media/);
+    await outputs.finishVideo(videoClaim, {
       script: { scenes: [] }, prompt_revision: "script-v1", media_ref: `r2:videos/${a.id}/1/short.mp4`,
       caption_ref: `r2:captions/${a.id}/1/short.vtt`, narration_ref: `r2:audio/${a.id}/1/narration.m4a`, duration_seconds: 34.5,
     });
-    const v = (await pool.query(`SELECT status, music_ref, duration_seconds FROM video_results WHERE id = $1`, [videoId])).rows[0];
+    const v = (await pool.query(`SELECT status, music_ref, duration_seconds FROM video_results WHERE id = $1`, [videoClaim.id])).rows[0];
     assert.deepEqual(v, { status: "ready", music_ref: null, duration_seconds: "34.50" });
     assert.equal(await outputs.claim("video", art), null, "a ready video isn't redone");
   } finally {
@@ -118,6 +118,46 @@ test("a digest that also uses someone else's video doesn't count for a person wh
     await pool.query(`DELETE FROM ingested_units WHERE id = ANY($1::uuid[])`, [units]);
     await pool.query(`DELETE FROM users WHERE id = ANY($1::uuid[])`, [users]);
     if (prompt) await pool.query(`DELETE FROM digestion_prompts WHERE id = $1`, [prompt]);
+    await pool.end();
+  }
+});
+
+test("only the worker holding the current claim token can settle a result", { skip: !url && "TEST_DATABASE_URL not set" }, async () => {
+  const pool = new pg.Pool({ connectionString: url });
+  const outputs = new PgOutputStore(pool);
+  const ids = { unit: "", prompt: "", artifact: "" };
+  try {
+    ids.unit = (await pool.query(`INSERT INTO ingested_units (submitted_url, source_url, status, transcript) VALUES ('u', 'https://www.youtube.com/watch?v=VQy50fuxI34', 'ready', '{}') RETURNING id`)).rows[0].id;
+    ids.prompt = (await pool.query(`INSERT INTO digestion_prompts (name, revision, prompt_text) VALUES ($1, 1, $1) RETURNING id`, [`test-${randomUUID()}`])).rows[0].id;
+    const a = (await pool.query(`INSERT INTO artifacts (name, source_url, source_ids, processed_text, digestion_prompt_id, ingestion_status) VALUES ('x', 'x', $1, 't', $2, 'ready') RETURNING id, version`, [[ids.unit], ids.prompt])).rows[0];
+    ids.artifact = a.id;
+    const art = { ...a, name: "x", category: null, processed_text: "t", selection_reason: null, source_ids: [ids.unit], sources: [], evidence: [] };
+    const video = { script: { scenes: [] }, prompt_revision: "r", media_ref: "r2:videos/x/1/short.mp4", caption_ref: "r2:captions/x/1/short.vtt", narration_ref: "r2:audio/x/1/narration.m4a", duration_seconds: 30 };
+
+    const first = (await outputs.claim("video", art))!;
+    assert.equal(await outputs.claim("video", art), null, "a live claim isn't taken");
+    await pool.query(`UPDATE video_results SET updated_at = now() - interval '2 hours' WHERE id = $1`, [first.id]);
+    const second = (await outputs.claim("video", art))!;
+    assert.equal(second.id, first.id);
+    assert.notEqual(second.token, first.token);
+
+    await assert.rejects(outputs.finishVideo(first, video), /taken over by a newer worker/);
+    assert.equal(await outputs.fail("video", first, "late failure"), false);
+    await outputs.finishVideo(second, video);
+    assert.equal((await pool.query(`SELECT status FROM video_results WHERE id = $1`, [first.id])).rows[0].status, "ready");
+
+    const skill = (await outputs.claim("skill", art))!;
+    await pool.query(`UPDATE skill_results SET claim_token = gen_random_uuid() WHERE id = $1`, [skill.id]);
+    await assert.rejects(outputs.finishSkill(skill, { skill_markdown: "x", supporting_refs: [], action_items: [] }), /taken over/);
+    assert.equal((await pool.query(`SELECT status FROM skill_results WHERE id = $1`, [skill.id])).rows[0].status, "running");
+  } finally {
+    if (ids.artifact) {
+      await pool.query(`DELETE FROM skill_results WHERE artifact_id = $1`, [ids.artifact]);
+      await pool.query(`DELETE FROM video_results WHERE artifact_id = $1`, [ids.artifact]);
+      await pool.query(`DELETE FROM artifacts WHERE id = $1`, [ids.artifact]);
+    }
+    if (ids.unit) await pool.query(`DELETE FROM ingested_units WHERE id = $1`, [ids.unit]);
+    if (ids.prompt) await pool.query(`DELETE FROM digestion_prompts WHERE id = $1`, [ids.prompt]);
     await pool.end();
   }
 });

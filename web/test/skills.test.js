@@ -99,3 +99,25 @@ test("polling keeps going while a skill is still being written after its short i
   await second;
   assert.deepEqual(seen, ["running", "ready"]);
 });
+
+test("a ready short without a skill yet keeps a slow, bounded check going", async (t) => {
+  let skillCalls = 0;
+  t.mock.method(globalThis, "fetch", async (url) => {
+    if (url === "/api/imports") return Response.json({ units: [{ stage: "ready", settled: true }] });
+    if (url === "/api/feed?scope=mine") return Response.json({ items: [{ id: "a", version: 1, skill: null }] });
+    skillCalls++;
+    return Response.json({ skills: [] });
+  });
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  globalThis.document = { hidden: false };
+  t.after(() => delete globalThis.document);
+  const flush = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
+  followImports({ onUnits: () => {}, onItems: () => {}, onSkills: () => {} });
+  await flush();
+  assert.equal(skillCalls, 1);
+  t.mock.timers.tick(4000);
+  await flush();
+  assert.equal(skillCalls, 1, "not the fast 4 s poll");
+  for (let i = 0; i < 20; i++) { t.mock.timers.tick(20_000); await flush(); }
+  assert.equal(skillCalls, 16, "one first read, then 15 slow checks, then it stops");
+});

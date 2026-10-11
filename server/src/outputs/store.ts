@@ -7,17 +7,30 @@ import type { GeneratedSkill, ReadyArtifact, RenderedVideo } from "./types.js";
 
 export type Kind = "skill" | "video";
 
-/** A claimed `running` row older than this is treated as abandoned by a crashed processor. */
-export const STALE_MINUTES = 30;
+/**
+ * A claimed `running` row older than this is treated as abandoned by a crashed processor. A render's worst case
+ * (script, six narrated scenes with retries, ffmpeg, three uploads) stays well inside it.
+ */
+export const STALE_MINUTES = 60;
+
+/** The row a worker holds, and the token that proves it still holds it. */
+export interface Claim { id: string; token: string }
+
+/** Thrown when a worker finishes after its claim went stale and someone else took the work over. */
+export class LostClaim extends Error {
+  constructor(kind: Kind) { super(`this ${kind} was taken over by a newer worker; its result was not saved`); }
+}
 
 export interface OutputStore {
   /** Ready digests of imported units with no result of this kind yet, or whose claim went stale. */
   artifactsNeeding(kind: Kind, limit: number): Promise<ReadyArtifact[]>;
   /** Takes the one result row for this revision as `running`; null when someone else holds it or it's settled. */
-  claim(kind: Kind, a: ReadyArtifact): Promise<string | null>;
-  fail(kind: Kind, id: string, error: string): Promise<void>;
-  finishSkill(id: string, s: GeneratedSkill): Promise<void>;
-  finishVideo(id: string, v: RenderedVideo): Promise<void>;
+  claim(kind: Kind, a: ReadyArtifact): Promise<Claim | null>;
+  /** Records a failure while the claim is still held; returns false when it was taken over. */
+  fail(kind: Kind, c: Claim, error: string): Promise<boolean>;
+  /** Save the result; throw LostClaim if the claim was taken over. */
+  finishSkill(c: Claim, s: GeneratedSkill): Promise<void>;
+  finishVideo(c: Claim, v: RenderedVideo): Promise<void>;
 }
 
 const TABLE: Record<Kind, string> = { skill: "skill_results", video: "video_results" };
@@ -49,21 +62,31 @@ export class PgOutputStore implements OutputStore {
   async claim(kind: Kind, a: ReadyArtifact) {
     const t = TABLE[kind];
     const { rows } = await this.pool.query(
-      `INSERT INTO ${t} (artifact_id, artifact_version, status, updated_at) VALUES ($1, $2, 'running', now())
-       ON CONFLICT (artifact_id, artifact_version) DO UPDATE SET status = 'running', error = NULL, updated_at = now()
+      `INSERT INTO ${t} (artifact_id, artifact_version, status, updated_at, claim_token) VALUES ($1, $2, 'running', now(), gen_random_uuid())
+       ON CONFLICT (artifact_id, artifact_version) DO UPDATE SET status = 'running', error = NULL, updated_at = now(), claim_token = gen_random_uuid()
        WHERE ${t}.status = 'pending' OR (${t}.status = 'running' AND ${t}.updated_at < now() - make_interval(mins => $3))
-       RETURNING id`, [a.id, a.version, STALE_MINUTES]);
-    return (rows[0]?.id as string | undefined) ?? null;
+       RETURNING id, claim_token`, [a.id, a.version, STALE_MINUTES]);
+    return rows[0] ? { id: rows[0].id as string, token: rows[0].claim_token as string } : null;
   }
 
-  async fail(kind: Kind, id: string, error: string) {
-    await this.pool.query(`UPDATE ${TABLE[kind]} SET status = 'failed', error = $2, updated_at = now() WHERE id = $1`, [id, error.slice(0, 2000)]);
+  async fail(kind: Kind, c: Claim, error: string) {
+    const { rowCount } = await this.pool.query(
+      `UPDATE ${TABLE[kind]} SET status = 'failed', error = $3, updated_at = now() WHERE id = $1 AND claim_token = $2 AND status = 'running'`,
+      [c.id, c.token, error.slice(0, 2000)]);
+    return rowCount === 1;
   }
 
-  async finishSkill(id: string, s: GeneratedSkill) {
+  async finishSkill(c: Claim, s: GeneratedSkill) {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
+      // Settling the row first takes its lock, so a worker taking over waits and then sees it's done.
+      const { rowCount } = await client.query(
+        `UPDATE skill_results SET status = 'ready', skill_markdown = $3, supporting_refs = $4, error = NULL, updated_at = now()
+         WHERE id = $1 AND claim_token = $2 AND status = 'running'`,
+        [c.id, c.token, s.skill_markdown, JSON.stringify(s.supporting_refs)]);
+      if (rowCount !== 1) throw new LostClaim("skill");
+      const id = c.id;
       await client.query(`DELETE FROM action_items WHERE skill_result_id = $1`, [id]);
       for (const [position, item] of s.action_items.entries()) {
         await client.query(
@@ -72,9 +95,6 @@ export class PgOutputStore implements OutputStore {
           [id, item.task, JSON.stringify(item.applicability_evidence), JSON.stringify(item.prerequisites), JSON.stringify(item.steps),
            JSON.stringify(item.source_refs), item.completion_check, position]);
       }
-      await client.query(
-        `UPDATE skill_results SET status = 'ready', skill_markdown = $2, supporting_refs = $3, error = NULL, updated_at = now() WHERE id = $1`,
-        [id, s.skill_markdown, JSON.stringify(s.supporting_refs)]);
       await client.query("COMMIT");
     } catch (e) {
       await client.query("ROLLBACK");
@@ -84,15 +104,17 @@ export class PgOutputStore implements OutputStore {
     }
   }
 
-  async finishVideo(id: string, v: RenderedVideo) {
-    await this.pool.query(
-      `UPDATE video_results SET status = 'ready', script = $2, opus_prompt_revision = $3, media_ref = $4, caption_ref = $5,
-         narration_ref = $6, duration_seconds = $7, error = NULL, updated_at = now() WHERE id = $1`,
-      [id, JSON.stringify(v.script), v.prompt_revision, v.media_ref, v.caption_ref, v.narration_ref, v.duration_seconds]);
+  async finishVideo(c: Claim, v: RenderedVideo) {
+    const { rowCount } = await this.pool.query(
+      `UPDATE video_results SET status = 'ready', script = $3, opus_prompt_revision = $4, media_ref = $5, caption_ref = $6,
+         narration_ref = $7, duration_seconds = $8, error = NULL, updated_at = now()
+       WHERE id = $1 AND claim_token = $2 AND status = 'running'`,
+      [c.id, c.token, JSON.stringify(v.script), v.prompt_revision, v.media_ref, v.caption_ref, v.narration_ref, v.duration_seconds]);
+    if (rowCount !== 1) throw new LostClaim("video");
   }
 }
 
-type Row = { id: string; artifact: ReadyArtifact; status: "running" | "ready" | "failed"; error: string | null; value?: unknown };
+type Row = { id: string; token: string; artifact: ReadyArtifact; status: "running" | "ready" | "failed"; error: string | null; value?: unknown };
 
 /** In-memory stand-in for tests and runs without DATABASE_URL. */
 export class MemoryOutputStore implements OutputStore {
@@ -105,12 +127,28 @@ export class MemoryOutputStore implements OutputStore {
   }
   async claim(kind: Kind, a: ReadyArtifact) {
     if (this.rows[kind].has(this.key(a))) return null;
-    const row: Row = { id: randomUUID(), artifact: a, status: "running", error: null };
+    const row: Row = { id: randomUUID(), token: randomUUID(), artifact: a, status: "running", error: null };
     this.rows[kind].set(this.key(a), row);
-    return row.id;
+    return { id: row.id, token: row.token };
   }
-  private byId(kind: Kind, id: string) { return [...this.rows[kind].values()].find((r) => r.id === id)!; }
-  async fail(kind: Kind, id: string, error: string) { Object.assign(this.byId(kind, id), { status: "failed", error }); }
-  async finishSkill(id: string, s: GeneratedSkill) { Object.assign(this.byId("skill", id), { status: "ready", value: s }); }
-  async finishVideo(id: string, v: RenderedVideo) { Object.assign(this.byId("video", id), { status: "ready", value: v }); }
+  /** Test hook: what a newer worker's claim does to a stale row. */
+  takeOver(kind: Kind, id: string) { this.held(kind, { id, token: "" }, true)!.token = randomUUID(); }
+  private held(kind: Kind, c: Claim, any = false) {
+    return [...this.rows[kind].values()].find((r) => r.id === c.id && (any || (r.token === c.token && r.status === "running")));
+  }
+  async fail(kind: Kind, c: Claim, error: string) {
+    const row = this.held(kind, c);
+    if (row) Object.assign(row, { status: "failed", error });
+    return !!row;
+  }
+  async finishSkill(c: Claim, s: GeneratedSkill) {
+    const row = this.held("skill", c);
+    if (!row) throw new LostClaim("skill");
+    Object.assign(row, { status: "ready", value: s });
+  }
+  async finishVideo(c: Claim, v: RenderedVideo) {
+    const row = this.held("video", c);
+    if (!row) throw new LostClaim("video");
+    Object.assign(row, { status: "ready", value: v });
+  }
 }

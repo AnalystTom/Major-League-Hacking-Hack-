@@ -116,7 +116,9 @@ const ARTIFACT_RETURNING = "id, version, source_url, sources, ingestion_status, 
 
 /** Writes to the shared TigerData schema (db/migrations). Workflow 1 owns these tables only. */
 // Needs claimed_at from db/migrations/005_outputs.sql. A claim older than this belongs to a processor that died.
-const CLAIMABLE = `(status = 'pending' OR (status = 'running' AND (claimed_at IS NULL OR claimed_at < now() - interval '20 minutes')))`;
+// It must outlast one extraction's worst case: 4 attempts of (90 s + window / 10) plus backoff is about 31 minutes
+// at the 3,600 s maximum window, so an hour never steals a unit that's still being read.
+const CLAIMABLE = `(status = 'pending' OR (status = 'running' AND (claimed_at IS NULL OR claimed_at < now() - interval '60 minutes')))`;
 
 // A user sees an artifact only when they imported every video it was built from (web/src/feed.js and skills.js),
 // so a digest never shows one person's videos to another. This is "no visible digest of u for that user".
