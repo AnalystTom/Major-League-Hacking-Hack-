@@ -27,6 +27,7 @@ test("session cookie is httpOnly, Secure, SameSite=Lax and readable back", () =>
   const c = sessionCookie("tok_123");
   for (const part of ["rs_session=tok_123", "HttpOnly", "Secure", "SameSite=Lax", "Path=/"]) assert.ok(c.includes(part), part);
   assert.ok(sessionCookie("", 0).includes("Max-Age=0"));
+  assert.ok(!sessionCookie("t", 60, false).includes("Secure"));
   assert.equal(readCookie("a=1; rs_session=tok_123; b=2", "rs_session"), "tok_123");
   assert.equal(readCookie("a=1", "rs_session"), null);
   assert.equal(readCookie(null, "rs_session"), null);

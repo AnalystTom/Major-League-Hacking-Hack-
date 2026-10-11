@@ -61,8 +61,10 @@ export function readCookie(header, name) {
   return null;
 }
 
-export const sessionCookie = (token, maxAge = SESSION_DAYS * 86400) =>
-  `${COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
+// Secure is set whenever the request came over HTTPS (always, in production); plain-http localhost
+// needs it off or Safari drops the cookie.
+export const sessionCookie = (token, maxAge = SESSION_DAYS * 86400, secure = true) =>
+  `${COOKIE}=${token}; Path=/; HttpOnly;${secure ? " Secure;" : ""} SameSite=Lax; Max-Age=${maxAge}`;
 
 export async function createSession(sql, userId) {
   const token = b64(crypto.getRandomValues(new Uint8Array(32))).replace(/[+/=]/g, (c) => ({ "+": "-", "/": "_", "=": "" })[c]);
