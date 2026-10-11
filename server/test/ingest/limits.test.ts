@@ -57,3 +57,25 @@ test("a monthly limit of 0 pauses processing entirely", async () => {
   assert.equal(s.deferred, 1);
   assert.equal(calls.gemini, 0);
 });
+
+test("re-digesting an already-read video takes a slot; the digest its extraction paid for doesn't", async () => {
+  const store = new MemoryStore();
+  const u = pendingUnit("VQy50fuxI34");
+  await store.saveUnit(u);
+  const { impl, calls } = mockFetch();
+  const limits = { daily: 1, monthly: 40 };
+  const first = await processUnits([u.id], { geminiKey: "k", openaiKey: "o", store, fetchImpl: impl, retries: 0, limits });
+  assert.equal(first.digested, 1, "extraction and its digest fit in one slot");
+  assert.equal(calls.openai, 1);
+
+  // Someone else's import of the same video needs a new digest (here: the first one was removed). No room left today.
+  store.artifacts = [];
+  const again = await processUnits([u.id], { geminiKey: "k", openaiKey: "o", store, fetchImpl: impl, retries: 0, limits });
+  assert.equal(again.deferred, 1);
+  assert.equal(again.skipped, "processing limit reached");
+  assert.equal(calls.openai, 1, "no paid digest");
+  assert.ok(store.deferredUntil.get(u.id)! > new Date());
+  const tomorrow = await processUnits([u.id], { geminiKey: "k", openaiKey: "o", store, fetchImpl: impl, retries: 0, limits: { daily: 2, monthly: 40 } });
+  assert.equal(tomorrow.digested, 1);
+  assert.equal(store.deferredUntil.has(u.id), false);
+});

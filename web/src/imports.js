@@ -138,20 +138,20 @@ export function describeUnit(row, now = new Date()) {
   };
   const at = (stage, settled, error = null) => ({ ...base, stage, settled, error });
 
-  if (row.status === "pending") {
-    // Held back by the processor's daily or monthly limit: nothing happens before then, so it's settled.
-    const until = row.deferred_until ? new Date(row.deferred_until) : null;
-    if (until && until > now) {
-      return at("limited", true, `Resurface has reached its processing limit for now. This link starts after ${until.toISOString().slice(0, 16).replace("T", " ")} UTC.`);
-    }
-    return at("queued", false);
-  }
+  // Held back by the processor's daily or monthly limit (before reading it, or before digesting a video that's
+  // already read): nothing happens before then, so it's settled.
+  const until = row.deferred_until ? new Date(row.deferred_until) : null;
+  const limited = () => at("limited", true, `Resurface has reached its processing limit for now. This link starts after ${until.toISOString().slice(0, 16).replace("T", " ")} UTC.`);
+  const held = until !== null && until > now;
+
+  if (row.status === "pending") return held ? limited() : at("queued", false);
   if (row.status === "running") return at("fetching", false);
   if (row.status === "failed") return at("failed", true, row.error ?? null);
 
   const artifacts = row.artifacts ?? [];
   if (artifacts.length === 0) {
-    return (row.exclusions ?? []).length ? at("not_selected", true, row.exclusions.join(" ")) : at("digesting", false);
+    if ((row.exclusions ?? []).length) return at("not_selected", true, row.exclusions.join(" "));
+    return held ? limited() : at("digesting", false);
   }
 
   // A unit can feed several artifacts; report the one furthest along.

@@ -252,7 +252,7 @@ Static assets serve everything except `/api/*` and `/media/*`: the landing page,
 | `GET /api/feed` | none | `{ items }`: the public curated feed (requires `feed_order`). |
 | `GET`/`HEAD /media/<key>` | none | `200` or `206` with `accept-ranges`, `content-range`, `etag`, and `cache-control: public, max-age=3600`; `416` past the end; `404` for an unknown or disallowed key; `503` without the R2 binding. |
 
-Signed-out requests to session routes get `401`. Rate limits: sign-up and sign-in at 10 per IP per minute (`AUTH_LIMITER`), imports at 5 per account per minute (`IMPORT_LIMITER`); both return `429`. The processor also caps new units across all users at `DAILY_VIDEO_LIMIT` per UTC day and `MONTHLY_VIDEO_LIMIT` per UTC month (defaults 10 and 40); a unit over the limit stays `pending` with `deferred_until`, and its stage is `limited` (settled) until then.
+Signed-out requests to session routes get `401`. Rate limits: sign-up and sign-in at 10 per IP per minute (`AUTH_LIMITER`), imports at 5 per account per minute (`IMPORT_LIMITER`); both return `429`. The processor also caps charged starts across all users at `DAILY_VIDEO_LIMIT` per UTC day and `MONTHLY_VIDEO_LIMIT` per UTC month (defaults 10 and 40), counted in `processing_starts`: each extraction, and each digest other than the one its extraction paid for. A unit over the limit keeps its status with `deferred_until` set, and its stage is `limited` (settled) until then.
 
 **Import rules.** Each link must be a single YouTube video (`youtube.com/watch`, `youtu.be`, `/shorts/`, `/live/`, `/embed/` on `www`, `m`, or `music` hosts) or a single X post (`x.com` or `twitter.com` `/<user>/status/<id>`, stored as `https://x.com/i/status/<id>` with `content_type = 'x_post'`). It is stored as the canonical `https://www.youtube.com/watch?v=<id>` plus `start_seconds` parsed from `t` or `start` (`90`, `90s`, `1m30s`, `1h2m3s`). The submitted URL is kept in the database but never returned. The same video and start time within one request is one unit. Units are shared across users: the newest non-failed unit for that video and start time is reused, and `user_imports` records who imported it. Each unit is sent to the processor the first time a given user imports it; the processor skips work that's already done. Errors: `400` for invalid JSON, no links, more than 20 YouTube videos or 100 X posts, a link over 2,048 characters, or any invalid link (with `invalid: [{ link, error }]` naming each); `413` for a body over 32 KB. A filled honeypot gets `200 { units: [], processor: "not_needed" }` and stores nothing. `processor` is `requested`, `not_needed`, `not_configured` (no `PROCESSOR_URL`), or `unavailable` (error, timeout, or non-2xx).
 
@@ -261,7 +261,7 @@ Signed-out requests to session routes get `401`. Rate limits: sign-up and sign-i
 | `stage` | Derived from | `settled` |
 | --- | --- | --- |
 | `queued` | unit `pending` | no |
-| `limited` | unit `pending` with `deferred_until` in the future (the processing limit is used up; `error` says when it starts) | yes |
+| `limited` | unit `pending`, or `ready` with no digest yet, with `deferred_until` in the future (the processing limit is used up; `error` says when it starts) | yes |
 | `fetching` | unit `running` | no |
 | `failed` | unit `failed`, or an artifact with `ingestion_status = failed` (carries `error`) | yes |
 | `not_selected` | unit `ready`, no artifacts, one or more `artifact_exclusions` (reasons joined into `error`) | yes |

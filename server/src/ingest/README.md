@@ -7,7 +7,7 @@ Mounted by `src/index.ts` at `/api/ingest` when `GEMINI_API_KEY` is set (and the
 | Route | Purpose |
 | --- | --- |
 | `POST /api/ingest/process` | The processor contract: `{ unit_ids }` -> `202`. Claims pending units, extracts them, digests ready units that have no digest yet. Safe to repeat. |
-| `POST /api/ingest/imports`, `GET /api/ingest/imports/:id` | Dev tool: submit links directly and watch per-link state. Uses an in-memory job map. |
+| `POST /api/ingest/imports`, `GET /api/ingest/imports/:id` | Mounted only with `ENABLE_DEV_IMPORTS=1`. Dev tool: submit links directly and watch per-link state. Uses an in-memory job map. |
 
 Every route needs `Authorization: Bearer $INGEST_TOKEN`. The web Worker sends its `PROCESSOR_TOKEN`, so set both to the same secret.
 

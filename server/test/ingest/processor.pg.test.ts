@@ -89,7 +89,7 @@ test("the processing limits hold across concurrent claims and mark the rest defe
       ids.push((await pool.query(`INSERT INTO ingested_units (submitted_url, source_url) VALUES ($1, $1) RETURNING id`, [`https://www.youtube.com/watch?v=${v}`])).rows[0].id);
     }
     // Whatever this database already claimed today counts too, so allow exactly one more.
-    const { rows: [c] } = await pool.query(`SELECT count(*)::int AS n FROM ingested_units WHERE claimed_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`);
+    const { rows: [c] } = await pool.query(`SELECT count(*)::int AS n FROM processing_starts WHERE charged AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`);
     const limits = { daily: c.n + 1, monthly: 100_000 };
     const [x, y] = await Promise.all([store.claimWithinLimits(ids.slice(0, 2), limits), store.claimWithinLimits(ids.slice(2), limits)]);
     assert.equal(x.claimed.length + y.claimed.length, 1, "one slot, one claim");
@@ -100,7 +100,19 @@ test("the processing limits hold across concurrent claims and mark the rest defe
     for (const r of rows.filter((r) => r.status === "pending")) assert.ok(r.deferred_until > new Date());
     const again = await store.claimWithinLimits(deferred, { daily: c.n + 4, monthly: 100_000 });
     assert.equal(again.claimed.length, 3);
+    assert.equal((await pool.query(`SELECT count(*)::int AS n FROM processing_starts WHERE unit_id = ANY($1::uuid[]) AND kind = 'extract' AND charged`, [ids])).rows[0].n, 4, "each claim is charged once");
     assert.equal((await pool.query(`SELECT count(*)::int AS n FROM ingested_units WHERE id = ANY($1::uuid[]) AND deferred_until IS NOT NULL`, [ids])).rows[0].n, 0, "claiming clears the deferral");
+
+    // The digest each extraction paid for is free; digesting one again takes a slot, and with no room it waits.
+    await pool.query(`UPDATE ingested_units SET status = 'ready', transcript = '{}' WHERE id = ANY($1::uuid[])`, [ids]);
+    const first = await store.claimWithinLimits([], { daily: 0, monthly: 0 });
+    assert.deepEqual(first.claimed, []);
+    const free = await store.reserveDigests(ids, { daily: 0, monthly: 0 });
+    assert.deepEqual(free.allowed, ids, "first digests are covered even with no room left");
+    const repeat = await store.reserveDigests(ids.slice(0, 2), { daily: c.n + 5, monthly: 100_000 });
+    assert.deepEqual(repeat.allowed, ids.slice(0, 1));
+    assert.deepEqual(repeat.deferred, ids.slice(1, 2));
+    assert.ok((await pool.query(`SELECT deferred_until FROM ingested_units WHERE id = $1`, [ids[1]])).rows[0].deferred_until > new Date());
   } finally {
     await pool.query(`DELETE FROM ingested_units WHERE id = ANY($1::uuid[])`, [ids]);
     await pool.end();
