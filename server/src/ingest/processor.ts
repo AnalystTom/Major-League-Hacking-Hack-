@@ -77,10 +77,20 @@ async function processNow(unitIds: string[], o: ProcessorOptions): Promise<Proce
   if (!o.openaiKey) { summary.skipped = "OPENAI_API_KEY not configured"; return summary; }
 
   const readyIds = units.filter((u) => u.status === "ready").map((u) => u.id);
-  const needing = (await o.store.unitsNeedingDigest(readyIds)).filter((id) => !inFlight.has(id));
-  if (needing.length === 0) { summary.skipped = "nothing new to digest"; return summary; }
-  needing.forEach((id) => inFlight.add(id));
+  // Taken as in flight in the same tick as the check, before any await, so a concurrent request can't digest them too.
+  const candidates = (await o.store.unitsNeedingDigest(readyIds)).filter((id) => !inFlight.has(id));
+  candidates.forEach((id) => inFlight.add(id));
+  let needing: string[] = [];
   try {
+    // A digest spends money too, so one that its extraction didn't already pay for needs room under the limits.
+    const reserved = await o.store.reserveDigests(candidates, o.limits ?? UNLIMITED);
+    if (reserved.deferred.length) {
+      summary.deferred += reserved.deferred.length;
+      o.log?.(`processing limit reached: ${reserved.deferred.length} digest(s) wait until ${reserved.resumesAt?.toISOString()}`);
+    }
+    needing = reserved.allowed;
+    if (needing.length === 0) { summary.skipped = reserved.deferred.length ? "processing limit reached" : "nothing new to digest"; return summary; }
+
     const request = o.categorizationRequest ?? DEFAULT_CATEGORIZATION_REQUEST;
     const toDigest = units.filter((u) => needing.includes(u.id));
     try {
@@ -101,7 +111,7 @@ async function processNow(unitIds: string[], o: ProcessorOptions): Promise<Proce
       o.log?.(`digest failed for ${needing.length} unit(s): ${(e as Error).message}`);
     }
   } finally {
-    needing.forEach((id) => inFlight.delete(id));
+    candidates.forEach((id) => inFlight.delete(id));
   }
   return summary;
 }

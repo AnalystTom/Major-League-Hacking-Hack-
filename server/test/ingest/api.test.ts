@@ -22,7 +22,7 @@ async function settle(app: Hono, id: string, done: (b: any) => boolean) {
 const settled = (b: any) => b.links.every((l: any) => l.status === "ready" || l.status === "failed");
 
 test("POST /imports reports per-link state; bad link shows its error", async () => {
-  const app = createIngestApp({ token: "test-token", geminiKey: "k", store: new MemoryStore(), fetchImpl: ok as typeof fetch, retries: 0 });
+  const app = createIngestApp({ token: "test-token", devImports: true, geminiKey: "k", store: new MemoryStore(), fetchImpl: ok as typeof fetch, retries: 0 });
   const res = await post(app, { links: ["https://www.youtube.com/watch?v=VQy50fuxI34&list=WL", "https://example.com/x"], request: "group by problem" });
   assert.equal(res.status, 202);
   const body = await settle(app, (await res.json()).id, settled);
@@ -47,7 +47,7 @@ test("API returns extracted evidence and stores digested artifacts", async () =>
     }
     return ok();
   }) as unknown as typeof fetch;
-  const app = createIngestApp({ token: "test-token", geminiKey: "k", openaiKey: "a", store, fetchImpl, retries: 0 });
+  const app = createIngestApp({ token: "test-token", devImports: true, geminiKey: "k", openaiKey: "a", store, fetchImpl, retries: 0 });
   const { id } = await (await post(app, { links: ["https://www.youtube.com/watch?v=VQy50fuxI34"], request: "r" })).json();
   const body = await settle(app, id, (b) => ["ready", "failed", "skipped"].includes(b.digest.status));
   assert.equal(body.links[0].extraction.evidence_items[0].observed_spoken_content, "x");
@@ -70,7 +70,7 @@ test("API returns extracted evidence and stores digested artifacts", async () =>
 });
 
 test("window_seconds is validated and applied per import", async () => {
-  const app = createIngestApp({ token: "test-token", geminiKey: "k", store: new MemoryStore(), fetchImpl: ok as typeof fetch, retries: 0 });
+  const app = createIngestApp({ token: "test-token", devImports: true, geminiKey: "k", store: new MemoryStore(), fetchImpl: ok as typeof fetch, retries: 0 });
   const send = (window_seconds: number) => post(app, { links: ["https://www.youtube.com/watch?v=VQy50fuxI34"], request: "r", window_seconds });
   assert.equal((await send(3601)).status, 400);
   assert.equal((await send(10)).status, 400);
@@ -82,7 +82,7 @@ test("window_seconds is validated and applied per import", async () => {
 
 test("ingestion requires authentication before accepting work or reading jobs", async () => {
   let calls = 0;
-  const app = createIngestApp({ token: "test-token", geminiKey: "k", store: new MemoryStore(),
+  const app = createIngestApp({ token: "test-token", devImports: true, geminiKey: "k", store: new MemoryStore(),
     fetchImpl: (async () => { calls++; return ok(); }) as typeof fetch });
   const body = JSON.stringify({ links: ["https://youtu.be/VQy50fuxI34"], request: "r" });
   assert.equal((await app.request("/imports", { method: "POST", body })).status, 401);
@@ -98,7 +98,7 @@ test("ingestion requires authentication before accepting work or reading jobs", 
 test("storage failure becomes a failed link instead of an unhandled job rejection", async () => {
   const store = new MemoryStore();
   store.saveUnit = async () => { throw new Error("database unavailable"); };
-  const app = createIngestApp({ token: "test-token", geminiKey: "k", store, fetchImpl: ok as typeof fetch });
+  const app = createIngestApp({ token: "test-token", devImports: true, geminiKey: "k", store, fetchImpl: ok as typeof fetch });
   const { id } = await (await post(app, { links: ["https://youtu.be/VQy50fuxI34"], request: "r" })).json();
   const body = await settle(app, id, settled);
   assert.equal(body.links[0].status, "failed");
@@ -108,7 +108,7 @@ test("storage failure becomes a failed link instead of an unhandled job rejectio
 test("failed artifact storage is not reported as a ready digest", async () => {
   const store = new MemoryStore();
   store.saveArtifacts = async () => { throw new Error("artifact write failed"); };
-  const app = createIngestApp({ token: "test-token", geminiKey: "k", openaiKey: "a", store,
+  const app = createIngestApp({ token: "test-token", devImports: true, geminiKey: "k", openaiKey: "a", store,
     fetchImpl: (async (url) => String(url).includes("openai")
       ? Response.json({ choices: [{ message: { content: JSON.stringify({ artifacts: [], exclusions: [] }) } }] })
       : ok()) as typeof fetch });
@@ -117,4 +117,10 @@ test("failed artifact storage is not reported as a ready digest", async () => {
   assert.equal(body.digest.status, "failed");
   assert.equal(body.digest.error, "artifact write failed");
   assert.equal(body.digest.stored_artifacts, null);
+});
+
+test("the dev /imports route isn't mounted unless asked for, so production can't bypass the limits", async () => {
+  const app = createIngestApp({ token: "test-token", geminiKey: "k", store: new MemoryStore() });
+  const res = await app.request("/imports", { method: "POST", headers: { authorization: "Bearer test-token", "content-type": "application/json" }, body: JSON.stringify({ links: ["https://youtu.be/VQy50fuxI34"] }) });
+  assert.equal(res.status, 404);
 });

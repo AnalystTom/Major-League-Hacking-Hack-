@@ -38,6 +38,7 @@ if (process.env.GEMINI_API_KEY) {
     categorizationRequest: process.env.DIGESTION_REQUEST,
     // A hard cap on provider spend: new units per UTC day and month across all users (DAILY_/MONTHLY_VIDEO_LIMIT).
     limits: limitsFromEnv(),
+    devImports: process.env.ENABLE_DEV_IMPORTS === "1",
     store: pool ? new PgStore(pool) : new MemoryStore(),
     log: (m: string) => console.log(`[ingest] ${m}`),
   };
