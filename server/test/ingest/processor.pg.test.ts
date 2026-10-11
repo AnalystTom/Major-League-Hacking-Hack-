@@ -1,4 +1,4 @@
-// Integration test: needs a database with db/migrations 001-003 applied (002 for user_imports).
+// Integration test: needs a database with db/migrations 001-004 applied (002 for user_imports, 004 for revisions).
 // Run with TEST_DATABASE_URL=postgres://... npm test. Skipped otherwise.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -61,6 +61,14 @@ test("processor against the shared schema", { skip: !url && "TEST_DATABASE_URL n
     assert.equal(failed.ingestion_status, "failed");
     assert.match(failed.error, /500/);
     assert.equal((await processUnits([b], o)).digested, 1, "a failed artifact does not block the retry");
+
+    // migration 004: revisions share an id, ready content is frozen, status stays writable
+    const ready = (await pool.query(`SELECT id FROM artifacts WHERE source_ids = $1::uuid[] AND ingestion_status = 'ready'`, [[b]])).rows[0].id;
+    await pool.query(`INSERT INTO artifacts (id, version, name, source_url, source_ids, processed_text, ingestion_status)
+                      SELECT id, 2, name, source_url, source_ids, 'revised', 'ready' FROM artifacts WHERE id = $1 AND version = 1`, [ready]);
+    assert.equal((await pool.query(`SELECT count(*)::int AS n FROM artifacts WHERE id = $1`, [ready])).rows[0].n, 2);
+    await assert.rejects(pool.query(`UPDATE artifacts SET processed_text = 'edited' WHERE id = $1 AND version = 1`, [ready]), /immutable/);
+    await pool.query(`UPDATE artifacts SET review_status = 'approved', error = NULL WHERE id = $1 AND version = 1`, [ready]);
   } finally {
     await pool.query(`DELETE FROM artifacts WHERE source_ids && $1::uuid[]`, [created.units]);
     await pool.query(`DELETE FROM artifact_exclusions WHERE unit_id = ANY($1)`, [created.units]);

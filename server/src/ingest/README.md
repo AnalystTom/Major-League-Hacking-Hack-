@@ -24,3 +24,4 @@ Every route needs `Authorization: Bearer $INGEST_TOKEN`. The web Worker sends it
 Behavior: pending units are claimed atomically (`UPDATE ... WHERE status = 'pending'`); a `ready` unit is never re-extracted;
 a unit is digested once (skipped when it already has a non-failed artifact or an exclusion); artifacts are written with
 `project_context_id` null; a failed digest is stored as a failed artifact with its error and retried by the next request.
+Migration `004_artifact_revisions.sql` makes `(id, version)` the artifact key and freezes a ready revision (not yet applied to TigerData).
