@@ -228,6 +228,7 @@ test("a unit held back by the processing limit says when it starts, and counts a
   const ready = { ...row, status: "ready", exclusions: [], artifacts: [] };
   assert.equal(describeUnit({ ...ready, deferred_until: "2026-10-12T00:00:00Z" }, now).stage, "limited");
   assert.equal(describeUnit({ ...ready, deferred_until: null }, now).stage, "digesting");
+});
 
 test("canonicalises Substack post links and rejects non-posts", async () => {
   const { parseSubstackLink } = await import("../src/substack.js");
