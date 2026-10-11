@@ -26,6 +26,11 @@ interface ImportJob {
 export interface ApiOptions extends ProcessorOptions {
   /** Bearer token callers must send; the web Worker sends its PROCESSOR_TOKEN. */
   token: string;
+  /**
+   * Mounts the dev /imports routes, which read links directly and bypass the processing limits. Off unless asked
+   * for (ENABLE_DEV_IMPORTS=1), so production only takes work through /process.
+   */
+  devImports?: boolean;
 }
 
 const Uuid = z.string().uuid();
@@ -92,33 +97,35 @@ export function createIngestApp(o: ApiOptions): Hono {
     return c.json({ accepted: unit_ids.length }, 202);
   });
 
-  app.post("/imports", async (c) => {
-    const raw = await c.req.text();
-    if (raw.length > 100_000) return c.json({ error: "body too large" }, 413);
-    let body: { links?: unknown; request?: unknown; window_seconds?: unknown };
-    try { body = JSON.parse(raw); } catch { return c.json({ error: "invalid JSON" }, 400); }
-    if (!body || typeof body !== "object") return c.json({ error: "body must be an object" }, 400);
-    if (!Array.isArray(body.links) || body.links.length === 0 || body.links.length > MAX_LINKS || !body.links.every((l) => typeof l === "string"))
-      return c.json({ error: `links must be 1-${MAX_LINKS} strings` }, 400);
-    if (typeof body.request !== "string" || !body.request.trim()) return c.json({ error: "request (Digestion Prompt text) is required" }, 400);
-    const ws = body.window_seconds;
-    if (ws !== undefined && (!Number.isInteger(ws) || (ws as number) < MIN_WINDOW_SECONDS || (ws as number) > MAX_WINDOW_SECONDS))
-      return c.json({ error: `window_seconds must be an integer ${MIN_WINDOW_SECONDS}-${MAX_WINDOW_SECONDS}` }, 400);
-    const links = body.links as string[];
-    const job: ImportJob = {
-      id: randomUUID(), request: body.request,
-      units: links.map((l) => ({ id: randomUUID(), submittedUrl: l, sourceUrl: l, startSeconds: null, title: null, transcript: null, extractionMethod: null, extractedAt: null, status: "pending", error: null })),
-      digest: { ...EMPTY_DIGEST, status: "pending" },
-    };
-    jobs.set(job.id, job);
-    void run(job, links, ws as number | undefined);
-    return c.json(view(job), 202);
-  });
+  if (o.devImports) {
+    app.post("/imports", async (c) => {
+      const raw = await c.req.text();
+      if (raw.length > 100_000) return c.json({ error: "body too large" }, 413);
+      let body: { links?: unknown; request?: unknown; window_seconds?: unknown };
+      try { body = JSON.parse(raw); } catch { return c.json({ error: "invalid JSON" }, 400); }
+      if (!body || typeof body !== "object") return c.json({ error: "body must be an object" }, 400);
+      if (!Array.isArray(body.links) || body.links.length === 0 || body.links.length > MAX_LINKS || !body.links.every((l) => typeof l === "string"))
+        return c.json({ error: `links must be 1-${MAX_LINKS} strings` }, 400);
+      if (typeof body.request !== "string" || !body.request.trim()) return c.json({ error: "request (Digestion Prompt text) is required" }, 400);
+      const ws = body.window_seconds;
+      if (ws !== undefined && (!Number.isInteger(ws) || (ws as number) < MIN_WINDOW_SECONDS || (ws as number) > MAX_WINDOW_SECONDS))
+        return c.json({ error: `window_seconds must be an integer ${MIN_WINDOW_SECONDS}-${MAX_WINDOW_SECONDS}` }, 400);
+      const links = body.links as string[];
+      const job: ImportJob = {
+        id: randomUUID(), request: body.request,
+        units: links.map((l) => ({ id: randomUUID(), submittedUrl: l, sourceUrl: l, startSeconds: null, title: null, transcript: null, extractionMethod: null, extractedAt: null, status: "pending", error: null })),
+        digest: { ...EMPTY_DIGEST, status: "pending" },
+      };
+      jobs.set(job.id, job);
+      void run(job, links, ws as number | undefined);
+      return c.json(view(job), 202);
+    });
 
-  app.get("/imports/:id", (c) => {
-    const job = jobs.get(c.req.param("id"));
-    return job ? c.json(view(job)) : c.json({ error: "unknown import" }, 404);
-  });
+    app.get("/imports/:id", (c) => {
+      const job = jobs.get(c.req.param("id"));
+      return job ? c.json(view(job)) : c.json({ error: "unknown import" }, 404);
+    });
+  }
 
   return app;
 }

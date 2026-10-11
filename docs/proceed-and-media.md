@@ -58,9 +58,12 @@ Rate limits: sign-up and sign-in 10 per IP per minute (`AUTH_LIMITER`), imports 
 
 Processing limits cap provider spend across all users: the processor starts at most `DAILY_VIDEO_LIMIT` new units
 per UTC day (default 10) and `MONTHLY_VIDEO_LIMIT` per UTC month (default 40, about $5 at ~$0.12 a short with the
-5-minute window). Every source type, sweep and retry counts; `0` pauses processing. Links over the limit stay saved,
-show **Limit reached** with when they'll start (`ingested_units.deferred_until`, `db/migrations/006_processing_limits.sql`),
-and the sweep starts them once there's room.
+5-minute window). Each paid start is recorded in `processing_starts` (`db/migrations/007_processing_starts.sql`):
+every extraction is charged, and so is every digest except the first one after a unit's extraction, so a new video
+costs one slot while re-digests of shared videos and retries cost their own. Every source type, sweep and retry
+counts; `0` pauses processing. Links over the limit stay saved, show **Limit reached** with when they'll start
+(`ingested_units.deferred_until`), and the sweeps start them once there's room. The processor's dev `/imports` route,
+which reads links directly, is only mounted with `ENABLE_DEV_IMPORTS=1`.
 
 ## Who sees what
 

@@ -221,4 +221,8 @@ test("a unit held back by the processing limit says when it starts, and counts a
   assert.match(held.error, /processing limit .* starts after 2026-10-12 00:00 UTC\./);
   assert.equal(describeUnit({ ...row, deferred_until: "2026-10-11T00:00:00Z" }, now).stage, "queued", "past the time, it's just queued");
   assert.equal(describeUnit({ ...row, deferred_until: null }, now).stage, "queued");
+  // Already read, waiting for room to be digested again.
+  const ready = { ...row, status: "ready", exclusions: [], artifacts: [] };
+  assert.equal(describeUnit({ ...ready, deferred_until: "2026-10-12T00:00:00Z" }, now).stage, "limited");
+  assert.equal(describeUnit({ ...ready, deferred_until: null }, now).stage, "digesting");
 });
