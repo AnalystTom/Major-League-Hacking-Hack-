@@ -55,7 +55,7 @@ Category values are dynamic; schema field names and workflow interfaces remain s
 
 ```mermaid
 flowchart TD
-  R["Import UI: individual YouTube links"] --> I["Workflow 1: Nimble retrieval and extraction"]
+  R["Import UI: individual YouTube links"] --> I["Workflow 1: YouTube content extraction; Nimble or tested fallback"]
   I --> U["Ingested units: one source per unit; actual status/error"]
   U -->|Usable content only| D["Digestion Prompt: select, group, categorize, synthesize"]
   P["One real project and a user-supplied prompt"] --> D
@@ -175,10 +175,10 @@ Choose one concrete transport before building the **Use in Codex** CTA. Copy/dow
 
 ## Partner roles
 
-- **Nimble:** v0 retrieves only the supplied YouTube sources. Verify usable transcript/content extraction, not just page access. V1 adds supporting-source research.
+- **Nimble:** authenticated v0 watch-page retrieval passed for both supplied videos; the tested caption route failed. Do not treat metadata as a spoken transcript. V1 adds supporting-source research.
 - **TigerData:** PostgreSQL storage for raw evidence, processed text, context, topics, video metadata, processed skills, action items, and handoffs. Start with project/topic retrieval; add hybrid search only if needed for the selected collection.
 - **Opus 5.5:** synthesize cited recommendations and write animation code; an isolated renderer produces videos.
-- **Gemini, proposed:** TTS narration; public-YouTube video understanding is a candidate extraction fallback if Nimble cannot supply usable content. Test access and preserve actual evidence/timestamps before relying on it.
+- **Gemini, proposed:** TTS narration and the recommended next test for public-YouTube content extraction. Neither was exercised in the Nimble test. Verify access and review timestamped model extraction before relying on it.
 - **Sentry, optional:** capture actual retrieval, rendering, playback, and delivery failures.
 
 TigerData is based on PostgreSQL. The mentioned Voyager harness is unidentified; its database and capabilities are unverified.
@@ -193,20 +193,38 @@ The user supplied these individual links. Their Watch Later parameters do not re
 
 | Input | Canonical retrieval URL | Observed access |
 | --- | --- | --- |
-| [Video 1](https://www.youtube.com/watch?v=VQy50fuxI34&list=WL&index=4) | `https://www.youtube.com/watch?v=VQy50fuxI34` | Public research lookup returned the title “FORGET Loop Engineering. Agentic Engineering is about THIS”; no usable transcript was returned. |
-| [Video 2, selected at 5:06](https://www.youtube.com/watch?v=V-EDrhIhHzQ&list=WL&index=5&t=306s) | `https://www.youtube.com/watch?v=V-EDrhIhHzQ` | Public research lookup returned “Modern Post-Training: A Deep Dive — Will Brown, Prime Intellect”; no usable transcript was returned. Preserve the 306-second selection. |
+| [Video 1](https://www.youtube.com/watch?v=VQy50fuxI34&list=WL&index=4) | `https://www.youtube.com/watch?v=VQy50fuxI34` | Authenticated Nimble retrieval returned the title “FORGET Loop Engineering. Agentic Engineering is about THIS”, description, chapters, and caption-track references; no spoken transcript was obtained. |
+| [Video 2, selected at 5:06](https://www.youtube.com/watch?v=V-EDrhIhHzQ&list=WL&index=5&t=306s) | `https://www.youtube.com/watch?v=V-EDrhIhHzQ` | Authenticated Nimble retrieval returned “Modern Post-Training: A Deep Dive — Will Brown, Prime Intellect”, description, chapters, and caption-track references; no spoken transcript was obtained. Preserve the 306-second selection. |
 
-Nimble's [Extract docs](https://docs.nimbleway.com/nimble-sdk/web-tools/extract/quickstart) describe page extraction. Its [template gallery](https://docs.nimbleway.com/nimble-sdk/web-tools/extract/template) lists `youtube_shorts`, which does not establish transcript extraction for these full-length videos. The [Media API](https://docs.nimbleway.com/nimble-sdk/web-tools/media) takes media-file URLs; a YouTube watch page is not itself a media-file URL. Transcript support for this batch remains unverified.
+### Authenticated test — 2026-10-11
 
-**Test status:** not run through Nimble. No Nimble credential was found in the current project's checked environment/config files. The earlier supplied key is described as for motion/video generation; its provider remains unnamed and it was not sent to Nimble. Required next step: configure the Nimble credential, then test both canonical URLs and record returned content, timestamps where available, and actual failure reasons. If only titles/descriptions are returned, record insufficient content and test a separate extraction API before sending anything to Digestion Prompt.
+The supplied Nimble credential was accepted by `POST https://sdk.nimbleway.com/v2/extract`. It was used only for these test requests, held in process memory, and not written to repository or deployment configuration. Production secret configuration remains pending.
 
+For each canonical watch URL, the request used `render: true` and `formats: ["html", "markdown"]`. Both returned HTTP 200, `status: success`, target `status_code: 200`, and the actual page HTML/Markdown. The returned content includes video metadata, descriptions, chapter labels, and English auto-generated caption-track URLs. Neither response contained spoken transcript segments. Descriptions and chapter labels are source material, but cannot substantiate claims about speech or demonstrations absent from that material.
+
+| Video | Watch-page task ID | Caption-fetch task ID | Result |
+| --- | --- | --- | --- |
+| `VQy50fuxI34` | `0143bc01-e2a5-4c85-9052-2d5dd2dfd9bb` | `d85b64c0-c976-43ba-a18c-06bc1e8b0401` | Page retrieved; 5,368 Markdown characters. English caption request through Nimble returned HTTP 500. |
+| `V-EDrhIhHzQ` | `33122728-d865-49a6-bb6f-f27780cfec5d` | `4752239a-4c68-47a7-9f4d-3fb8ed526377` | Page retrieved; 2,437 Markdown characters. English caption request through Nimble returned HTTP 500. Preserve the submitted 306-second start. |
+
+The follow-up Nimble requests used the actual English caption-track URLs discovered in those responses, requesting `fmt=json3`, `render: false`, and HTML output. Both returned `success: "false"` and the message `can't download the query response - please try again`. Direct HTTP reads of those same caption URLs returned HTTP 200 with an empty body. The underlying caption failure reason remains unknown. These results establish page retrieval and a failed caption route; they do not establish that every possible Nimble transcript route fails. Browser-action transcript extraction was not tested.
+
+Do not mark either source fully ingested for video-grounded synthesis: no spoken transcript or inspected video content was obtained. Do not infer missing dialogue from the descriptions, titles, chapter labels, or the presence of a caption URL.
+
+### Do we need Gemini for ingestion?
+
+**Gemini is a recommended next test, not a required dependency or a verified replacement.** Google's [video-understanding documentation](https://ai.google.dev/gemini-api/docs/video-understanding#pass-youtube-urls) supports passing public YouTube URLs directly to the API; that feature is in preview. Nimble's [Extract API](https://docs.nimbleway.com/nimble-sdk/web-tools/extract/quickstart) retrieves webpage content. Its [Media API](https://docs.nimbleway.com/nimble-sdk/web-tools/media) downloads media-file URLs and does not itself provide video understanding.
+
+For this YouTube-only v0, test Gemini on each canonical URL separately with its own credential. Request source-grounded, timestamped speech/visual observations; preserve the raw model output and label it as model extraction, not an authoritative verbatim transcript. Review cited moments against the video before approving synthesis. Keep the second source's 306-second selection in its input metadata. Validate the extraction before passing it to the existing Digestion Prompt and shared schema.
+
+No Gemini API request ran: no Gemini credential was found in the checked environment or project configuration. If Gemini retrieval fails, show the actual failure and keep the unit out of synthesis. A working transcript provider or user-supplied transcript would also satisfy ingestion; Gemini is not the only possible route. Nimble remains useful for page metadata and V1 supporting-web research.
 
 ## Open questions
 
 These replace the answered 20-question backlog. Recommended answers remain proposals.
 
 1. **Which prepared project and current goal?** Supply its actual brief and authorized repository/site context. Recommend one task with a checkable result.
-2. **Where is the Nimble credential configured?** Needed to run the two-video test. Which extraction fallback should we use if it cannot retrieve usable content? Recommend testing Gemini public-YouTube understanding next, with its own credential.
+2. **Where will production Nimble and Gemini credentials be configured?** Nimble authentication/page retrieval passed using the supplied test key; transcript retrieval remains blocked. Configure a separate Gemini credential to test public-YouTube understanding before choosing the ingestion provider.
 3. **Which provider is the motion/video API key for, and where is the existing Opus generation prompt?** Keep that credential separate from extraction and TTS.
 4. **Which narration voice/provider and music track?** Recommend Gemini TTS plus one licensed instrumental track; Kokoro is the open-source alternative.
 5. **Who reviews Digestion Prompt output and clips?** Recommend one teammate records approval/rejection with reasons and selects the demo set.
@@ -215,7 +233,7 @@ These replace the answered 20-question backlog. Recommended answers remain propo
 
 ## Next actions
 
-- Test Nimble against both supplied individual videos; record usable content or the actual error, then decide whether a separate extraction API is necessary.
+- Test Gemini public-YouTube understanding on both supplied videos with its own credential; inspect timestamped evidence before selecting it as the content extractor. Nimble page retrieval passed, but the tested caption route failed.
 - Refine Digestion Prompt with real few-shot examples and approval/rejection feedback; retain prompt revisions and output provenance.
 - Inspect the supplied motion examples and derive style instructions for the team's Opus prompt.
 - Test one narration/music mix and align captions/scenes to measured audio; select and review the real demo clips.
