@@ -8,6 +8,8 @@ export const TTS_VOICE = "Kore";
 const STYLE = "clear, warm explainer for engineers, brisk but unhurried";
 
 export interface TtsOptions {
+  /** How the narrator should sound; defaults to a calm explainer. */
+  style?: string;
   apiKey: string;
   model?: string;
   voice?: string;
@@ -44,7 +46,7 @@ export async function synthesize(text: string, o: TtsOptions): Promise<Buffer> {
         headers: { "content-type": "application/json", "x-goog-api-key": o.apiKey },
         body: JSON.stringify({
           model: o.model ?? TTS_MODEL,
-          input: [{ type: "user_input", content: [{ type: "text", text, annotations: [{ type: "speech_metadata", style: STYLE }] }] }],
+          input: [{ type: "user_input", content: [{ type: "text", text, annotations: [{ type: "speech_metadata", style: o.style ?? STYLE }] }] }],
           response_format: { type: "audio" },
           generation_config: { speech_config: [{ voice: o.voice ?? TTS_VOICE }] },
         }),

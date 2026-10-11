@@ -26,6 +26,7 @@
     "R2_BUCKET": "resurface-media",
     "WEB_ORIGINS": "https://resurface.thomasmann2001.workers.dev",
     "WINDOW_SECONDS": "300",
+    "RENDER_STYLE": "motion",
     // Hard cap on provider spend across all users, at ~$0.12 a short. Raised to 100/400 (about $48 a month at the cap)
     // for the demo only: put it back to 10/40 afterwards.
     "DAILY_VIDEO_LIMIT": "100",

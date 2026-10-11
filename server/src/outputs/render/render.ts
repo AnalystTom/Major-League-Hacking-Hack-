@@ -10,6 +10,7 @@ import type { MediaStore } from "./media.js";
 import { SCRIPT_PROMPT_REVISION, writeScript } from "./script.js";
 import { captionCues, timeline, toVtt } from "./timeline.js";
 import { synthesize, TTS_MODEL } from "./tts.js";
+import { renderMotion } from "./motion.js";
 import type { ProviderOptions, ReadyArtifact, RenderedVideo, ScriptScene } from "../types.js";
 
 /** The provider settings, with the two keys a render can't run without, and where the files go. */
@@ -19,7 +20,21 @@ export interface RenderOptions extends ProviderOptions {
   media: MediaStore;
 }
 
+/**
+ * With RENDER_STYLE=motion the short is model-written motion graphics; if that fails for any reason the text renderer
+ * makes it instead and the stored prompt revision says why, so a short is never lost to the experiment.
+ */
 export async function renderArtifact(a: ReadyArtifact, o: RenderOptions): Promise<RenderedVideo> {
+  if (o.renderStyle !== "motion") return renderText(a, o);
+  try {
+    return await renderMotion(a, o);
+  } catch (e) {
+    const v = await renderText(a, o);
+    return { ...v, prompt_revision: `${v.prompt_revision}; motion fell back: ${(e as Error).message.replace(/\s+/g, " ").slice(0, 240)}` };
+  }
+}
+
+async function renderText(a: ReadyArtifact, o: RenderOptions): Promise<RenderedVideo> {
   const draft = await writeScript(a, { apiKey: o.openaiKey, model: o.openaiModel, fetchImpl: o.fetchImpl });
   const dir = await mkdtemp(join(tmpdir(), "resurface-render-"));
   try {
