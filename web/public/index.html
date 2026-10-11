@@ -62,7 +62,7 @@
         </ul>
       </div>
 
-      <figure class="film" data-film aria-label="Demo film: YouTube videos, X bookmarks and Substack posts become a reel of shorts, then skills and tasks your coding agent runs">
+      <figure class="film" data-film aria-label="Example walkthrough: YouTube videos, X bookmarks and Substack posts become a reel of shorts, then skills and tasks your coding agent runs">
         <svg class="f-glyphs" width="0" height="0" aria-hidden="true">
           <symbol id="g-youtube" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="5" fill="#ff3b30"/><path d="M10 8.6v6.8l5.8-3.4z" fill="#fff"/></symbol>
           <symbol id="g-x" viewBox="0 0 24 24"><path fill="currentColor" d="M18.24 2.25h3.31l-7.23 8.26 8.5 11.24h-6.65l-5.21-6.82-5.97 6.82H1.68l7.73-8.84L1.25 2.25h6.83l4.71 6.23zm-1.16 17.52h1.83L7.08 4.13H5.12z"/></symbol>
@@ -77,8 +77,8 @@
             <div class="scene is-on" data-scene data-ms="5000" data-caption="You saved them on YouTube, X and Substack. You never went back.">
               <div class="f-info">
                 <p class="f-chip"><svg><use href="#g-youtube"/></svg><svg class="g-x"><use href="#g-x"/></svg><svg><use href="#g-substack"/></svg>YouTube, X, Substack</p>
-                <p class="f-big"><span data-to="1165">0</span></p>
-                <p class="f-sub">videos, threads and posts saved for later. Still unopened.</p>
+                <p class="f-head">Saved for later.</p>
+                <p class="f-sub">Videos, threads and posts you meant to get back to. Still unopened.</p>
               </div>
               <ol class="f-vis src" aria-hidden="true">
                 <li class="f-in" style="--d:.1s; --at:1.4s"><svg><use href="#g-youtube"/></svg><p><small>Watch Later · 61 hours</small>Evals for coding agents, end to end</p><span class="src-stage"><b>Unwatched</b><b>Reading</b><b class="src-ready">0:30 short</b></span><i class="src-bar"></i></li>
@@ -131,7 +131,7 @@
             <!-- 3. Skills: keeps land in the repo -->
             <div class="scene" data-scene data-ms="4500" data-caption="What you keep is installed where your agent looks.">
               <div class="f-info">
-                <p class="f-chip f-brand"><svg><use href="#g-resurface"/></svg>Installed in checkout-api</p>
+                <p class="f-chip f-brand"><svg><use href="#g-resurface"/></svg>Installed in your repo</p>
                 <p class="f-head">Keeps become skills.</p>
                 <p class="f-sub">Each one lands in your repo, linked to the moment it came from.</p>
               </div>
@@ -156,16 +156,16 @@
                 <p class="f-sub">Claude Code, Codex, Cursor or Hermes runs them and shows its proof.</p>
               </div>
               <div class="f-vis term" aria-hidden="true">
-                <p class="term-bar"><i></i><i></i><i></i><span>claude · checkout-api</span></p>
+                <p class="term-bar"><i></i><i></i><i></i><span>claude · your repo</span></p>
                 <div class="term-body">
                   <p class="term-cmd f-in" style="--d:.2s">› Run my Resurface tasks</p>
                   <p class="term-note f-in" style="--d:.45s">3 tasks from the shorts you kept</p>
                   <ul class="term-tasks">
-                    <li class="f-in" style="--d:.6s; --at:.9s"><i class="tick"></i><p>Add a Playwright check for the checkout journey<small><svg><use href="#g-youtube"/></svg>From YouTube · 3 checks pass</small></p></li>
-                    <li class="f-in" style="--d:.65s; --at:1.7s"><i class="tick"></i><p>Plan refunds as design, build, verify<small><svg class="g-x"><use href="#g-x"/></svg>From X · plan.md written</small></p></li>
+                    <li class="f-in" style="--d:.6s; --at:.9s"><i class="tick"></i><p>Add a Playwright check for the checkout journey<small><svg><use href="#g-youtube"/></svg>From YouTube · ends with a runnable check</small></p></li>
+                    <li class="f-in" style="--d:.65s; --at:1.7s"><i class="tick"></i><p>Plan refunds as design, build, verify<small><svg class="g-x"><use href="#g-x"/></svg>From X · plan before you build</small></p></li>
                     <li class="f-in" style="--d:.7s; --at:2.5s"><i class="tick"></i><p>Add 3 review rules to AGENTS.md<small><svg><use href="#g-substack"/></svg>From Substack · pnpm only, no default exports, tests first</small></p></li>
                   </ul>
-                  <p class="term-done f-in" style="--d:3.5s">Done. 4 files changed, each linked to its source. Ready for review.</p>
+                  <p class="term-done f-in" style="--d:3.5s">Each task ends with a check your agent runs, linked to its source.</p>
                 </div>
               </div>
             </div>
@@ -210,7 +210,7 @@
         <p class="feed-why" data-why></p>
         <div class="feed-actions">
           <button type="button" class="btn-copy" data-copy>Copy to clipboard</button>
-          <button type="button" class="btn btn-send" data-send>Send to your agents</button>
+          <a class="btn btn-send" href="/start" data-cta>Get started</a>
         </div>
         <p class="feed-status" data-feed-status role="status" aria-live="polite"></p>
       </div>
