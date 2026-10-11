@@ -56,7 +56,7 @@ function render(units, items) {
   const waiting = units.some((u) => !u.settled);
   const title = units.length === 0 ? "Paste your first videos" : waiting ? "Making your shorts" : "No shorts from these links yet";
   const lede = units.length === 0
-    ? "Each YouTube video becomes a 30-second short of the part worth keeping."
+    ? "Each YouTube video becomes a short, narrated clip of the part worth keeping."
     : waiting
       ? "Your first short starts playing here as soon as it's ready. You can leave; processing carries on."
       : "Each link below says what happened. Try other videos.";
