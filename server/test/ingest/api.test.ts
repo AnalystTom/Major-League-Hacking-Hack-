@@ -39,7 +39,7 @@ test("API returns extracted evidence and stores digested artifacts", async () =>
   const store = new MemoryStore();
   const fetchImpl = (async (url: string, init: { body: string }) => {
     if (String(url).includes("openai")) {
-      const unitId = JSON.parse(JSON.parse(init.body).messages[1].content).units[0].id;
+      const unitId = JSON.parse(JSON.parse(init.body).messages[1].content).units[0].ref;
       return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
         artifacts: [{ name: "a", source_ids: [unitId], category: "c", processed_text: "t", selection_reason: "r",
           evidence: [{ source_id: unitId, start_seconds: 5, end_seconds: 20, passage: "p" }] }],
