@@ -16,6 +16,7 @@ const ENV_NAMES = [
 // However busy it says it is, a container is stopped after this long awake, so a stuck job can't run up
 // the bill. Work it was doing is reclaimed and redone on the next wake.
 const MAX_AWAKE_MS = 2 * 60 * 60 * 1000;
+const BUSY_CHECK_MS = 3000;
 
 // Only a hash of the settings is kept, never the values.
 async function settingsHash(vars) {
@@ -61,10 +62,14 @@ export class Processor extends Container {
     await this.stop();
   }
 
+  // A processor that doesn't answer within a few seconds is wedged, not busy: report it idle so it gets
+  // stopped or restarted rather than holding every request behind it.
   async busy() {
     try {
-      const health = await (await this.containerFetch("http://processor/health")).json();
-      return Number(health.busy) > 0;
+      const answer = this.containerFetch("http://processor/health").then((res) => res.json());
+      const late = new Promise((resolve) => setTimeout(() => resolve(null), BUSY_CHECK_MS));
+      const health = await Promise.race([answer, late]);
+      return Number(health?.busy) > 0;
     } catch {
       return false;
     }
