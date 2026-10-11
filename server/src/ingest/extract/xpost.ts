@@ -37,6 +37,47 @@ function retryAfterMs(res: Response): number {
   return Number.isFinite(s) && s > 0 ? Math.min(s * 1000, 30_000) : intervalMs();
 }
 
+interface TwitterApiArticle {
+  title?: string;
+  preview_text?: string;
+  contents?: { type?: string; text?: string }[];
+}
+
+/** Longest article text kept, so one very long article can't crowd every other source out of a digest. */
+const MAX_ARTICLE_CHARS = 20_000;
+
+/** A post whose text is only links (t.co): how X shows a long-form Article, whose body lives elsewhere. */
+const onlyLinks = (text: string) => text.replace(/https?:\/\/\S+/g, "").trim() === "";
+
+/** One paced GET, retrying a 429 after the wait the API asks for, up to MAX_RETRIES times. */
+async function pacedGet(get: () => Promise<Response>): Promise<Response> {
+  let res = await paced(get);
+  for (let attempt = 0; res.status === 429 && attempt < MAX_RETRIES; attempt++) {
+    const wait = retryAfterMs(res);
+    await res.text().catch(() => "");
+    await sleep(wait);
+    res = await paced(get);
+  }
+  return res;
+}
+
+/** Reads the post's X Article (GET /twitter/article); null when the post has none. Other failures throw. */
+async function readArticle(o: XPostOptions, get: (url: string) => Promise<Response>): Promise<{ title: string | null; text: string } | null> {
+  const res = await pacedGet(() => get(`https://api.twitterapi.io/twitter/article?tweet_id=${encodeURIComponent(o.postId)}`));
+  const text = await res.text();
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(httpError("twitterapi.io article", res.status, text));
+  let body: { status?: string; msg?: string; message?: string; article?: TwitterApiArticle | null };
+  try { body = JSON.parse(text); } catch { throw new Error("twitterapi.io article reply was not valid JSON"); }
+  if (body.status === "error") throw new Error(`twitterapi.io article error: ${body.message ?? body.msg ?? "unknown"}`);
+  const a = body.article;
+  if (!a) return null;
+  const blocks = (a.contents ?? []).map((b) => (b.text ?? "").trim()).filter(Boolean);
+  if (!blocks.length && !a.preview_text) return null;
+  const parts = [a.title?.trim() && `Article: ${a.title.trim()}`, ...(blocks.length ? blocks : [a.preview_text!.trim()])].filter(Boolean);
+  return { title: a.title?.trim() || null, text: parts.join("\n\n").slice(0, MAX_ARTICLE_CHARS) };
+}
+
 export interface XPostOptions {
   apiKey: string;
   postId: string;
@@ -50,17 +91,9 @@ export interface XPostOptions {
  * Throws with the actual failure (deleted, protected, bad key, rate limited) so the unit shows it.
  */
 export async function extractXPost(o: XPostOptions): Promise<{ title: string; transcript: NonNullable<IngestedUnit["transcript"]> }> {
-  const get = () => (o.fetchImpl ?? fetch)(`https://api.twitterapi.io/twitter/tweets?tweet_ids=${encodeURIComponent(o.postId)}`, {
-    headers: { "x-api-key": o.apiKey },
-    signal: AbortSignal.timeout(o.timeoutMs ?? 15_000),
-  });
-  let res = await paced(get);
-  for (let attempt = 0; res.status === 429 && attempt < MAX_RETRIES; attempt++) {
-    const wait = retryAfterMs(res);
-    await res.text().catch(() => "");
-    await sleep(wait);
-    res = await paced(get);
-  }
+  const fetchUrl = (url: string) => (o.fetchImpl ?? fetch)(url, { headers: { "x-api-key": o.apiKey }, signal: AbortSignal.timeout(o.timeoutMs ?? 15_000) });
+  const get = () => fetchUrl(`https://api.twitterapi.io/twitter/tweets?tweet_ids=${encodeURIComponent(o.postId)}`);
+  const res = await pacedGet(get);
   const text = await res.text();
   if (!res.ok) throw new Error(httpError("twitterapi.io", res.status, text));
   let body: { status?: string; message?: string; msg?: string; tweets?: TwitterApiTweet[] };
@@ -74,7 +107,9 @@ export async function extractXPost(o: XPostOptions): Promise<{ title: string; tr
   if (!post) throw new Error("X post unavailable: not found, deleted or protected");
 
   const own = (post.text ?? "").trim();
-  let content = own;
+  // An X Article's post is just a link; its body is what the bookmark is for.
+  const article = onlyLinks(own) ? await readArticle(o, fetchUrl) : null;
+  let content = article?.text ?? own;
   const quoted = post.quoted_tweet?.text?.trim();
   if (quoted) content += `\n\nQuoted post${post.quoted_tweet?.author?.userName ? ` by @${post.quoted_tweet.author.userName}` : ""}: ${quoted}`;
   if (!content) throw new Error("X post has no text");
@@ -84,7 +119,7 @@ export async function extractXPost(o: XPostOptions): Promise<{ title: string; tr
   const created = post.createdAt && !Number.isNaN(Date.parse(post.createdAt)) ? new Date(post.createdAt).toISOString().slice(0, 10) : null;
   const item: EvidenceItem = { start_seconds: 0, end_seconds: 0, observed_spoken_content: content };
   return {
-    title: `${handle ? `@${handle}` : "X post"}: ${(own || content).replace(/\s+/g, " ").slice(0, 80)}`,
-    transcript: { overview: `X post by ${byline}${created ? ` on ${created}` : ""}.`, window: [0, 0], evidence_items: [item] },
+    title: `${handle ? `@${handle}` : "X post"}: ${(article?.title ?? (own || content)).replace(/\s+/g, " ").slice(0, 80)}`,
+    transcript: { overview: `${article ? "X Article" : "X post"} by ${byline}${created ? ` on ${created}` : ""}.`, window: [0, 0], evidence_items: [item] },
   };
 }
