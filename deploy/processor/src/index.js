@@ -17,6 +17,13 @@ const ENV_NAMES = [
 // the bill. Work it was doing is reclaimed and redone on the next wake.
 const MAX_AWAKE_MS = 2 * 60 * 60 * 1000;
 
+// Only a hash of the settings is kept, never the values.
+async function settingsHash(vars) {
+  const data = new TextEncoder().encode(JSON.stringify(Object.entries(vars).sort()));
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", data));
+  return [...digest].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 export class Processor extends Container {
   defaultPort = 3000;
   // Checked this long after the last request; see onActivityExpired.
@@ -27,8 +34,23 @@ export class Processor extends Container {
     this.envVars = Object.fromEntries(ENV_NAMES.filter((name) => env[name]).map((name) => [name, String(env[name])]));
   }
 
+  // A container keeps the settings it started with, so once a secret or var changes, restart it on the next
+  // request, as long as it isn't mid-job (otherwise it carries on and the next request checks again).
+  async fetch(request) {
+    if ((await this.ctx.storage.get("settingsHash")) !== (await settingsHash(this.envVars))) {
+      const { status } = await this.getState();
+      if ((status === "running" || status === "healthy") && !(await this.busy())) {
+        await this.stop();
+        for (let i = 0; i < 20 && !["stopped", "stopped_with_code"].includes((await this.getState()).status); i++) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+      }
+    }
+    return super.fetch(request);
+  }
+
   async onStart() {
-    await this.ctx.storage.put("awakeSince", Date.now());
+    await this.ctx.storage.put({ awakeSince: Date.now(), settingsHash: await settingsHash(this.envVars) });
   }
 
   // Imports run for many minutes without any request reaching the container, so an idle timer alone would
