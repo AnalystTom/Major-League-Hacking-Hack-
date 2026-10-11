@@ -234,6 +234,9 @@ test("an agent brief is charged as one 'handoff' start, and waits without room",
     assert.equal(await handoffs.reserve(claim, { daily: c.n + 1, monthly: 100_000 }), null);
     const n = (await pool.query(`SELECT count(*)::int AS n FROM processing_starts WHERE unit_id = $1 AND kind = 'handoff' AND charged`, [ids.unit])).rows[0].n;
     assert.equal(n, 1);
+    // Skills that resolve to no source video can't be charged, so the brief isn't written: it fails closed.
+    const orphan = { ...claim, skill_result_ids: [randomUUID()] };
+    await assert.rejects(handoffs.reserve(orphan, { daily: 1_000_000, monthly: 1_000_000 }), /can't be charged/);
   } finally {
     if (ids.skill) await pool.query(`DELETE FROM skill_results WHERE id = $1`, [ids.skill]);
     if (ids.artifact) await pool.query(`DELETE FROM artifacts WHERE id = $1`, [ids.artifact]);

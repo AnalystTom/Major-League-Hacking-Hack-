@@ -89,7 +89,9 @@ export class PgHandoffStore implements HandoffStore {
       const { rows: [u] } = await client.query(
         `SELECT a.source_ids[1] AS unit_id FROM skill_results s JOIN artifacts a ON a.id = s.artifact_id AND a.version = s.artifact_version
          WHERE s.id = ANY($1::uuid[]) ORDER BY array_position($1::uuid[], s.id) LIMIT 1`, [c.skill_result_ids]);
-      if (u?.unit_id) await recordStarts(client, [u.unit_id], "handoff", true);
+      // Fail closed: a brief that can't be charged isn't written, so nothing paid happens outside the limits.
+      if (!u?.unit_id) throw new Error("the selected skills no longer have a source video, so this brief can't be charged");
+      await recordStarts(client, [u.unit_id], "handoff", true);
       await client.query("COMMIT");
       return null;
     } catch (e) {
