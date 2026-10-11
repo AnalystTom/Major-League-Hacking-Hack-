@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Resurface</title>
-  <meta name="description" content="Cool apps stuck in your bookmarks, tutorials stuck in Watch Later. Resurface turns your backlog into 30-second shorts and installs the ones you keep in Claude Code, Codex, Cursor or Hermes.">
+  <meta name="description" content="Tutorials stuck in Watch Later. Paste the YouTube links and Resurface turns them into 30-second shorts, then installs the ones you keep in Claude Code, Codex, Cursor or Hermes.">
   <meta property="og:title" content="Resurface: you saved it, your agent never saw it">
-  <meta property="og:description" content="Your backlog as 30-second shorts. Keep the takeaways worth using and send them to your coding agent. Join the waitlist.">
+  <meta property="og:description" content="Your backlog as 30-second shorts. Paste your YouTube links, watch what's worth keeping, and send it to your coding agent.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <script>
     // Apply the chosen colour palette before first paint: ?palette= wins, then the last pick.
@@ -33,7 +33,7 @@
         <a href="#shorts">Shorts</a>
         <a href="#how">How it works</a>
       </nav>
-      <a class="btn btn-small" href="#join">Join the waitlist</a>
+      <a class="btn btn-small" href="#proceed">Proceed</a>
     </div>
   </header>
 
@@ -46,11 +46,12 @@
         <span class="line"><span class="kw" style="--i:3">Your</span> <span class="kw" style="--i:4">agent</span> <span class="kw" style="--i:5">never</span> <span class="kw" style="--i:6">saw</span> <span class="kw" style="--i:7">it.</span></span>
       </h1>
       <p class="lede">Resurface turns the bookmarks, Watch Later videos and conference talks you never got to into 30-second shorts. Keep the good ones and they're installed in your coding agent as skills.</p>
-      <form class="signup signup-hero" id="join" data-signup novalidate>
-        <label class="visually-hidden" for="hero-email">Email address</label>
-        <input id="hero-email" name="email" type="email" autocomplete="email" placeholder="you@company.dev" required>
+      <form class="proceed" id="proceed" data-proceed novalidate>
+        <label class="proceed-label" for="proceed-links">Paste YouTube links, one per line (up to 10)</label>
+        <textarea id="proceed-links" name="links" rows="3" spellcheck="false" autocomplete="off"
+          placeholder="https://www.youtube.com/watch?v=VQy50fuxI34&#10;https://youtu.be/V-EDrhIhHzQ?t=306"></textarea>
         <input class="visually-hidden" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
-        <button type="submit" class="btn">Join the waitlist</button>
+        <button type="submit" class="btn">Proceed</button>
         <p class="form-status" role="status" aria-live="polite"></p>
       </form>
       <div class="works-with">
@@ -108,6 +109,26 @@
       </figure>
     </section>
 
+    <!-- ============ Your import: progress, then the reel ============ -->
+    <section class="run" id="run" data-run aria-labelledby="run-title" hidden>
+      <div class="section-head">
+        <h2 id="run-title">Your shorts</h2>
+        <p data-run-note></p>
+      </div>
+      <div class="run-body">
+        <div class="run-progress">
+          <h3>Your links</h3>
+          <ol class="units" data-units></ol>
+          <button type="button" class="btn btn-small btn-quiet" data-recheck hidden>Check again</button>
+        </div>
+        <div class="reel" data-reel hidden>
+          <div class="reel-track" data-reel-track tabindex="0" aria-label="Rendered shorts. Use the up and down arrows to move, M for sound."></div>
+          <p class="reel-counter" data-reel-counter aria-live="polite"></p>
+        </div>
+        <p class="reel-empty" data-reel-empty hidden>No shorts are ready to watch from these links yet. Each link above shows where it stopped.</p>
+      </div>
+    </section>
+
     <!-- ============ Shorts feed ============ -->
     <section class="feed" id="shorts" data-feed-root aria-labelledby="feed-title">
       <div class="section-head">
@@ -134,7 +155,7 @@
       </div>
       <div class="nudge">
         <p>That was five samples. Your backlog is probably a few hundred.</p>
-        <a class="btn" href="#join">Join the waitlist</a>
+        <a class="btn" href="#proceed">Proceed with your links</a>
       </div>
     </section>
 
@@ -167,7 +188,7 @@
 
   <footer class="footer">
     <p>Resurface. Built at AI Engineer NYC 2026.</p>
-    <a href="#join">Join the waitlist</a>
+    <a href="#proceed">Proceed</a>
   </footer>
 
   <aside class="palette-picker" data-palette-picker aria-label="Colour palette" hidden>

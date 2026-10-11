@@ -1,7 +1,9 @@
-// Page wiring: the demo film, the shorts feed and the waitlist.
+// Page wiring: the demo film, the sample shorts feed, and Proceed with its reel.
 
 import { createFeed } from "./feed.js";
 import { createFilm } from "./film.js";
+import { createProceed } from "./proceed.js";
+import { createReel } from "./reel.js";
 
 const feed = createFeed(document.querySelector("[data-feed-root]"));
 createFilm(document.querySelector("[data-film]")).refresh();
@@ -12,15 +14,15 @@ let feedInView = false;
 new IntersectionObserver(([e]) => (feedInView = e.isIntersecting), { threshold: 0.5 }).observe(feed.root);
 
 document.addEventListener("keydown", (e) => {
-  if (e.target.closest("input, textarea, select, [role='radiogroup']")) return;
+  if (e.target.closest("input, textarea, select, [role='radiogroup'], [data-reel-track]")) return;
   if (!feedInView && !feed.root.contains(document.activeElement)) return;
   if (feed.key(e)) e.preventDefault();
 });
 
-// "Join the waitlist" links jump to the hero form and put the cursor in the email field.
-document.querySelectorAll('a[href="#join"]').forEach((a) =>
+// "Proceed" links jump to the hero form and put the cursor in the links box.
+document.querySelectorAll('a[href="#proceed"]').forEach((a) =>
   a.addEventListener("click", () => {
-    setTimeout(() => document.querySelector("#hero-email").focus({ preventScroll: true }), 350);
+    setTimeout(() => document.querySelector("#proceed-links").focus({ preventScroll: true }), 350);
   })
 );
 
@@ -48,53 +50,10 @@ picker.addEventListener("click", (e) => {
 });
 markPalette();
 
-// ---------- Waitlist ----------
+// ---------- Proceed ----------
 
-for (const form of document.querySelectorAll("[data-signup]")) {
-  const status = form.querySelector(".form-status");
-  const button = form.querySelector('button[type="submit"]');
-  const emailInput = form.querySelector('input[type="email"]');
-  const say = (text, tone) => {
-    status.textContent = text;
-    status.dataset.tone = tone;
-  };
-
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const data = new FormData(form);
-    const email = String(data.get("email") || "").trim();
-    if (!email || !emailInput.checkValidity()) {
-      say("Enter an email address like you@example.com.", "error");
-      emailInput.focus();
-      return;
-    }
-
-    button.disabled = true;
-    say("Joining…", "pending");
-    try {
-      const res = await fetch("/api/waitlist", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          email,
-          agent: data.get("agent"),
-          sources: data.getAll("sources"),
-          company: data.get("company"),
-        }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error || "The waitlist is unavailable right now. Try again in a minute.");
-      say(
-        body.alreadyJoined
-          ? "You're already on the list. We'll email you when your spot opens."
-          : `You're on the list${body.position ? ` at #${body.position}` : ""}. We'll email you when your spot opens.`,
-        "ok"
-      );
-      form.reset();
-    } catch (err) {
-      say(err.message, "error");
-    } finally {
-      button.disabled = false;
-    }
-  });
-}
+createProceed({
+  form: document.querySelector("[data-proceed]"),
+  run: document.querySelector("[data-run]"),
+  reel: createReel(document.querySelector("[data-reel]")),
+});

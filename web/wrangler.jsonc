@@ -3,11 +3,18 @@
   "name": "resurface",
   "main": "src/index.js",
   "compatibility_date": "2026-09-01",
+  // postgres.js needs Node's Buffer and crypto, plus cloudflare:sockets for the TCP connection.
+  "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*", "/media/*"]
   },
+  // Rendered shorts (mp4), captions (vtt) and posters. Create once: npx wrangler r2 bucket create resurface-media
+  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "resurface-media" }],
+  // TigerData: set DATABASE_URL with `npx wrangler secret put DATABASE_URL` (or in .dev.vars locally).
+  // Optional: PROCESSOR_URL and PROCESSOR_TOKEN for the service that turns units into shorts.
+  // Kept so the existing waitlist signups stay reachable; no route writes to it any more.
   "d1_databases": [
     {
       "binding": "DB",
