@@ -57,7 +57,7 @@ Category values are dynamic; schema field names and workflow interfaces remain s
 flowchart TD
   R["Import UI: individual YouTube links"] --> I["Workflow 1: Nimble retrieval and extraction"]
   I --> U["Ingested units: one source per unit; actual status/error"]
-  U --> D["Digestion Prompt: select, group, categorize, synthesize"]
+  U -->|Usable content only| D["Digestion Prompt: select, group, categorize, synthesize"]
   P["One real project and a user-supplied prompt"] --> D
   D --> T["TigerData: final artifacts, dynamic categories, source IDs, processed_text"]
   T --> V["Workflow 2: Opus writes video scripts and animation code"]
