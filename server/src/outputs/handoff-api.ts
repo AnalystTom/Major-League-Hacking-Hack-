@@ -7,6 +7,7 @@ import { z } from "zod";
 import { tracked } from "../activity.js";
 import { HANDOFF_PROMPT_REVISION, refineHandoff, renderAllPrompts } from "./handoff.js";
 import type { BriefClaim, HandoffStore } from "./handoff-store.js";
+import type { Limits } from "../ingest/limits.js";
 
 export interface HandoffOptions {
   token: string;
@@ -15,6 +16,8 @@ export interface HandoffOptions {
   openaiModel?: string;
   fetchImpl?: typeof fetch;
   log?: (msg: string) => void;
+  /** The processing limits; each brief is one paid call and takes a slot. */
+  limits?: Limits;
 }
 
 /** Claims one brief and writes its result. Never throws; returns what happened. */
@@ -33,6 +36,11 @@ export async function runHandoff(briefId: string, o: HandoffOptions): Promise<"r
     const skills = await o.store.loadSkills(claimed.skill_result_ids);
     if (skills.length !== claimed.skill_result_ids.length) {
       throw new Error(`${claimed.skill_result_ids.length - skills.length} of the selected skills aren't ready any more`);
+    }
+    if (o.limits) {
+      const until = await o.store.reserve(claimed, o.limits);
+      // The brief fails with when to come back; picking the same skills again later queues it anew.
+      if (until) throw new Error(`Resurface has reached its processing limit for now. Try again after ${until.toISOString().slice(0, 16).replace("T", " ")} UTC.`);
     }
     const brief = await refineHandoff(skills, { apiKey: o.openaiKey, model: o.openaiModel, fetchImpl: o.fetchImpl });
     if (!(await o.store.finish(claimed, brief, renderAllPrompts(brief, skills), HANDOFF_PROMPT_REVISION))) {

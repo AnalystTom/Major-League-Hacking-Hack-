@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import type { DigestArtifact, IngestedUnit, StoredArtifact } from "./types.js";
 import { remaining, resumesAt, type Limits } from "./limits.js";
+import { lockLimits, recordStarts, usedSlots } from "./ledger.js";
 
 export interface Claimed { claimed: IngestedUnit[]; deferred: string[]; resumesAt: Date | null }
 export interface Reserved { allowed: string[]; deferred: string[]; resumesAt: Date | null }
@@ -179,17 +180,6 @@ const UNSEEN_BY = (user: string) => `NOT EXISTS (
     AND a.source_ids <@ ARRAY(SELECT x.unit_id FROM user_imports x WHERE x.user_id = ${user}))`;
 
 /** Writes to the shared TigerData schema (db/migrations). Workflow 1 owns these tables only. */
-const UTC_DAY = `(date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')`;
-const UTC_MONTH = `(date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')`;
-
-/** Charged starts today and this month (UTC), from the processing_starts ledger (db/migrations/007). */
-async function usedSlots(client: pg.PoolClient) {
-  const { rows: [c] } = await client.query(
-    `SELECT count(*) FILTER (WHERE created_at >= ${UTC_DAY})::int AS today, count(*)::int AS month
-     FROM processing_starts WHERE charged AND created_at >= ${UTC_MONTH}`);
-  return { today: c.today as number, month: c.month as number };
-}
-
 export class PgStore implements Store {
   private pool: pg.Pool;
   constructor(pool: pg.Pool) { this.pool = pool; }
@@ -227,7 +217,7 @@ export class PgStore implements Store {
     try {
       await client.query("BEGIN");
       // One claimer at a time counts and claims, so concurrent requests can't both take the last slot.
-      await client.query(`SELECT pg_advisory_xact_lock(hashtext('resurface:processing-limits'))`);
+      await lockLimits(client);
       const used = await usedSlots(client);
       const room = remaining(limits, used);
       const { rows } = room > 0
@@ -237,9 +227,7 @@ export class PgStore implements Store {
                           ORDER BY created_at LIMIT $2 FOR UPDATE SKIP LOCKED)
              RETURNING *`, [ids, Math.min(50, room)])
         : { rows: [] };
-      if (rows.length) {
-        await client.query(`INSERT INTO processing_starts (unit_id, kind, charged) SELECT unnest($1::uuid[]), 'extract', true`, [rows.map((r) => r.id)]);
-      }
+      await recordStarts(client, rows.map((r) => r.id as string), "extract", true);
       let deferred: string[] = [];
       let until: Date | null = null;
       if (rows.length >= room) {
@@ -263,7 +251,7 @@ export class PgStore implements Store {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query(`SELECT pg_advisory_xact_lock(hashtext('resurface:processing-limits'))`);
+      await lockLimits(client);
       const used = await usedSlots(client);
       // Covered: the unit's latest start is its extraction, so this is the digest that extraction paid for.
       const { rows } = await client.query(
@@ -274,10 +262,8 @@ export class PgStore implements Store {
       const room = remaining(limits, used);
       const allowedCharged = charged.slice(0, room === Infinity ? charged.length : room);
       const deferred = charged.slice(allowedCharged.length);
-      await client.query(
-        `INSERT INTO processing_starts (unit_id, kind, charged)
-         SELECT id, 'digest', false FROM unnest($1::uuid[]) AS id UNION ALL SELECT id, 'digest', true FROM unnest($2::uuid[]) AS id`,
-        [covered, allowedCharged]);
+      await recordStarts(client, covered, "digest", false);
+      await recordStarts(client, allowedCharged, "digest", true);
       const allowed = new Set([...covered, ...allowedCharged]);
       await client.query(`UPDATE ingested_units SET deferred_until = NULL WHERE id = ANY($1::uuid[]) AND deferred_until IS NOT NULL`, [[...allowed]]);
       let until: Date | null = null;

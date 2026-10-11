@@ -6,6 +6,8 @@ import { renderArtifact } from "./render/render.js";
 import type { MediaStore } from "./render/media.js";
 import { LostClaim, type Kind, type OutputStore } from "./store.js";
 import { tracked } from "../activity.js";
+import type { Limits } from "../ingest/limits.js";
+import { isPermanentFailure } from "./retry.js";
 import { sourceRefs, type ProviderOptions, type ReadyArtifact } from "./types.js";
 import type { StoredArtifact } from "../ingest/types.js";
 
@@ -14,6 +16,8 @@ export interface OutputOptions extends ProviderOptions {
   /** Where rendered files go; without one, renders fail with that reason instead of waiting forever. */
   media: MediaStore | null;
   log?: (msg: string) => void;
+  /** The processing limits; a retried skill or short takes a slot (outputs/store.ts claim). */
+  limits?: Limits;
 }
 
 // What's in flight and the render queue belong to one options object, so two processors in a process (or two
@@ -36,7 +40,7 @@ async function produceNow(kind: Kind, a: ReadyArtifact, o: OutputOptions) {
   if (inFlight.has(key)) return;
   inFlight.add(key);
   try {
-    const claim = await o.outputs.claim(kind, a);
+    const claim = await o.outputs.claim(kind, a, o.limits);
     if (!claim) return;
     try {
       if (!o.openaiKey) throw new Error("OPENAI_API_KEY isn't configured on the processor");
@@ -50,7 +54,8 @@ async function produceNow(kind: Kind, a: ReadyArtifact, o: OutputOptions) {
       o.log?.(`${kind} ready for artifact ${a.id} v${a.version}`);
     } catch (e) {
       // A worker whose claim was taken over leaves the row to the one that took it.
-      const recorded = !(e instanceof LostClaim) && (await o.outputs.fail(kind, claim, (e as Error).message));
+      const final = isPermanentFailure((e as Error).message);
+      const recorded = !(e instanceof LostClaim) && (await o.outputs.fail(kind, claim, (e as Error).message, final));
       o.log?.(`${kind} ${recorded ? "failed" : "not recorded"} for artifact ${a.id} v${a.version}: ${(e as Error).message}`);
     }
   } catch (e) {
