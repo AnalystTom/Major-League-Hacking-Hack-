@@ -31,6 +31,9 @@
     "OPENAI_MODEL": "gpt-6.1-sol",
     "OPENAI_REASONING_EFFORT": "xhigh",
     "OPENAI_MAX_OUTPUT_TOKENS": "40000",
+    // Narration: gemini-3.8-flash-tts allows only 100 requests a day on this key's tier (~7 per short), and ran out on
+    // 11 Oct. The lite TTS model works with the same request and voice and has its own quota.
+    "GEMINI_TTS_MODEL": "gemini-3.8-flash-lite-tts",
     // Hard cap on provider spend across all users, at ~$0.12 a short. Raised to 100/400 (about $48 a month at the cap)
     // for the demo only: put it back to 10/40 afterwards.
     "DAILY_VIDEO_LIMIT": "100",
