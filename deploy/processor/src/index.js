@@ -96,7 +96,11 @@ export default {
     if (!ROUTES.has(`${request.method} ${pathname}`)) return new Response("Not found", { status: 404 });
     if (!(await authorized(request, env))) return new Response("Unauthorized", { status: 401 });
 
-    const reply = getContainer(env.PROCESSOR).fetch(request)
+    // Read the body first: once the early 202 below has gone out, the incoming request can't be read any more,
+    // and a slow container would get a request without its unit ids.
+    const body = request.method === "GET" ? undefined : await request.arrayBuffer();
+    const forward = new Request(request.url, { method: request.method, headers: request.headers, body });
+    const reply = getContainer(env.PROCESSOR).fetch(forward)
       .catch(() => new Response("The processor didn't start.", { status: 502 }));
     ctx.waitUntil(reply);
     const late = new Promise((resolve) => setTimeout(() => resolve(null), ANSWER_WITHIN_MS));
