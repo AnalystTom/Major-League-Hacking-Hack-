@@ -46,6 +46,8 @@ if (process.env.GEMINI_API_KEY) {
   // this host and media storage: R2_* for the bucket, or MEDIA_LOCAL_WEB_DIR for local wrangler dev.
   const outputs = {
     outputs: pool ? new PgOutputStore(pool) : new MemoryOutputStore(),
+    // Retried skills and shorts take a slot under the same limits as imports.
+    limits: options.limits,
     openaiKey: options.openaiKey,
     openaiModel: options.openaiModel,
     geminiKey: options.geminiKey,

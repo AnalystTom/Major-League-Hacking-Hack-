@@ -180,3 +180,40 @@ test("only the worker holding the current claim token can settle a result", { sk
     await pool.end();
   }
 });
+
+test("a retried output is charged against the limits and waits when there's no room", { skip: !url && "TEST_DATABASE_URL not set" }, async () => {
+  const pool = new pg.Pool({ connectionString: url });
+  const outputs = new PgOutputStore(pool);
+  const ids = { unit: "", prompt: "", artifact: "" };
+  try {
+    ids.unit = (await pool.query(`INSERT INTO ingested_units (submitted_url, source_url, status, transcript) VALUES ('u', 'https://www.youtube.com/watch?v=VQy50fuxI34', 'ready', '{}') RETURNING id`)).rows[0].id;
+    ids.prompt = (await pool.query(`INSERT INTO digestion_prompts (name, revision, prompt_text) VALUES ($1, 1, $1) RETURNING id`, [`test-${randomUUID()}`])).rows[0].id;
+    const a = (await pool.query(`INSERT INTO artifacts (name, source_url, source_ids, processed_text, digestion_prompt_id, ingestion_status) VALUES ('x', 'x', $1, 't', $2, 'ready') RETURNING id, version`, [[ids.unit], ids.prompt])).rows[0];
+    ids.artifact = a.id;
+    const art = { ...a, name: "x", category: null, processed_text: "t", selection_reason: null, source_ids: [ids.unit], sources: [], evidence: [] };
+    const { rows: [c] } = await pool.query(`SELECT count(*)::int AS n FROM processing_starts WHERE charged AND created_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`);
+    const roomForOne = { daily: c.n + 1, monthly: 100_000 };
+    const retries = async () => (await pool.query(`SELECT count(*)::int AS n FROM processing_starts WHERE unit_id = $1 AND kind = 'retry' AND charged`, [ids.unit])).rows[0].n;
+
+    const first = (await outputs.claim("skill", art, roomForOne))!;
+    assert.equal(await retries(), 0, "a first attempt is covered by the digest");
+    await outputs.fail("skill", first, "OpenAI HTTP 500: boom");
+    await pool.query(`UPDATE skill_results SET updated_at = now() - interval '1 hour' WHERE id = $1`, [first.id]);
+    assert.equal(await outputs.claim("skill", art, { daily: c.n, monthly: 100_000 }), null, "no room: the retry waits");
+    const second = (await outputs.claim("skill", art, roomForOne))!;
+    assert.equal(await retries(), 1);
+    await outputs.fail("skill", second, "TTS HTTP 402: Your prepayment credits are depleted", true);
+    const row = (await pool.query(`SELECT status, attempts FROM skill_results WHERE id = $1`, [first.id])).rows[0];
+    assert.deepEqual(row, { status: "failed", attempts: 3 }, "a final failure uses up its attempts");
+    await pool.query(`UPDATE skill_results SET updated_at = now() - interval '1 hour' WHERE id = $1`, [first.id]);
+    assert.equal(await outputs.claim("skill", art, { daily: 1_000_000, monthly: 1_000_000 }), null, "never retried");
+  } finally {
+    if (ids.artifact) {
+      await pool.query(`DELETE FROM skill_results WHERE artifact_id = $1`, [ids.artifact]);
+      await pool.query(`DELETE FROM artifacts WHERE id = $1`, [ids.artifact]);
+    }
+    if (ids.unit) await pool.query(`DELETE FROM ingested_units WHERE id = $1`, [ids.unit]);
+    if (ids.prompt) await pool.query(`DELETE FROM digestion_prompts WHERE id = $1`, [ids.prompt]);
+    await pool.end();
+  }
+});

@@ -3,6 +3,8 @@
 
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
+import { remaining, type Limits } from "../ingest/limits.js";
+import { lockLimits, recordStarts, usedSlots } from "../ingest/ledger.js";
 import { STALE_CLAIM_MINUTES } from "../claims.js";
 import { sourceRefs, type GeneratedSkill, type ReadyArtifact, type RenderedVideo } from "./types.js";
 
@@ -31,9 +33,13 @@ export interface OutputStore {
   /** Ready digests of imported units with no result of this kind yet, a stale claim, or a failure with attempts left. */
   artifactsNeeding(kind: Kind, limit: number): Promise<ReadyArtifact[]>;
   /** Takes the one result row for this revision as `running`; null when someone else holds it or it's settled. */
-  claim(kind: Kind, a: ReadyArtifact): Promise<Claim | null>;
-  /** Records a failure while the claim is still held; returns false when it was taken over. */
-  fail(kind: Kind, c: Claim, error: string): Promise<boolean>;
+  /**
+   * With limits, a retry (a row that already had an attempt) also needs room under the processing limits and is
+   * charged as a 'retry' start; without room it isn't claimed and waits for the next window.
+   */
+  claim(kind: Kind, a: ReadyArtifact, limits?: Limits): Promise<Claim | null>;
+  /** Records a failure while the claim is still held; returns false when it was taken over. final: never retried. */
+  fail(kind: Kind, c: Claim, error: string, final?: boolean): Promise<boolean>;
   /** Save the result; throw LostClaim if the claim was taken over. */
   finishSkill(c: Claim, s: GeneratedSkill): Promise<void>;
   finishVideo(c: Claim, v: RenderedVideo): Promise<void>;
@@ -65,21 +71,42 @@ export class PgOutputStore implements OutputStore {
     return rows.map(rowToArtifact);
   }
 
-  async claim(kind: Kind, a: ReadyArtifact) {
+  async claim(kind: Kind, a: ReadyArtifact, limits?: Limits) {
     const t = TABLE[kind];
-    const { rows } = await this.pool.query(
-      `INSERT INTO ${t} (artifact_id, artifact_version, status, updated_at, claim_token, attempts) VALUES ($1, $2, 'running', now(), gen_random_uuid(), 1)
-       ON CONFLICT (artifact_id, artifact_version) DO UPDATE SET status = 'running', error = NULL, updated_at = now(),
-         claim_token = gen_random_uuid(), attempts = ${t}.attempts + 1
-       WHERE ${CLAIMABLE(t)}
-       RETURNING id, claim_token`, [a.id, a.version]);
-    return rows[0] ? { id: rows[0].id as string, token: rows[0].claim_token as string } : null;
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      // A row that already had an attempt makes this a retry, which spends money again, so it needs room first.
+      const { rows: [prior] } = await client.query(`SELECT attempts FROM ${t} WHERE artifact_id = $1 AND artifact_version = $2`, [a.id, a.version]);
+      const retry = limits !== undefined && (prior?.attempts ?? 0) >= 1;
+      if (retry) {
+        await lockLimits(client);
+        if (remaining(limits, await usedSlots(client)) < 1) { await client.query("ROLLBACK"); return null; }
+      }
+      const { rows } = await client.query(
+        `INSERT INTO ${t} (artifact_id, artifact_version, status, updated_at, claim_token, attempts) VALUES ($1, $2, 'running', now(), gen_random_uuid(), 1)
+         ON CONFLICT (artifact_id, artifact_version) DO UPDATE SET status = 'running', error = NULL, updated_at = now(),
+           claim_token = gen_random_uuid(), attempts = ${t}.attempts + 1
+         WHERE ${CLAIMABLE(t)}
+         RETURNING id, claim_token, attempts`, [a.id, a.version]);
+      if (rows[0] && retry && rows[0].attempts >= 2) await recordStarts(client, [a.source_ids[0]], "retry", true);
+      await client.query("COMMIT");
+      return rows[0] ? { id: rows[0].id as string, token: rows[0].claim_token as string } : null;
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
   }
 
-  async fail(kind: Kind, c: Claim, error: string) {
+  async fail(kind: Kind, c: Claim, error: string, final = false) {
+    // A final failure uses up the remaining attempts, so CLAIMABLE never takes it again.
     const { rowCount } = await this.pool.query(
-      `UPDATE ${TABLE[kind]} SET status = 'failed', error = $3, updated_at = now() WHERE id = $1 AND claim_token = $2 AND status = 'running'`,
-      [c.id, c.token, error.slice(0, 2000)]);
+      `UPDATE ${TABLE[kind]} SET status = 'failed', error = $3, updated_at = now(),
+         attempts = CASE WHEN $4 THEN GREATEST(attempts, ${MAX_OUTPUT_ATTEMPTS}) ELSE attempts END
+       WHERE id = $1 AND claim_token = $2 AND status = 'running'`,
+      [c.id, c.token, error.slice(0, 2000), final]);
     return rowCount === 1;
   }
 
@@ -139,9 +166,16 @@ export class MemoryOutputStore implements OutputStore {
   async artifactsNeeding(kind: Kind, limit: number) {
     return this.artifacts.filter((a) => this.claimable(this.rows[kind].get(this.key(a)))).slice(0, limit);
   }
-  async claim(kind: Kind, a: ReadyArtifact) {
+  /** Charged retries this store has recorded, standing in for the ledger: tests set retriesAllowed to model room. */
+  retriesCharged = 0;
+  retriesAllowed = Infinity;
+  async claim(kind: Kind, a: ReadyArtifact, limits?: Limits) {
     const before = this.rows[kind].get(this.key(a));
     if (!this.claimable(before)) return null;
+    if (limits && (before?.attempts ?? 0) >= 1) {
+      if (this.retriesCharged >= Math.min(this.retriesAllowed, limits.daily, limits.monthly)) return null;
+      this.retriesCharged++;
+    }
     const row: Row = { id: before?.id ?? randomUUID(), token: randomUUID(), artifact: a, status: "running", error: null, attempts: (before?.attempts ?? 0) + 1 };
     this.rows[kind].set(this.key(a), row);
     return { id: row.id, token: row.token };
@@ -149,9 +183,9 @@ export class MemoryOutputStore implements OutputStore {
   private held(kind: Kind, c: Claim) {
     return [...this.rows[kind].values()].find((r) => r.id === c.id && r.token === c.token && r.status === "running");
   }
-  async fail(kind: Kind, c: Claim, error: string) {
+  async fail(kind: Kind, c: Claim, error: string, final = false) {
     const row = this.held(kind, c);
-    if (row) Object.assign(row, { status: "failed", error, failedAt: Date.now() });
+    if (row) Object.assign(row, { status: "failed", error, failedAt: Date.now(), attempts: final ? Math.max(row.attempts, MAX_OUTPUT_ATTEMPTS) : row.attempts });
     return !!row;
   }
   async finishSkill(c: Claim, s: GeneratedSkill) {
