@@ -4,6 +4,7 @@
 import { digestAndStore, extractUnit, type IngestOptions } from "./pipeline.js";
 import { DEFAULT_CATEGORIZATION_REQUEST, promptRevisionText } from "./digest/prompt.js";
 import type { IngestedUnit, StoredArtifact } from "./types.js";
+import { tracked } from "../activity.js";
 
 export interface ProcessorOptions extends IngestOptions {
   openaiKey?: string;
@@ -46,7 +47,11 @@ async function waitForSettled(ids: string[], o: ProcessorOptions): Promise<Inges
  * Processes units. Safe to call twice with the same ids: pending units are claimed atomically, ready units are
  * not re-extracted, and a unit that already has a digest (or was excluded) is skipped.
  */
-export async function processUnits(unitIds: string[], o: ProcessorOptions): Promise<ProcessSummary> {
+export function processUnits(unitIds: string[], o: ProcessorOptions): Promise<ProcessSummary> {
+  return tracked(() => process(unitIds, o));
+}
+
+async function process(unitIds: string[], o: ProcessorOptions): Promise<ProcessSummary> {
   const summary: ProcessSummary = { extracted: { ready: 0, failed: 0 }, waitedFor: 0, digested: 0, skipped: null };
 
   const claimed = await o.store.claimPendingUnits(unitIds);
@@ -116,7 +121,7 @@ export async function sweepOnce(o: ProcessorOptions, limit = 20): Promise<number
 /** Runs sweepOnce on a timer (skipping a tick while one is still running). Returns a stop function. */
 export function startSweep(o: ProcessorOptions, intervalMs = 60_000): () => void {
   let running = false;
-  const timer = setInterval(async () => {
+  const tick = async () => {
     if (running) return;
     running = true;
     try {
@@ -127,7 +132,11 @@ export function startSweep(o: ProcessorOptions, intervalMs = 60_000): () => void
     } finally {
       running = false;
     }
-  }, intervalMs);
+  };
+  // A host that wakes this process on a schedule gets a sweep right away, not one interval later.
+  const first = setTimeout(tick, 1000);
+  const timer = setInterval(tick, intervalMs);
+  first.unref();
   timer.unref();
-  return () => clearInterval(timer);
+  return () => { clearTimeout(first); clearInterval(timer); };
 }

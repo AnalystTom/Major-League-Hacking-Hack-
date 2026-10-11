@@ -1,4 +1,5 @@
 import { httpError } from "../../httpError.js";
+import { geminiUsage, recordUsage } from "../../usage.js";
 import { ModelExtraction } from "../types.js";
 
 export const GEMINI_MODEL = "gemini-3.5-flash-lite";
@@ -101,6 +102,7 @@ export async function extractWithGemini(opts: GeminiRequestOptions): Promise<{ e
       lastError = `Gemini output did not match the extraction shape: ${parsed.error.message.slice(0, 300)}`;
       continue;
     }
+    recordUsage({ step: "extract", provider: "gemini", model: opts.model ?? GEMINI_MODEL, ...geminiUsage(body), ref: opts.sourceUrl });
     return { extraction: parsed.data, responseId: body.responseId ?? null };
   }
   throw new Error(lastError);

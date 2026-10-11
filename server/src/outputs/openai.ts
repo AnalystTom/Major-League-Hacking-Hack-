@@ -1,10 +1,15 @@
 import { httpError } from "../httpError.js";
+import { openaiUsage, recordUsage, type Usage } from "../usage.js";
 import { DEFAULT_DIGEST_MODEL, DEFAULT_MAX_OUTPUT_TOKENS } from "../ingest/digest/run.js";
 
 export interface ChatJsonOptions {
   apiKey: string;
   /** OPENAI_MODEL; the digest default otherwise. */
   model?: string;
+  /** Which output this call is for, recorded with its token usage. */
+  step: Extract<Usage["step"], "skill" | "script">;
+  /** The artifact it's for. */
+  ref?: string;
   system: string;
   user: string;
   /** Output cap, counting a reasoning model's hidden thinking tokens; defaults to the digest's cap. */
@@ -29,6 +34,7 @@ export async function chatJson(o: ChatJsonOptions): Promise<unknown> {
   const text = await res.text();
   if (!res.ok) throw new Error(httpError("OpenAI", res.status, text));
   const data = JSON.parse(text);
+  recordUsage({ step: o.step, provider: "openai", model: o.model ?? DEFAULT_DIGEST_MODEL, ...openaiUsage(data.usage), ref: o.ref ?? null });
   const choice = data.choices?.[0];
   if (choice?.message?.refusal) throw new Error(`OpenAI refused: ${String(choice.message.refusal).slice(0, 200)}`);
   // A reasoning model's hidden thinking counts against the cap, so a truncated reply says so instead of failing to parse.

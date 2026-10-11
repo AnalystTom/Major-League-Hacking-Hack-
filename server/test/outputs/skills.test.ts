@@ -85,3 +85,11 @@ test("a reply cut off by the output cap says so", async () => {
   const impl = (async () => Response.json({ choices: [{ finish_reason: "length", message: { content: "" } }], usage: { completion_tokens_details: { reasoning_tokens: 19000 } } })) as unknown as typeof fetch;
   await assert.rejects(generateSkill(a, { apiKey: "k", fetchImpl: impl }), /hit the 20000-token output cap before finishing \(19000 reasoning tokens\)/);
 });
+
+test("a task whose only check is that a document says the right words is dropped", () => {
+  const a = artifact();
+  const good = skillReply(a).action_items[0];
+  const wording = { ...good, task: "Add a framing section", completion_check: "Open README.md and verify it contains the phrases \"software factory\" and \"code plus agents\"." };
+  const out = validateSkill(skillReply(a, { action_items: [wording, good] }), a);
+  assert.deepEqual(out.action_items.map((i) => i.task), [good.task]);
+});
