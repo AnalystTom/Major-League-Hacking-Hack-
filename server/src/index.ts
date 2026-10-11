@@ -4,6 +4,7 @@ import { serve } from "@hono/node-server";
 import pg from "pg";
 import type { StoredArtifact } from "./ingest/types.js";
 import { createApp, parseOrigins } from "./app.js";
+import { setUsageSink } from "./usage.js";
 import { createIngestApp } from "./ingest/api.js";
 import { startSweep } from "./ingest/processor.js";
 import { MemoryStore, PgStore } from "./ingest/store.js";
@@ -12,6 +13,7 @@ import { produceOutputs, startOutputSweep, toReadyArtifact } from "./outputs/run
 import { MemoryOutputStore, PgOutputStore } from "./outputs/store.js";
 
 const app = createApp({ webOrigins: parseOrigins(process.env.WEB_ORIGINS) });
+setUsageSink((u) => console.log(`[usage] ${JSON.stringify(u)}`));
 
 // Ingestion (workflow 1) runs on Node only: it needs pg and requests that outlive a Worker's limits.
 // It spends provider keys, so it is mounted only when GEMINI_API_KEY is set, and then INGEST_TOKEN is required:

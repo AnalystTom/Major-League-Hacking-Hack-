@@ -1,4 +1,5 @@
 import { httpError } from "../../httpError.js";
+import { openaiUsage, recordUsage } from "../../usage.js";
 import { SYSTEM_PROMPT, buildUserMessage } from "./prompt.js";
 import { validateDigest } from "./validate.js";
 import type { DigestOutput, IngestedUnit } from "../types.js";
@@ -63,6 +64,7 @@ async function complete(o: DigestOptions, messages: Message[], cap: number): Pro
   const text = await res.text();
   if (!res.ok) throw new Error(httpError("Digestion", res.status, text));
   const data = JSON.parse(text);
+  recordUsage({ step: "digest", provider: "openai", model: o.model ?? DEFAULT_DIGEST_MODEL, ...openaiUsage(data.usage), ref: `${o.units.length} unit(s)` });
   const choice = data.choices?.[0];
   const content: string | undefined = choice?.message?.content;
   const finish: string | undefined = choice?.finish_reason;

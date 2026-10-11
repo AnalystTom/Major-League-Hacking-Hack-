@@ -40,7 +40,7 @@ export function validateScript(raw: unknown, a: ReadyArtifact): DraftScene[] {
 
 export async function writeScript(a: ReadyArtifact, o: OpenAIOptions): Promise<DraftScene[]> {
   const raw = await chatJson({
-    ...o, system: SCRIPT_SYSTEM_PROMPT,
+    ...o, system: SCRIPT_SYSTEM_PROMPT, step: "script", ref: a.id,
     user: JSON.stringify({
       artifact: { name: a.name, category: a.category, processed_text: a.processed_text, source_ids: a.source_ids, evidence: a.evidence },
     }),

@@ -5,6 +5,7 @@ import { generateSkill } from "./skills.js";
 import { renderArtifact } from "./render/render.js";
 import type { MediaStore } from "./render/media.js";
 import { LostClaim, type Kind, type OutputStore } from "./store.js";
+import { tracked } from "../activity.js";
 import { sourceRefs, type ProviderOptions, type ReadyArtifact } from "./types.js";
 import type { StoredArtifact } from "../ingest/types.js";
 
@@ -25,7 +26,11 @@ function stateFor(o: OutputOptions): ProducerState {
   return s;
 }
 
-async function produce(kind: Kind, a: ReadyArtifact, o: OutputOptions) {
+function produce(kind: Kind, a: ReadyArtifact, o: OutputOptions): Promise<void> {
+  return tracked(() => produceNow(kind, a, o));
+}
+
+async function produceNow(kind: Kind, a: ReadyArtifact, o: OutputOptions) {
   const { inFlight } = stateFor(o);
   const key = `${kind}:${a.id}:${a.version}`;
   if (inFlight.has(key)) return;
@@ -58,7 +63,8 @@ async function produce(kind: Kind, a: ReadyArtifact, o: OutputOptions) {
 /** Renders run one after another; a job that fails doesn't stop the ones behind it. */
 function queueRender(a: ReadyArtifact, o: OutputOptions): Promise<void> {
   const state = stateFor(o);
-  const job = state.renderQueue.then(() => produce("video", a, o));
+  // Counted as busy from the moment it's queued, not just while it renders.
+  const job = tracked(() => state.renderQueue.then(() => produceNow("video", a, o)));
   state.renderQueue = job.catch(() => {});
   return job;
 }
@@ -88,7 +94,7 @@ export const toReadyArtifact = (a: StoredArtifact): ReadyArtifact => ({
 /** Runs sweepOutputs on a timer, skipping a tick while one is still running. Returns a stop function. */
 export function startOutputSweep(o: OutputOptions, intervalMs = 60_000): () => void {
   let running = false;
-  const timer = setInterval(async () => {
+  const tick = async () => {
     if (running) return;
     running = true;
     try {
@@ -99,7 +105,10 @@ export function startOutputSweep(o: OutputOptions, intervalMs = 60_000): () => v
     } finally {
       running = false;
     }
-  }, intervalMs);
+  };
+  const first = setTimeout(tick, 1000);
+  const timer = setInterval(tick, intervalMs);
+  first.unref();
   timer.unref();
-  return () => clearInterval(timer);
+  return () => { clearTimeout(first); clearInterval(timer); };
 }
