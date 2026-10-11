@@ -1,0 +1,32 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "resurface-processor",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-01",
+  // Needs the Workers Paid plan. Workers Builds builds the image on push to main, so no local Docker;
+  // a `wrangler deploy` from a laptop needs Docker running.
+  // Half a vCPU and 4 GiB for ffmpeg renders; one instance, since the sweeps assume a single processor.
+  // It runs only while there is work (see src/index.js), so it is billed by the minute, not all month.
+  "containers": [
+    {
+      "class_name": "Processor",
+      "image": "./Dockerfile",
+      "image_build_context": "../../server",
+      "instance_type": "standard-1",
+      "max_instances": 1
+    }
+  ],
+  "durable_objects": { "bindings": [{ "name": "PROCESSOR", "class_name": "Processor" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Processor"] }],
+  // Once a day, wake the processor so its sweeps retry pending work. Imports wake it immediately anyway.
+  "triggers": { "crons": ["0 9 * * *"] },
+  "vars": {
+    "R2_BUCKET": "resurface-media",
+    "WEB_ORIGINS": "https://resurface.thomasmann2001.workers.dev"
+  },
+  // Secrets, set once with `npx wrangler secret put <NAME>`: GEMINI_API_KEY, OPENAI_API_KEY, INGEST_TOKEN
+  // (checked here before waking the container; the web Worker's PROCESSOR_TOKEN must equal it), DATABASE_URL (TigerData), R2_ACCOUNT_ID,
+  // R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY (an R2 API token with write access to resurface-media).
+  // Then point the web Worker at it: PROCESSOR_URL=https://resurface-processor.<subdomain>.workers.dev/api/ingest/process
+  "observability": { "enabled": true }
+}
