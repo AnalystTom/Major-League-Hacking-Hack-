@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { STALE_CLAIM_MINUTES } from "../claims.js";
 import { sourceRefs, type GeneratedSkill, type ReadyArtifact, type RenderedVideo } from "./types.js";
+import type { SkillCard } from "./render/motion-skill.js";
 
 export type Kind = "skill" | "video";
 
@@ -37,7 +38,14 @@ export interface OutputStore {
   /** Save the result; throw LostClaim if the claim was taken over. */
   finishSkill(c: Claim, s: GeneratedSkill): Promise<void>;
   finishVideo(c: Claim, v: RenderedVideo): Promise<void>;
+  /** This revision's skill as a short's end card names it: its state, and once ready its name and task count. */
+  skillCard?(a: ReadyArtifact): Promise<SkillState>;
 }
+
+export type SkillState = { status: "none" | "pending" | "running" | "ready" | "failed"; card: SkillCard | null };
+
+/** The `name:` line of a SKILL.md's frontmatter. */
+export const skillNameOf = (markdown: string) => markdown.match(/^---\n(?:.*\n)*?name:\s*([a-z0-9-]+)\s*\n/)?.[1] ?? null;
 
 const TABLE: Record<Kind, string> = { skill: "skill_results", video: "video_results" };
 
@@ -114,10 +122,20 @@ export class PgOutputStore implements OutputStore {
   async finishVideo(c: Claim, v: RenderedVideo) {
     const { rowCount } = await this.pool.query(
       `UPDATE video_results SET status = 'ready', script = $3, opus_prompt_revision = $4, media_ref = $5, caption_ref = $6,
-         narration_ref = $7, duration_seconds = $8, error = NULL, updated_at = now()
+         narration_ref = $7, duration_seconds = $8, music_provenance = $9, error = NULL, updated_at = now()
        WHERE id = $1 AND claim_token = $2 AND status = 'running'`,
-      [c.id, c.token, JSON.stringify(v.script), v.prompt_revision, v.media_ref, v.caption_ref, v.narration_ref, v.duration_seconds]);
+      [c.id, c.token, JSON.stringify(v.script), v.prompt_revision, v.media_ref, v.caption_ref, v.narration_ref, v.duration_seconds, v.music_provenance ?? null]);
     if (rowCount !== 1) throw new LostClaim("video");
+  }
+
+  async skillCard(a: ReadyArtifact): Promise<SkillState> {
+    const { rows } = await this.pool.query(
+      `SELECT s.status, s.skill_markdown, (SELECT count(*)::int FROM action_items i WHERE i.skill_result_id = s.id) AS tasks
+       FROM skill_results s WHERE s.artifact_id = $1 AND s.artifact_version = $2`, [a.id, a.version]);
+    const r = rows[0];
+    if (!r) return { status: "none", card: null };
+    const name = r.status === "ready" ? skillNameOf(r.skill_markdown ?? "") : null;
+    return { status: r.status, card: name ? { name, tasks: r.tasks } : null };
   }
 }
 
@@ -163,5 +181,11 @@ export class MemoryOutputStore implements OutputStore {
     const row = this.held("video", c);
     if (!row) throw new LostClaim("video");
     Object.assign(row, { status: "ready", value: v });
+  }
+  async skillCard(a: ReadyArtifact): Promise<SkillState> {
+    const row = this.rows.skill.get(this.key(a));
+    if (!row) return { status: "none", card: null };
+    const s = row.value as GeneratedSkill | undefined, name = row.status === "ready" && s ? skillNameOf(s.skill_markdown) : null;
+    return { status: row.status, card: name ? { name, tasks: s!.action_items.length } : null };
   }
 }
