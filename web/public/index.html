@@ -182,34 +182,45 @@ Join the waitlist for early access.</pre>
       </figure>
     </section>
 
-    <section class="feed" id="shorts" aria-labelledby="feed-title">
+    <section class="feed" data-feed id="shorts" aria-labelledby="feed-title">
       <div class="section-head">
         <h2 id="feed-title">Your backlog, as shorts</h2>
         <p>Watch real examples made from saved YouTube talks. Each short links back to its source.</p>
       </div>
-      <div class="example-grid">
-        <article class="example-card">
-          <video controls playsinline preload="none" poster="/examples/agentic-engineering.jpg" aria-label="Agentic engineering short">
-            <source src="/examples/agentic-engineering.mp4" type="video/mp4">
-            <track kind="captions" src="/examples/agentic-engineering.vtt" srclang="en" label="English" default>
-            <a href="/examples/agentic-engineering.mp4">Watch the agentic engineering short</a>
-          </video>
-          <p class="example-error" role="status" hidden>This example couldn't play. Try reloading the page.</p>
-          <h3>Agentic engineering as a software factory (workflows = code + agents; allocate work across actors)</h3>
-          <p>Provides a reusable framing for building agentic systems as SDLC-aligned workflows and clarifies how to allocate responsibilities among engineers, agents, and code.</p>
-          <a href="https://www.youtube.com/watch?v=VQy50fuxI34" target="_blank" rel="noopener noreferrer">Source: FORGET Loop Engineering. Agentic Engineering is about THIS</a>
-        </article>
-        <article class="example-card">
-          <video controls playsinline preload="none" poster="/examples/post-training.jpg" aria-label="Environment-driven post-training short">
-            <source src="/examples/post-training.mp4" type="video/mp4">
-            <track kind="captions" src="/examples/post-training.vtt" srclang="en" label="English" default>
-            <a href="/examples/post-training.mp4">Watch the post-training short</a>
-          </video>
-          <p class="example-error" role="status" hidden>This example couldn't play. Try reloading the page.</p>
-          <h3>Environment-driven post-training loop (build, evaluate, train, deploy)</h3>
-          <p>Clear, end-to-end structure for environment-driven post-training and its supporting components that AI engineers can apply to design and operate their own loops.</p>
-          <a href="https://www.youtube.com/watch?v=V-EDrhIhHzQ" target="_blank" rel="noopener noreferrer">Source: Modern Post-Training: A Deep Dive — Will Brown, Prime Intellect</a>
-        </article>
+      <div class="fb-strip">
+        <div class="fb-viewport" data-viewport tabindex="0" role="region" aria-label="Video examples. Scroll horizontally or use the left and right arrows.">
+          <div class="fb-track" data-track>
+            <article class="example-card">
+              <video controls playsinline preload="none" poster="/examples/agentic-engineering.jpg" aria-label="Agentic engineering short">
+                <source src="/examples/agentic-engineering.mp4" type="video/mp4">
+                <track kind="captions" src="/examples/agentic-engineering.vtt" srclang="en" label="English" default>
+                <a href="/examples/agentic-engineering.mp4">Watch the agentic engineering short</a>
+              </video>
+              <p class="example-error" role="status" hidden>This example couldn't play. Try reloading the page.</p>
+              <h3>Agentic engineering as a software factory (workflows = code + agents; allocate work across actors)</h3>
+              <p>Provides a reusable framing for building agentic systems as SDLC-aligned workflows and clarifies how to allocate responsibilities among engineers, agents, and code.</p>
+              <a href="https://www.youtube.com/watch?v=VQy50fuxI34" target="_blank" rel="noopener noreferrer">Source: FORGET Loop Engineering. Agentic Engineering is about THIS</a>
+            </article>
+            <article class="example-card">
+              <video controls playsinline preload="none" poster="/examples/post-training.jpg" aria-label="Environment-driven post-training short">
+                <source src="/examples/post-training.mp4" type="video/mp4">
+                <track kind="captions" src="/examples/post-training.vtt" srclang="en" label="English" default>
+                <a href="/examples/post-training.mp4">Watch the post-training short</a>
+              </video>
+              <p class="example-error" role="status" hidden>This example couldn't play. Try reloading the page.</p>
+              <h3>Environment-driven post-training loop (build, evaluate, train, deploy)</h3>
+              <p>Clear, end-to-end structure for environment-driven post-training and its supporting components that AI engineers can apply to design and operate their own loops.</p>
+              <a href="https://www.youtube.com/watch?v=V-EDrhIhHzQ" target="_blank" rel="noopener noreferrer">Source: Modern Post-Training: A Deep Dive — Will Brown, Prime Intellect</a>
+            </article>
+          </div>
+        </div>
+      </div>
+      <div class="fb-panel">
+        <div class="fb-nav">
+          <button class="arrow" type="button" data-prev aria-label="Previous example"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg></button>
+          <p class="feed-counter" data-counter role="status" aria-live="polite"></p>
+          <button class="arrow" type="button" data-next aria-label="Next example"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"/></svg></button>
+        </div>
       </div>
       <div class="nudge"><a class="btn" href="#join">Join the waitlist</a></div>
     </section>
