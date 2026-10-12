@@ -1,8 +1,11 @@
 // Page wiring: the demo film and the waitlist.
 
 import { createFilm } from "./film.js";
+import { createFeed } from "./feed.js";
 
 createFilm(document.querySelector("[data-film]")).refresh();
+
+createFeed(document.querySelector("[data-feed]")).refresh();
 
 // "Join the waitlist" links jump to the hero form and put the cursor in the email field.
 document.querySelectorAll('a[href="#join"]').forEach((a) =>
