@@ -51,7 +51,6 @@ export async function requestHandoff(env, briefId, fetchImpl = fetch) {
   }
 }
 
-const COLUMNS = "id, status, error, array_to_json(skill_result_ids) AS skill_result_ids, brief, prompts, prompt_revision, updated_at";
 
 /**
  * Queues (or reuses) the brief for these skills. Every skill must be ready and built only from the user's own imports
@@ -60,24 +59,24 @@ const COLUMNS = "id, status, error, array_to_json(skill_result_ids) AS skill_res
  */
 export async function createHandoff(sql, env, user, unitIds, skillIds, fetchImpl = fetch) {
   if (unitIds.length === 0) return { status: 400, error: "Import a video first." };
-  const list = unitIds.join(",");
-  const picked = skillIds.join(",");
+  const list = JSON.stringify(unitIds);
+  const picked = JSON.stringify(skillIds);
   const skills = await sql`
     SELECT s.id, s.updated_at FROM skill_results s
     JOIN artifacts a ON a.id = s.artifact_id AND a.version = s.artifact_version
-    WHERE s.id = ANY (string_to_array(${picked}::text, ',')::uuid[]) AND s.status = 'ready' AND a.ingestion_status = 'ready'
-      AND a.source_ids <@ string_to_array(${list}::text, ',')::uuid[]`;
+    WHERE s.id IN (SELECT value FROM json_each(${picked})) AND s.status = 'ready' AND a.ingestion_status = 'ready'
+      AND NOT EXISTS (SELECT 1 FROM json_each(a.source_ids) WHERE value NOT IN (SELECT value FROM json_each(${list})))`;
   if (skills.length !== skillIds.length) return { status: 400, error: "Some of those skills aren't ready, or aren't from your videos." };
 
   // A failed brief is retried; one that's ready or still being written is returned as it is.
   const [row] = await sql`
     INSERT INTO agent_briefs (user_id, skill_result_ids, input_key)
-    VALUES (${user.id}, string_to_array(${picked}::text, ',')::uuid[], ${inputKey(skills)})
+    VALUES (${user.id}, ${picked}, ${inputKey(skills)})
     ON CONFLICT (user_id, input_key) DO UPDATE SET
-      status = CASE WHEN agent_briefs.status = 'failed' THEN 'pending'::processing_status ELSE agent_briefs.status END,
+      status = CASE WHEN agent_briefs.status = 'failed' THEN 'pending' ELSE agent_briefs.status END,
       error = CASE WHEN agent_briefs.status = 'failed' THEN NULL ELSE agent_briefs.error END,
-      updated_at = CASE WHEN agent_briefs.status = 'failed' THEN now() ELSE agent_briefs.updated_at END
-    RETURNING ${sql.unsafe(COLUMNS)}`;
+      updated_at = CASE WHEN agent_briefs.status = 'failed' THEN strftime('%Y-%m-%dT%H:%M:%fZ','now') ELSE agent_briefs.updated_at END
+    RETURNING id, status, error, skill_result_ids, brief, prompts, prompt_revision, updated_at`;
   const processor = row.status === "pending" || isStuck(row) ? await requestHandoff(env, row.id, fetchImpl) : "not_needed";
   return { brief: serializeBrief(row), processor };
 }
@@ -85,8 +84,8 @@ export async function createHandoff(sql, env, user, unitIds, skillIds, fetchImpl
 /** The user's brief by id, or their newest one. Null when there isn't one. */
 export async function readHandoff(sql, user, id = null) {
   const [row] = id
-    ? await sql`SELECT ${sql.unsafe(COLUMNS)} FROM agent_briefs WHERE id = ${id} AND user_id = ${user.id}`
-    : await sql`SELECT ${sql.unsafe(COLUMNS)} FROM agent_briefs WHERE user_id = ${user.id} ORDER BY created_at DESC, id DESC LIMIT 1`;
+    ? await sql`SELECT id, status, error, skill_result_ids, brief, prompts, prompt_revision, updated_at FROM agent_briefs WHERE id = ${id} AND user_id = ${user.id}`
+    : await sql`SELECT id, status, error, skill_result_ids, brief, prompts, prompt_revision, updated_at FROM agent_briefs WHERE user_id = ${user.id} ORDER BY created_at DESC, id DESC LIMIT 1`;
   return row ? serializeBrief(row) : null;
 }
 

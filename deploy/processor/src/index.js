@@ -2,11 +2,12 @@
 // gives it a stable HTTPS address for the web Worker's PROCESSOR_URL, passes it its keys, and wakes it once
 // a day so its sweeps retry anything an import left behind. Requests need the processor's bearer token.
 
+import { database } from "./database.js";
 import { Container, getContainer } from "@cloudflare/containers";
 
 // Worker secrets and vars the processor reads from process.env.
 const ENV_NAMES = [
-  "GEMINI_API_KEY", "OPENAI_API_KEY", "INGEST_TOKEN", "DATABASE_URL",
+  "GEMINI_API_KEY", "OPENAI_API_KEY", "INGEST_TOKEN", "D1_URL",
   "R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET",
   "GEMINI_MODEL", "OPENAI_MODEL", "OPENAI_REASONING_EFFORT", "GEMINI_TTS_MODEL", "GEMINI_TTS_VOICE",
   "WINDOW_SECONDS", "DIGESTION_REQUEST", "SWEEP_INTERVAL_MS", "WEB_ORIGINS",
@@ -18,7 +19,8 @@ const ENV_NAMES = [
 const MAX_AWAKE_MS = 2 * 60 * 60 * 1000;
 const BUSY_CHECK_MS = 3000;
 
-const settingsFrom = (env) => Object.fromEntries(ENV_NAMES.filter((name) => env[name]).map((name) => [name, String(env[name])]));
+const settingsFrom = (env) => ({ ...Object.fromEntries(ENV_NAMES.filter((name) => env[name]).map((name) => [name, String(env[name])])),
+  ...(env.D1_URL ? { D1_TOKEN: String(env.INGEST_TOKEN ?? "") } : {}) });
 
 // Only a hash of the settings is kept, never the values.
 async function settingsHash(vars) {
@@ -128,13 +130,15 @@ const ANSWER_WITHIN_MS = 6000;
 // The only routes callers need: the web Worker's processing and handoff requests, and a health check.
 // Anything else (such as the processor's dev import route, which skips the processing limits) never
 // reaches the container.
-const ROUTES = new Set(["GET /health", "POST /api/ingest/process", "POST /api/ingest/handoff", "GET /settings-status"]);
+const ROUTES = new Set(["GET /health", "POST /api/ingest/process", "POST /api/ingest/handoff", "GET /settings-status", "POST /internal/d1"]);
 
 export default {
   async fetch(request, env, ctx) {
     const { pathname } = new URL(request.url);
     if (!ROUTES.has(`${request.method} ${pathname}`)) return new Response("Not found", { status: 404 });
     if (!(await authorized(request, env))) return new Response("Unauthorized", { status: 401 });
+
+    if (pathname === "/internal/d1") return database(request, env);
 
     // Read the body first: once the early 202 below has gone out, the incoming request can't be read any more,
     // and a slow container would get a request without its unit ids.

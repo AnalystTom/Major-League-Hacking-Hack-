@@ -11,30 +11,21 @@ import { willRetry } from "./imports.js";
  */
 export async function readSkills(sql, unitIds) {
   if (unitIds.length === 0) return [];
-  const list = unitIds.join(",");
   const rows = await sql`
-    SELECT * FROM (
-      SELECT DISTINCT ON (a.id, a.version)
-        a.id AS artifact_id, a.version AS artifact_version, a.name AS artifact_name, a.category, a.created_at,
-        s.id, s.status, s.error, s.attempts, s.skill_markdown,
-        COALESCE((
-          SELECT json_agg(json_build_object(
-            'id', i.id, 'task', i.task, 'prerequisites', i.prerequisites, 'steps', i.steps,
-            'completion_check', i.completion_check, 'source_refs', i.source_refs, 'evidence', i.applicability_evidence
-          ) ORDER BY i.position, i.created_at)
-          FROM action_items i WHERE i.skill_result_id = s.id), '[]') AS action_items,
-        COALESCE((
-          SELECT json_agg(json_build_object('id', u.id, 'url', u.source_url, 'title', u.title)
-                          ORDER BY array_position(a.source_ids, u.id))
-          FROM ingested_units u WHERE u.id = ANY (a.source_ids)), '[]') AS videos
-      FROM artifacts a
-      JOIN skill_results s ON s.artifact_id = a.id AND s.artifact_version = a.version
-      WHERE a.ingestion_status = 'ready'
-        -- Only digests built entirely from this user's videos: a shared digest never shows another person's imports.
-        AND a.source_ids <@ string_to_array(${list}::text, ',')::uuid[]
-      ORDER BY a.id, a.version, s.created_at DESC, s.id DESC
-    ) newest
-    ORDER BY created_at DESC, artifact_id`;
+    SELECT a.id AS artifact_id, a.version AS artifact_version, a.name AS artifact_name, a.category, a.created_at,
+      s.id, s.status, s.error, s.attempts, s.skill_markdown,
+      (SELECT json_group_array(json(item)) FROM (
+        SELECT json_object('id', i.id, 'task', i.task, 'prerequisites', json(i.prerequisites), 'steps', json(i.steps),
+          'completion_check', i.completion_check, 'source_refs', json(i.source_refs), 'evidence', json(i.applicability_evidence)) AS item
+        FROM action_items i WHERE i.skill_result_id = s.id ORDER BY i.position, i.created_at)) AS action_items,
+      (SELECT json_group_array(json(item)) FROM (
+        SELECT json_object('id', u.id, 'url', u.source_url, 'title', u.title) AS item
+        FROM json_each(a.source_ids) src JOIN ingested_units u ON u.id = src.value ORDER BY CAST(src.key AS INTEGER))) AS videos
+    FROM artifacts a
+    JOIN skill_results s ON s.artifact_id = a.id AND s.artifact_version = a.version
+    WHERE a.ingestion_status = 'ready'
+      AND NOT EXISTS (SELECT 1 FROM json_each(a.source_ids) WHERE value NOT IN (SELECT value FROM json_each(${JSON.stringify(unitIds)})))
+    ORDER BY a.created_at DESC, a.id`;
   return rows.map(serializeSkill);
 }
 

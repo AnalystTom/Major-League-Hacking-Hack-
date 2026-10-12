@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type pg from "pg";
+import type { Database, Statement } from "../db.js";
 import type { DigestArtifact, IngestedUnit, StoredArtifact } from "./types.js";
 import { remaining, resumesAt, type Limits } from "./limits.js";
+import { available, deferredUntil, limitParams, NOW, USED_DAY, USED_MONTH } from "./ledger.js";
 
 export interface Claimed { claimed: IngestedUnit[]; deferred: string[]; resumesAt: Date | null }
 export interface Reserved { allowed: string[]; deferred: string[]; resumesAt: Date | null }
@@ -162,241 +163,136 @@ export class MemoryStore implements Store {
 function rowToUnit(r: any): IngestedUnit {
   return {
     id: r.id, submittedUrl: r.submitted_url, sourceUrl: r.source_url, startSeconds: r.start_seconds, title: r.title, contentType: r.content_type,
-    transcript: r.transcript, extractionMethod: r.extraction_method, extractedAt: r.extracted_at, status: r.status, error: r.error,
+    transcript: r.transcript, extractionMethod: r.extraction_method, extractedAt: r.extracted_at ? new Date(r.extracted_at) : null, status: r.status, error: r.error,
   };
 }
 
-const ARTIFACT_RETURNING = "id, version, source_url, sources, ingestion_status, review_status, digestion_prompt_id, project_context_id, project_context_version, error";
-
-// Needs claimed_at from db/migrations/005_outputs.sql. A unit claimed longer ago than STALE_CLAIM_MINUTES belongs to
-// a processor that died mid-extraction, so it's claimable again.
-const CLAIMABLE = `(status = 'pending' OR (status = 'running' AND (claimed_at IS NULL OR claimed_at < now() - interval '${STALE_CLAIM_MINUTES} minutes')))`;
-
-// A user sees an artifact only when they imported every video it was built from (web/src/feed.js and skills.js),
-// so a digest never shows one person's videos to another. This is "no visible digest of u for that user".
+const CLAIMABLE = `(status = 'pending' OR (status = 'running' AND (claimed_at IS NULL OR julianday(claimed_at) < julianday('now', '-${STALE_CLAIM_MINUTES} minutes'))))`;
 const UNSEEN_BY = (user: string) => `NOT EXISTS (
-  SELECT 1 FROM artifacts a WHERE u.id = ANY (a.source_ids) AND a.ingestion_status <> 'failed'
-    AND a.source_ids <@ ARRAY(SELECT x.unit_id FROM user_imports x WHERE x.user_id = ${user}))`;
+  SELECT 1 FROM artifacts a WHERE EXISTS (SELECT 1 FROM json_each(a.source_ids) WHERE value = u.id)
+    AND a.ingestion_status <> 'failed'
+    AND NOT EXISTS (SELECT 1 FROM json_each(a.source_ids) src WHERE NOT EXISTS
+      (SELECT 1 FROM user_imports x WHERE x.unit_id = src.value AND x.user_id = ${user})))`;
 
-/** Writes to the shared TigerData schema (db/migrations). Workflow 1 owns these tables only. */
-const UTC_DAY = `(date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')`;
-const UTC_MONTH = `(date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')`;
-
-/** Charged starts today and this month (UTC), from the processing_starts ledger (db/migrations/007). */
-async function usedSlots(client: pg.PoolClient) {
-  const { rows: [c] } = await client.query(
-    `SELECT count(*) FILTER (WHERE created_at >= ${UTC_DAY})::int AS today, count(*)::int AS month
-     FROM processing_starts WHERE charged AND created_at >= ${UTC_MONTH}`);
-  return { today: c.today as number, month: c.month as number };
-}
-
-export class PgStore implements Store {
-  private pool: pg.Pool;
-  constructor(pool: pg.Pool) { this.pool = pool; }
-
+export class D1Store implements Store {
+  constructor(private db: Database) {}
   async saveUnit(u: IngestedUnit) {
-    await this.pool.query(
-      `INSERT INTO ingested_units (id, submitted_url, source_url, start_seconds, title, transcript, extraction_method, extracted_at, status, error, content_type)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-       ON CONFLICT (id) DO UPDATE SET title=$5, transcript=$6, extraction_method=$7, extracted_at=$8, status=$9, error=$10`,
-      [u.id, u.submittedUrl, u.sourceUrl, u.startSeconds, u.title, u.transcript && JSON.stringify(u.transcript), u.extractionMethod, u.extractedAt, u.status, u.error, u.contentType ?? "youtube_video"],
-    );
+    await this.db.query(`INSERT INTO ingested_units
+      (id,submitted_url,source_url,start_seconds,title,transcript,extraction_method,extracted_at,status,error,content_type)
+      VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)
+      ON CONFLICT(id) DO UPDATE SET title=excluded.title,transcript=excluded.transcript,
+      extraction_method=excluded.extraction_method,extracted_at=excluded.extracted_at,status=excluded.status,error=excluded.error`,
+      [u.id,u.submittedUrl,u.sourceUrl,u.startSeconds,u.title,u.transcript && JSON.stringify(u.transcript),u.extractionMethod,u.extractedAt?.toISOString() ?? null,u.status,u.error,u.contentType ?? 'youtube_video']);
   }
-
   async getUnits(ids: string[]) {
-    const { rows } = await this.pool.query(`SELECT * FROM ingested_units WHERE id = ANY($1::uuid[]) ORDER BY created_at`, [ids]);
+    const { rows } = await this.db.query(`SELECT * FROM ingested_units WHERE id IN (SELECT value FROM json_each(?1)) ORDER BY created_at`, [JSON.stringify(ids)]);
     return rows.map(rowToUnit);
   }
-
   async listReadyUnits() {
-    const { rows } = await this.pool.query(`SELECT * FROM ingested_units WHERE status='ready' ORDER BY created_at`);
-    return rows.map(rowToUnit);
+    return (await this.db.query(`SELECT * FROM ingested_units WHERE status='ready' ORDER BY created_at`)).rows.map(rowToUnit);
   }
-
   async claimPendingUnits(ids?: string[], limit = 50) {
-    const { rows } = await this.pool.query(
-      `UPDATE ingested_units SET status = 'running', claimed_at = now()
-       WHERE id IN (SELECT id FROM ingested_units WHERE ${CLAIMABLE} AND ($1::uuid[] IS NULL OR id = ANY($1::uuid[]))
-                    ORDER BY created_at LIMIT $2 FOR UPDATE SKIP LOCKED)
-       RETURNING *`, [ids ?? null, limit]);
+    const { rows } = await this.db.query(`UPDATE ingested_units SET status='running',claimed_at=${NOW}
+      WHERE id IN (SELECT id FROM ingested_units WHERE ${CLAIMABLE}
+        AND (?1 IS NULL OR id IN (SELECT value FROM json_each(?1))) ORDER BY created_at LIMIT ?2) RETURNING *`,
+      [ids ? JSON.stringify(ids) : null,limit]);
     return rows.map(rowToUnit);
   }
-
   async claimWithinLimits(ids: string[], limits: Limits): Promise<Claimed> {
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      // One claimer at a time counts and claims, so concurrent requests can't both take the last slot.
-      await client.query(`SELECT pg_advisory_xact_lock(hashtext('resurface:processing-limits'))`);
-      const used = await usedSlots(client);
-      const room = remaining(limits, used);
-      const { rows } = room > 0
-        ? await client.query(
-            `UPDATE ingested_units SET status = 'running', claimed_at = now(), deferred_until = NULL
-             WHERE id IN (SELECT id FROM ingested_units WHERE ${CLAIMABLE} AND id = ANY($1::uuid[])
-                          ORDER BY created_at LIMIT $2 FOR UPDATE SKIP LOCKED)
-             RETURNING *`, [ids, Math.min(50, room)])
-        : { rows: [] };
-      if (rows.length) {
-        await client.query(`INSERT INTO processing_starts (unit_id, kind, charged) SELECT unnest($1::uuid[]), 'extract', true`, [rows.map((r) => r.id)]);
-      }
-      let deferred: string[] = [];
-      let until: Date | null = null;
-      if (rows.length >= room) {
-        until = resumesAt(limits, { today: used.today + rows.length, month: used.month + rows.length }, new Date());
-        const marked = await client.query(
-          `UPDATE ingested_units SET deferred_until = $2 WHERE status = 'pending' AND id = ANY($1::uuid[]) RETURNING id`, [ids, until]);
-        deferred = marked.rows.map((r) => r.id as string);
-      }
-      await client.query("COMMIT");
-      return { claimed: rows.map(rowToUnit), deferred, resumesAt: deferred.length ? until : null };
-    } catch (e) {
-      await client.query("ROLLBACK");
-      throw e;
-    } finally {
-      client.release();
-    }
+    const token = randomUUID();
+    const params = [...limitParams(limits), JSON.stringify(ids), token];
+    const results = await this.db.batch([
+      { sql: `INSERT INTO processing_starts(unit_id,kind,charged,batch_token)
+        SELECT id,'extract',1,?4 FROM ingested_units WHERE ${CLAIMABLE} AND id IN (SELECT value FROM json_each(?3))
+        ORDER BY created_at LIMIT max(0,min(50,?1 - ${USED_DAY},?2 - ${USED_MONTH}))`, params },
+      { sql: `UPDATE ingested_units SET status='running',claimed_at=${NOW},deferred_until=NULL
+        WHERE id IN (SELECT unit_id FROM processing_starts WHERE batch_token=?1) RETURNING *`, params: [token] },
+      { sql: `UPDATE ingested_units SET deferred_until=${deferredUntil()}
+        WHERE status='pending' AND id IN (SELECT value FROM json_each(?3)) AND NOT ${available()} RETURNING id,deferred_until`, params: params.slice(0,3) },
+    ]);
+    const deferred = results[2].rows;
+    return { claimed: results[1].rows.map(rowToUnit), deferred: deferred.map((r) => r.id), resumesAt: deferred.length ? new Date(deferred[0].deferred_until) : null };
   }
-
   async reserveDigests(ids: string[], limits: Limits): Promise<Reserved> {
-    if (ids.length === 0) return { allowed: [], deferred: [], resumesAt: null };
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      await client.query(`SELECT pg_advisory_xact_lock(hashtext('resurface:processing-limits'))`);
-      const used = await usedSlots(client);
-      // Covered: the unit's latest start is its extraction, so this is the digest that extraction paid for.
-      const { rows } = await client.query(
-        `SELECT u.id, (SELECT e.kind FROM processing_starts e WHERE e.unit_id = u.id ORDER BY e.created_at DESC, e.id DESC LIMIT 1) = 'extract' AS covered
-         FROM unnest($1::uuid[]) WITH ORDINALITY AS u(id, n) ORDER BY u.n`, [ids]);
-      const covered = rows.filter((r) => r.covered).map((r) => r.id as string);
-      const charged = rows.filter((r) => !r.covered).map((r) => r.id as string);
-      const room = remaining(limits, used);
-      const allowedCharged = charged.slice(0, room === Infinity ? charged.length : room);
-      const deferred = charged.slice(allowedCharged.length);
-      await client.query(
-        `INSERT INTO processing_starts (unit_id, kind, charged)
-         SELECT id, 'digest', false FROM unnest($1::uuid[]) AS id UNION ALL SELECT id, 'digest', true FROM unnest($2::uuid[]) AS id`,
-        [covered, allowedCharged]);
-      const allowed = new Set([...covered, ...allowedCharged]);
-      await client.query(`UPDATE ingested_units SET deferred_until = NULL WHERE id = ANY($1::uuid[]) AND deferred_until IS NOT NULL`, [[...allowed]]);
-      let until: Date | null = null;
-      if (deferred.length) {
-        until = resumesAt(limits, { today: used.today + allowedCharged.length, month: used.month + allowedCharged.length }, new Date());
-        await client.query(`UPDATE ingested_units SET deferred_until = $2 WHERE id = ANY($1::uuid[])`, [deferred, until]);
-      }
-      await client.query("COMMIT");
-      return { allowed: ids.filter((id) => allowed.has(id)), deferred, resumesAt: until };
-    } catch (e) {
-      await client.query("ROLLBACK");
-      throw e;
-    } finally {
-      client.release();
-    }
+    if (!ids.length) return { allowed: [],deferred: [],resumesAt: null };
+    const token = randomUUID();
+    const statements: Statement[] = [...new Set(ids)].map((id) => {
+      const covered = `(SELECT kind FROM processing_starts WHERE unit_id=?3 ORDER BY created_at DESC,id DESC LIMIT 1) IS 'extract'`;
+      return { sql: `INSERT INTO processing_starts(unit_id,kind,charged,batch_token)
+        SELECT ?3,'digest',CASE WHEN ${covered} THEN 0 ELSE 1 END,?4 WHERE ${covered} OR ${available()}`,
+        params: [...limitParams(limits),id,token] };
+    });
+    const result = await this.db.batch([...statements,
+      { sql: `UPDATE ingested_units SET deferred_until=NULL WHERE id IN (SELECT unit_id FROM processing_starts WHERE batch_token=?1)`, params: [token] },
+      { sql: `UPDATE ingested_units SET deferred_until=${deferredUntil()}
+        WHERE id IN (SELECT value FROM json_each(?3)) AND id NOT IN (SELECT unit_id FROM processing_starts WHERE batch_token=?4)
+        RETURNING id,deferred_until`, params: [...limitParams(limits),JSON.stringify(ids),token] },
+      { sql: `SELECT unit_id FROM processing_starts WHERE batch_token=?1`, params: [token] },
+    ]);
+    const allowed = new Set(result.at(-1)!.rows.map((r) => r.unit_id));
+    const deferred = result.at(-2)!.rows;
+    return { allowed: ids.filter((id) => allowed.has(id)),deferred: ids.filter((id) => !allowed.has(id)),resumesAt: deferred.length ? new Date(deferred[0].deferred_until) : null };
   }
-
   async listPendingUnitIds(limit: number) {
-    const { rows } = await this.pool.query(
-      `SELECT u.id FROM ingested_units u WHERE ${CLAIMABLE} AND EXISTS (SELECT 1 FROM user_imports ui WHERE ui.unit_id = u.id)
-       ORDER BY u.created_at LIMIT $1`, [limit]);
+    const { rows } = await this.db.query(`SELECT u.id FROM ingested_units u WHERE ${CLAIMABLE}
+      AND EXISTS(SELECT 1 FROM user_imports ui WHERE ui.unit_id=u.id) ORDER BY u.created_at LIMIT ?1`, [limit]);
     return rows.map((r) => r.id as string);
   }
-
   async listUnitsNeedingDigest(limit: number) {
-    const { rows } = await this.pool.query(
-      `SELECT DISTINCT ON (u.id) u.id, ui.user_id FROM ingested_units u JOIN user_imports ui ON ui.unit_id = u.id
-       WHERE u.status = 'ready' AND ${UNSEEN_BY("ui.user_id")}
-         AND NOT EXISTS (SELECT 1 FROM artifact_exclusions e WHERE e.unit_id = u.id)
-         AND (SELECT count(*) FROM artifacts a WHERE u.id = ANY (a.source_ids) AND a.ingestion_status = 'failed') < $2
-       ORDER BY u.id, ui.created_at DESC LIMIT $1`, [limit, MAX_DIGEST_ATTEMPTS]);
-    return rows.map((r) => ({ unitId: r.id as string, userId: r.user_id as string }));
+    const { rows } = await this.db.query(`SELECT id,user_id FROM (
+      SELECT u.id,ui.user_id,row_number() OVER(PARTITION BY u.id ORDER BY ui.created_at DESC,ui.user_id) AS n
+      FROM ingested_units u JOIN user_imports ui ON ui.unit_id=u.id
+      WHERE u.status='ready' AND ${UNSEEN_BY('ui.user_id')}
+      AND NOT EXISTS(SELECT 1 FROM artifact_exclusions e WHERE e.unit_id=u.id)
+      AND (SELECT count(*) FROM artifacts a WHERE EXISTS(SELECT 1 FROM json_each(a.source_ids) WHERE value=u.id)
+        AND a.ingestion_status='failed') < ?2) WHERE n=1 ORDER BY id LIMIT ?1`, [limit,MAX_DIGEST_ATTEMPTS]);
+    return rows.map((r) => ({ unitId: r.id as string,userId: r.user_id as string }));
   }
-
-  async newestImporters(unitIds: string[]) {
-    const { rows } = await this.pool.query(
-      `SELECT DISTINCT ON (unit_id) unit_id, user_id FROM user_imports WHERE unit_id = ANY($1::uuid[]) ORDER BY unit_id, created_at DESC`, [unitIds]);
-    return new Map(rows.map((r) => [r.unit_id as string, r.user_id as string]));
+  async newestImporters(ids: string[]) {
+    const { rows } = await this.db.query(`SELECT unit_id,user_id FROM (
+      SELECT unit_id,user_id,row_number() OVER(PARTITION BY unit_id ORDER BY created_at DESC,user_id) AS n
+      FROM user_imports WHERE unit_id IN (SELECT value FROM json_each(?1))) WHERE n=1`, [JSON.stringify(ids)]);
+    return new Map(rows.map((r) => [r.unit_id as string,r.user_id as string]));
   }
-
-  // A unit needs a digest while someone who imported it can't see one; with no importer (CLI), while none exists.
-  async unitsNeedingDigest(unitIds: string[]) {
-    const { rows } = await this.pool.query(
-      `SELECT u.id FROM ingested_units u
-       WHERE u.id = ANY($1::uuid[]) AND u.status = 'ready'
-         AND NOT EXISTS (SELECT 1 FROM artifact_exclusions e WHERE e.unit_id = u.id)
-         AND (EXISTS (SELECT 1 FROM user_imports ui WHERE ui.unit_id = u.id AND ${UNSEEN_BY("ui.user_id")})
-              OR (NOT EXISTS (SELECT 1 FROM user_imports ui WHERE ui.unit_id = u.id)
-                  AND NOT EXISTS (SELECT 1 FROM artifacts a WHERE u.id = ANY (a.source_ids) AND a.ingestion_status <> 'failed')))`,
-      [unitIds]);
+  async unitsNeedingDigest(ids: string[]) {
+    const { rows } = await this.db.query(`SELECT u.id FROM ingested_units u
+      WHERE u.id IN (SELECT value FROM json_each(?1)) AND u.status='ready'
+      AND NOT EXISTS(SELECT 1 FROM artifact_exclusions e WHERE e.unit_id=u.id)
+      AND (EXISTS(SELECT 1 FROM user_imports ui WHERE ui.unit_id=u.id AND ${UNSEEN_BY('ui.user_id')})
+        OR (NOT EXISTS(SELECT 1 FROM user_imports ui WHERE ui.unit_id=u.id)
+          AND NOT EXISTS(SELECT 1 FROM artifacts a WHERE EXISTS(SELECT 1 FROM json_each(a.source_ids) WHERE value=u.id)
+            AND a.ingestion_status<>'failed')))`, [JSON.stringify(ids)]);
     return rows.map((r) => r.id as string);
   }
-
   async registerPrompt(promptText: string, fewShot: unknown[]) {
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      await client.query("SELECT pg_advisory_xact_lock(hashtext('digestion_prompts'))"); // serialize revision numbering
-      const found = await client.query(
-        `SELECT id FROM digestion_prompts WHERE name = 'Digestion Prompt' AND prompt_text = $1 AND few_shot = $2::jsonb LIMIT 1`,
-        [promptText, JSON.stringify(fewShot)]);
-      let id: string;
-      if (found.rows[0]) id = found.rows[0].id;
-      else {
-        const ins = await client.query(
-          `INSERT INTO digestion_prompts (revision, prompt_text, few_shot)
-           VALUES ((SELECT coalesce(max(revision), 0) + 1 FROM digestion_prompts WHERE name = 'Digestion Prompt'), $1, $2::jsonb) RETURNING id`,
-          [promptText, JSON.stringify(fewShot)]);
-        id = ins.rows[0].id;
-      }
-      await client.query("COMMIT");
-      return id;
-    } catch (e) {
-      await client.query("ROLLBACK");
-      throw e;
-    } finally {
-      client.release();
-    }
+    const params = [promptText,JSON.stringify(fewShot)];
+    const results = await this.db.batch([
+      { sql: `INSERT INTO digestion_prompts(revision,prompt_text,few_shot)
+        SELECT (SELECT coalesce(max(revision),0)+1 FROM digestion_prompts WHERE name='Digestion Prompt'),?1,?2
+        WHERE NOT EXISTS(SELECT 1 FROM digestion_prompts WHERE name='Digestion Prompt' AND prompt_text=?1 AND few_shot=?2)`, params },
+      { sql: `SELECT id FROM digestion_prompts WHERE name='Digestion Prompt' AND prompt_text=?1 AND few_shot=?2 LIMIT 1`, params },
+    ]);
+    return results[1].rows[0].id as string;
   }
-
   async saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null) {
-    const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      const stored: StoredArtifact[] = [];
-      for (const a of artifacts) {
-        const { rows: src } = await client.query(
-          `SELECT id, source_url, title, content_type, extracted_at FROM ingested_units WHERE id = ANY($1::uuid[])`, [a.source_ids]);
-        const sources = src.map((s) => ({ url: s.source_url, title: s.title, content_type: s.content_type, retrieved_at: s.extracted_at }));
-        const { rows } = await client.query(
-          `INSERT INTO artifacts (name, source_url, source_ids, sources, processed_text, category, selection_reason, evidence, digestion_prompt_id,
-                                  ingestion_status, processed_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'ready',now()) RETURNING ${ARTIFACT_RETURNING}`,
-          [a.name, src[0]?.source_url ?? "", a.source_ids, JSON.stringify(sources), a.processed_text, a.category, a.selection_reason, JSON.stringify(a.evidence),
-           promptId]);
-        stored.push({ ...a, ...rows[0] });
-      }
-      if (promptId) for (const e of exclusions) {
-        await client.query(`INSERT INTO artifact_exclusions (unit_id, digestion_prompt_id, reason) VALUES ($1,$2,$3)`, [e.unit_id, promptId, e.reason]);
-      }
-      await client.query("COMMIT");
-      return stored;
-    } catch (e) {
-      await client.query("ROLLBACK");
-      throw e;
-    } finally {
-      client.release();
-    }
+    const units = await this.getUnits([...new Set(artifacts.flatMap((a) => a.source_ids))]);
+    const statements: Statement[] = artifacts.map((a) => {
+      const src = a.source_ids.map((id) => units.find((u) => u.id===id)).filter((u): u is IngestedUnit => !!u);
+      const sources = src.map((u) => ({ url: u.sourceUrl,title: u.title,content_type: u.contentType,retrieved_at: u.extractedAt }));
+      return { sql: `INSERT INTO artifacts(name,source_url,source_ids,sources,processed_text,category,selection_reason,evidence,
+        digestion_prompt_id,ingestion_status,processed_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,'ready',${NOW}) RETURNING *`,
+        params: [a.name,src[0]?.sourceUrl ?? '',JSON.stringify(a.source_ids),JSON.stringify(sources),a.processed_text,a.category,a.selection_reason,JSON.stringify(a.evidence),promptId] };
+    });
+    if (promptId) for (const e of exclusions) statements.push({ sql: `INSERT INTO artifact_exclusions(unit_id,digestion_prompt_id,reason) VALUES(?1,?2,?3)`, params: [e.unit_id,promptId,e.reason] });
+    const results = await this.db.batch(statements);
+    return artifacts.map((a,i) => ({ ...a,...results[i].rows[0] })) as StoredArtifact[];
   }
-
-  async saveFailedArtifacts(unitIds: string[], error: string, promptId: string | null) {
-    for (const id of unitIds) {
-      const { rows: src } = await this.pool.query(`SELECT id, source_url, title, content_type, extracted_at FROM ingested_units WHERE id = $1`, [id]);
-      if (!src[0]) continue;
-      const sources = [{ url: src[0].source_url, title: src[0].title, content_type: src[0].content_type, retrieved_at: src[0].extracted_at }];
-      await this.pool.query(
-        `INSERT INTO artifacts (name, source_url, source_ids, sources, digestion_prompt_id, ingestion_status, error, processed_at)
-         VALUES ('Digestion failed', $1, $2, $3, $4, 'failed', $5, now())`,
-        [src[0].source_url, [id], JSON.stringify(sources), promptId, error]);
-    }
+  async saveFailedArtifacts(ids: string[], error: string, promptId: string | null) {
+    const statements: Statement[] = (await this.getUnits(ids)).map((u) => ({
+      sql: `INSERT INTO artifacts(name,source_url,source_ids,sources,digestion_prompt_id,ingestion_status,error,processed_at)
+        VALUES('Digestion failed',?1,?2,?3,?4,'failed',?5,${NOW})`,
+      params: [u.sourceUrl,JSON.stringify([u.id]),JSON.stringify([{ url:u.sourceUrl,title:u.title,content_type:u.contentType,retrieved_at:u.extractedAt }]),promptId,error],
+    }));
+    await this.db.batch(statements);
   }
 }

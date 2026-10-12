@@ -1,4 +1,4 @@
-// Rendered shorts live in the R2 bucket bound as MEDIA. TigerData stores references like
+// Rendered shorts live in the R2 bucket bound as MEDIA. D1 stores references like
 // "r2:videos/<artifact>/<version>/short.mp4"; the page only ever sees the same-origin /media/ URL.
 
 const KEY = /^(videos|captions|posters)\/[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/;

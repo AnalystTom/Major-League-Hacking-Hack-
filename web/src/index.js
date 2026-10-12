@@ -39,7 +39,7 @@ const ip = (request) => request.headers.get("cf-connecting-ip") ?? "local";
 
 /** The signed-in user and how many links they've imported (0 means the home page shows its first-run state). */
 async function accountState(sql, user) {
-  const [{ count }] = await sql`SELECT count(*)::int AS count FROM user_imports WHERE user_id = ${user.id}`;
+  const [{ count }] = await sql`SELECT count(*) AS count FROM user_imports WHERE user_id = ${user.id}`;
   return { user: { id: user.id, email: user.email, name: user.name }, imports: count };
 }
 
@@ -178,8 +178,6 @@ export default {
       } catch (err) {
         console.error("api request failed", url.pathname, err);
         return json({ error: UNAVAILABLE }, 503);
-      } finally {
-        ctx.waitUntil(sql.end({ timeout: 5 }));
       }
     }
 
