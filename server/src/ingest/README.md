@@ -21,13 +21,13 @@ Every route needs `Authorization: Bearer $INGEST_TOKEN`. The web Worker sends it
 | `OPENAI_API_KEY`, `OPENAI_MODEL` | Digestion. Without a key units are extracted but not digested. |
 | `OPENAI_MAX_OUTPUT_TOKENS` | Digest output cap including reasoning tokens (default 20000). Raise it if digests report hitting the cap. |
 | `DIGESTION_REQUEST` | Categorization request stored with each Digestion Prompt revision. |
-| `DATABASE_URL` | Postgres/TigerData. Enables the sweep; without it records stay in memory. |
+| `D1_URL`, `D1_TOKEN` | Authenticated processor Worker D1 bridge. Enables the sweep; without both, ephemeral CLI runs use memory. |
 | `SWEEP_INTERVAL_MS` | Pending-unit sweep interval (default 60000). |
 
 Behavior: pending units are claimed atomically (`UPDATE ... WHERE status = 'pending'`); a `ready` unit is never re-extracted;
 a unit is digested once (skipped when it already has a non-failed artifact or an exclusion); artifacts are written with
 `project_context_id` null; a failed digest is stored as a failed artifact with its error and retried by the next request.
-Migration `004_artifact_revisions.sql` makes `(id, version)` the artifact key and freezes a ready revision (not yet applied to TigerData).
+The D1 schema in `web/migrations/0002_application.sql` makes `(id, version)` the artifact key and freezes a ready revision.
 
 ## Substack posts
 

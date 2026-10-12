@@ -1,60 +1,52 @@
-# Applying the shared TigerData schema
+# D1 database and TigerData cutover
 
-The migration `db/migrations/001_shared_schema.sql` (spec: `docs/project-actions-spec.md`)
-has **not been confirmed as applied**. The cloud sandbox that prepared it could not reach the
-database (`kc5lnts1vn.vy2oiaal4n.tsdb.cloud.timescale.com:32440` timed out), so it
-needs to be run from a machine with normal outbound network access.
+Accounts, sessions, imports, prompts, artifacts, outputs, tasks, handoffs and processing starts use Cloudflare D1.
+The web Worker and processor Worker bind `DB` to `resurface-waitlist`
+(`89d777a6-eb11-4feb-9484-6f555a3ba96e`). The waitlist table remains in that database.
 
-Target: Tiger Cloud service `mlh-aie-hackathon` (id `kc5lnts1vn`, us-east-2).
+Apply the schema from `web/`:
 
-## Prerequisites
+```sh
+npm run db:migrate:local
+npm run db:migrate:remote
+```
 
-- The [`tiger` CLI](https://docs.tigerdata.com) installed and logged in (`tiger auth login`).
-- The current `main` branch checked out.
+`web/migrations/0002_application.sql` is the application schema. The PostgreSQL migrations in
+`db/migrations/` are retained as historical source documentation; do not apply them to D1.
+D1 stores UUIDs and UTC timestamps as text, JSON as validated JSON text, booleans as integers,
+and processing start IDs as autoincrement integers. Artifact revisions remain immutable.
 
-## Steps
+## Processor connection
 
-Run from the repo root.
+The Node container cannot receive a D1 binding directly. The processor Worker handles
+`POST /internal/d1` using its binding and `DB.batch()`, which runs each batch as one transaction.
+It authenticates this route with `INGEST_TOKEN` and never wakes the container for database calls.
+The container receives `D1_URL` and a `D1_TOKEN` derived from that token at startup. No Cloudflare
+account API token or PostgreSQL credentials are passed to the container.
 
-1. Confirm the service:
+For a standalone Node processor, set `D1_URL` to the processor Worker's `/internal/d1` URL and
+`D1_TOKEN` to its ingest token. Leave both unset only for ephemeral CLI/test runs.
 
-   ```
-   tiger service list
-   ```
+## Existing TigerData records
 
-   Expect `mlh-aie-hackathon` / `kc5lnts1vn` with status `READY`.
+1. Pause application mutations and processor requests/sweeps. Wait for `/health` to report `busy: 0`.
+2. Export all public application tables in one repeatable-read, read-only PostgreSQL transaction
+   as JSON `{ "users": [ ... ], ... }`. Keep the snapshot private: it contains password and session hashes.
+3. Prepare and validate the import:
 
-2. Test connectivity:
-
-   ```
-   tiger db test-connection --service-id kc5lnts1vn
-   ```
-
-   If this times out, your network blocks outbound TCP to port 32440. Try another
-   network or ask the network admin to allow it.
-
-3. For an empty database, apply the migrations in order (stops at the first error):
-
-   ```
-   tiger db connect --service-id kc5lnts1vn -- -v ON_ERROR_STOP=1 -f db/migrations/001_shared_schema.sql -f db/migrations/002_accounts.sql -f db/migrations/003_ready_feed.sql
-   ```
-
-4. Verify:
-
-   ```
-   tiger db connect --service-id kc5lnts1vn -- -c '\dt' -c '\dv'
+   ```sh
+   node db/scripts/prepare-d1-import.mjs /private/path/source.json /private/path/import.json
    ```
 
-   Expect these tables: `project_contexts`, `digestion_prompts`, `ingested_units`,
-   `artifacts`, `artifact_exclusions`, `video_results`, `skill_results`,
-   `action_items`, `handoffs`, `users`, `sessions`, `user_imports`, plus the `artifact_feed` view.
-   Existing databases should receive only migrations not yet applied. `003_ready_feed.sql`
-   removes manual approval gates without deleting historical metadata.
+   This checks every table and column, D1 row/statement limits, foreign keys, schema constraints and
+   checksums. It outputs bound SQL statements so large agent briefs do not exceed SQL text limits.
+4. Apply the D1 migrations and execute the prepared batches using the Cloudflare D1 API. The target
+   application tables must be empty; never overwrite a populated target or ignore conflicts.
+5. Read every target table back and compare every source column and checksum. Preserve source IDs,
+   password/session hashes, timestamps, processing limits, review metadata and R2 references.
+6. Deploy the D1 processor and web Worker, verify a fresh account in isolated headless Playwright,
+   and confirm existing sessions, output/media reads and processing claims still work.
+7. Remove `DATABASE_URL` from both Workers and resume processing. Keep TigerData and the private backup
+   available for recovery until its removal is explicitly requested. Do not delete the source database.
 
-## If it fails
-
-- Fix the SQL minimally in `db/migrations/001_shared_schema.sql`, commit, and push to
-  the current integration branch.
-- The initial migrations are not idempotent. Each runs in a transaction; after a
-  failure, inspect the schema before retrying. Never drop existing tables to rerun it.
-- Never paste connection strings or passwords into commits, issues or chat.
+Never put connection strings, tokens, password hashes or snapshots in Git or public evidence.

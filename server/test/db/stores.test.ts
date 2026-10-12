@@ -1,0 +1,142 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { testDatabase } from './helpers.js';
+import { D1Store } from '../../src/ingest/store.js';
+import { D1OutputStore } from '../../src/outputs/store.js';
+import { D1HandoffStore } from '../../src/outputs/handoff-store.js';
+import { processUnits } from '../../src/ingest/processor.js';
+import { mockFetch } from '../ingest/helpers.js';
+import { UNLIMITED } from '../../src/ingest/limits.js';
+
+async function setup() {
+  const { db,sqlite }=testDatabase();
+  const store=new D1Store(db),outputs=new D1OutputStore(db),handoffs=new D1HandoffStore(db);
+  const user=(await db.query("INSERT INTO users(email,password_hash) VALUES(?1,'x') RETURNING id",[`test-${randomUUID()}@example.com`])).rows[0].id;
+  async function unit(status='pending') {
+    const id=randomUUID();
+    await db.query(`INSERT INTO ingested_units(id,submitted_url,source_url,status,transcript) VALUES(?1,?2,?2,?3,?4)`,
+      [id,'https://www.youtube.com/watch?v=VQy50fuxI34',status,status==='ready' ? '{"evidence_items":[]}' : null]);
+    await db.query('INSERT INTO user_imports(user_id,unit_id) VALUES(?1,?2)',[user,id]);
+    return id;
+  }
+  const prompt=await store.registerPrompt('test',[]);
+  async function artifact(ids: string[]) {
+    return (await store.saveArtifacts([{ name:'Check first',source_ids:ids,category:'Evals',processed_text:'content',selection_reason:'reason',evidence:[] }],[],prompt))[0];
+  }
+  return { db,sqlite,store,outputs,handoffs,user,unit,prompt,artifact };
+}
+
+test('D1 stores preserve extraction, prompt revisions, artifacts and failed digest retry limits',async()=>{
+  const s=await setup();
+  try {
+    assert.equal(await s.store.registerPrompt('test',[]),s.prompt);
+    assert.notEqual(await s.store.registerPrompt('test',[{example:1}]),s.prompt);
+    const id=await s.unit();
+    const { impl,calls }=mockFetch();
+    const options={ store:s.store,geminiKey:'k',openaiKey:'o',fetchImpl:impl,retries:0,pollMs:5,waitTimeoutMs:5000,limits:UNLIMITED };
+    await Promise.all([processUnits([id],options),processUnits([id],options)]);
+    assert.equal(calls.gemini,1);
+    assert.equal((await s.store.getUnits([id]))[0].status,'ready');
+    assert.equal((await s.store.getUnits([id]))[0].title,'Real Title');
+    assert.equal((await s.store.getUnits([id]))[0].transcript?.evidence_items.length,1);
+    assert.equal((await s.store.unitsNeedingDigest([id])).length,0);
+    const a=(await s.db.query('SELECT * FROM artifacts')).rows[0];
+    assert.deepEqual(a.source_ids,[id]);
+    await assert.rejects(s.db.query("UPDATE artifacts SET processed_text='changed' WHERE id=?1",[a.id]),/immutable/);
+    await s.db.query("UPDATE artifacts SET review_status='approved' WHERE id=?1",[a.id]);
+    await s.db.query('INSERT INTO artifacts(id,version,name,source_url,source_ids,processed_text,ingestion_status) SELECT id,2,name,source_url,source_ids,\'revised\',\'ready\' FROM artifacts WHERE id=?1',[a.id]);
+    const retry=await s.unit('ready');
+    for(let i=0;i<3;i++) await s.store.saveFailedArtifacts([retry],'actual error',s.prompt);
+    assert.equal((await s.store.listUnitsNeedingDigest(50)).some((r)=>r.unitId===retry),false);
+    assert.ok((await s.db.query('SELECT error FROM artifacts WHERE ingestion_status=\'failed\'')).rows.every((r)=>r.error==='actual error'));
+    await assert.rejects(s.db.query("INSERT INTO ingested_units(submitted_url,source_url,transcript) VALUES('x','x','invalid json')"),/CHECK/);
+  } finally { s.sqlite.close(); }
+});
+
+test('atomic D1 extraction and digest reservations never exceed the last daily/monthly slot',async()=>{
+  const s=await setup();
+  try {
+    const ids=await Promise.all([s.unit(),s.unit(),s.unit(),s.unit()]);
+    const limits={daily:1,monthly:10};
+    const [a,b]=await Promise.all([s.store.claimWithinLimits(ids.slice(0,2),limits),s.store.claimWithinLimits(ids.slice(2),limits)]);
+    assert.equal(a.claimed.length+b.claimed.length,1);
+    assert.equal(a.deferred.length+b.deferred.length,3);
+    assert.ok([...a.deferred,...b.deferred].length===3);
+    const again=await s.store.claimWithinLimits(ids,{daily:4,monthly:4});
+    assert.equal(again.claimed.length,3);
+    assert.equal((await s.db.query('SELECT count(*) AS n FROM processing_starts WHERE charged=1')).rows[0].n,4);
+    assert.deepEqual((await s.store.reserveDigests(ids,{daily:0,monthly:0})).allowed,ids,'extraction covers first digest');
+    const repeat=await s.store.reserveDigests(ids,{daily:5,monthly:5});
+    assert.equal(repeat.allowed.length,1);
+    assert.equal(repeat.deferred.length,3);
+    assert.ok(repeat.resumesAt!>new Date());
+    assert.equal((await s.store.reserveDigests(ids,{daily:5,monthly:5})).allowed.length,0);
+  } finally { s.sqlite.close(); }
+});
+
+test('D1 outputs retain claim ownership, bounded retries and transactional task writes',async()=>{
+  const s=await setup();
+  try {
+    const id=await s.unit('ready'),a=await s.artifact([id]);
+    const art=(await s.outputs.artifactsNeeding('skill',50))[0];
+    assert.deepEqual(art.source_ids,[id]);
+    const [c1,c2]=await Promise.all([s.outputs.claim('skill',art),s.outputs.claim('skill',art)]);
+    assert.ok((c1===null)!==(c2===null));
+    const c=(c1??c2)!;
+    assert.equal(await s.outputs.claim('skill',art),null);
+    await s.outputs.fail('skill',c,'provider failed');
+    assert.equal(await s.outputs.claim('skill',art),null,'backoff');
+    await s.db.query("UPDATE skill_results SET updated_at='2000-01-01T00:00:00Z' WHERE id=?1",[c.id]);
+    const second=(await s.outputs.claim('skill',art))!;
+    assert.notEqual(second.token,c.token);
+    const skill={skill_markdown:'---\nname: check-first\ndescription: "Check"\n---\nbody',supporting_refs:art.sources,
+      action_items:[{task:'Check',applicability_evidence:[],prerequisites:[],steps:['Inspect'],source_refs:[id],completion_check:'Verified'}]};
+    await assert.rejects(s.outputs.finishSkill(c,skill),/taken over/);
+    await s.outputs.finishSkill(second,skill);
+    await assert.rejects(s.outputs.finishSkill(second,{...skill,action_items:[]}),/taken over/);
+    assert.equal((await s.db.query('SELECT count(*) AS n FROM action_items')).rows[0].n,1,'lost claim cannot delete tasks');
+    assert.deepEqual((await s.handoffs.loadSkills([second.id]))[0].action_items[0].steps,['Inspect']);
+    assert.deepEqual(await s.outputs.skillCard(art),{status:'ready',card:{name:'check-first',tasks:1}});
+    const v=(await s.outputs.claim('video',art))!;
+    await assert.rejects(s.db.query("UPDATE video_results SET status='ready' WHERE id=?1",[v.id]),/CHECK|positive duration/);
+    await s.db.query("UPDATE video_results SET updated_at='2000-01-01T00:00:00Z' WHERE id=?1",[v.id]);
+    const v2=(await s.outputs.claim('video',art))!;
+    const rendered={script:{scenes:[]},prompt_revision:'script-v1',media_ref:`r2:videos/${a.id}/1/short.mp4`,caption_ref:`r2:captions/${a.id}/1/short.vtt`,narration_ref:`r2:audio/${a.id}/1/narration.m4a`,duration_seconds:34.5,music_provenance:'Licensed test provenance'};
+    await assert.rejects(s.outputs.finishVideo(v,rendered),/taken over/);
+    assert.equal(await s.outputs.fail('video',v,'late'),false);
+    await s.outputs.finishVideo(v2,rendered);
+    assert.equal((await s.db.query('SELECT music_provenance FROM video_results WHERE id=?1',[v2.id])).rows[0].music_provenance,rendered.music_provenance);
+    assert.equal(await s.outputs.claim('video',art),null);
+    const b=await s.artifact([id]),retry={...art,id:b.id};
+    const failed=(await s.outputs.claim('skill',retry))!;
+    await s.outputs.fail('skill',failed,'failed');
+    for(let i=0;i<2;i++) {
+      await s.db.query("UPDATE skill_results SET updated_at='2000-01-01T00:00:00Z' WHERE id=?1",[failed.id]);
+      const retryClaim=(await s.outputs.claim('skill',retry))!;
+      await s.outputs.fail('skill',retryClaim,'failed');
+    }
+    await s.db.query("UPDATE skill_results SET updated_at='2000-01-01T00:00:00Z' WHERE id=?1",[failed.id]);
+    assert.equal(await s.outputs.claim('skill',retry),null);
+  } finally { s.sqlite.close(); }
+});
+
+test('D1 shared digests stay private and handoff claims survive migration',async()=>{
+  const s=await setup();
+  try {
+    const shared=await s.unit('ready'),privateId=await s.unit('ready');
+    const a=await s.artifact([shared,privateId]);
+    const other=(await s.db.query("INSERT INTO users(email,password_hash) VALUES('other@example.com','x') RETURNING id")).rows[0].id;
+    await s.db.query('INSERT INTO user_imports(user_id,unit_id) VALUES(?1,?2)',[other,shared]);
+    assert.deepEqual(await s.store.unitsNeedingDigest([shared,privateId]),[shared]);
+    assert.equal((await s.store.listUnitsNeedingDigest(50))[0].userId,other);
+    const skill=(await s.db.query("INSERT INTO skill_results(artifact_id,artifact_version,status,skill_markdown) VALUES(?1,1,'ready','---\nname: test\n---\nbody') RETURNING id",[a.id])).rows[0].id;
+    const brief=(await s.db.query("INSERT INTO agent_briefs(user_id,skill_result_ids,input_key) VALUES(?1,?2,'k') RETURNING id",[s.user,JSON.stringify([skill])])).rows[0].id;
+    const claim=(await s.handoffs.claim(brief))!;
+    assert.deepEqual(claim.skill_result_ids,[skill]);
+    assert.equal(await s.handoffs.claim(brief),null);
+    assert.equal(await s.handoffs.fail({...claim,token:randomUUID()},'late'),false);
+    assert.equal(await s.handoffs.fail(claim,'actual error'),true);
+    assert.equal((await s.db.query('SELECT error FROM agent_briefs WHERE id=?1',[brief])).rows[0].error,'actual error');
+  } finally { s.sqlite.close(); }
+});

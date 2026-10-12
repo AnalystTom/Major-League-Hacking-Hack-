@@ -1,4 +1,4 @@
-// Proceed: pasted YouTube and X post links become ingested units in TigerData, and their progress is read back
+// Proceed: pasted YouTube and X post links become ingested units in D1, and their progress is read back
 // from the units, artifacts and video results the processor writes. Nothing here invents progress.
 
 import { isSubstackHost, parseSubstackLink } from "./substack.js";
@@ -75,14 +75,14 @@ export async function createUnits(sql, links, { userId = null } = {}) {
     const [existing] = await sql`
       SELECT id, status FROM ingested_units
       WHERE source_url = ${link.source_url}
-        AND start_seconds IS NOT DISTINCT FROM ${link.start_seconds}::integer
+        AND start_seconds IS ${link.start_seconds}
         AND status <> 'failed'
       ORDER BY created_at DESC LIMIT 1`;
     const [unit] = existing
       ? [{ ...existing, reused: true }]
       : (await sql`
           INSERT INTO ingested_units (submitted_url, source_url, start_seconds, content_type)
-          VALUES (${link.submitted_url}, ${link.source_url}, ${link.start_seconds}::integer, ${link.content_type ?? "youtube_video"})
+          VALUES (${link.submitted_url}, ${link.source_url}, ${link.start_seconds}, ${link.content_type ?? "youtube_video"})
           RETURNING id, status`).map((u) => ({ ...u, reused: false }));
     if (userId) {
       // `linked` is true the first time this user imports the unit, which is when the processor is asked.
@@ -112,27 +112,22 @@ export async function userUnitIds(sql, userId, limit = 50) {
  */
 export async function readUnits(sql, ids, visible = ids) {
   if (ids.length === 0) return [];
-  const list = ids.join(",");
-  const mine = visible.join(",");
   const rows = await sql`
     SELECT u.id, u.source_url, u.start_seconds, u.title, u.content_type, u.status, u.error, u.deferred_until,
-      COALESCE((SELECT json_agg(e.reason ORDER BY e.created_at) FROM artifact_exclusions e WHERE e.unit_id = u.id), '[]') AS exclusions,
-      COALESCE((
-        SELECT json_agg(json_build_object(
-          'id', a.id, 'version', a.version, 'name', a.name,
+      (SELECT json_group_array(reason) FROM
+        (SELECT reason FROM artifact_exclusions e WHERE e.unit_id = u.id ORDER BY e.created_at)) AS exclusions,
+      (SELECT json_group_array(json(item)) FROM (
+        SELECT json_object('id', a.id, 'version', a.version, 'name', a.name,
           'ingestion_status', a.ingestion_status, 'error', a.error,
-          'video', (
-            SELECT json_build_object('status', v.status, 'error', v.error, 'attempts', v.attempts)
-            FROM video_results v
-            WHERE v.artifact_id = a.id AND v.artifact_version = a.version
-            ORDER BY v.created_at DESC, v.id DESC LIMIT 1)
-        ) ORDER BY a.created_at)
+          'video', json((SELECT json_object('status', v.status, 'error', v.error, 'attempts', v.attempts)
+            FROM video_results v WHERE v.artifact_id = a.id AND v.artifact_version = a.version
+            ORDER BY v.created_at DESC, v.id DESC LIMIT 1))) AS item
         FROM artifacts a
-        WHERE u.id = ANY (a.source_ids)
-          AND a.source_ids <@ string_to_array(${mine}, ',')::uuid[]), '[]') AS artifacts
-    FROM ingested_units u
-    WHERE u.id = ANY (string_to_array(${list}, ',')::uuid[])
-    ORDER BY array_position(string_to_array(${list}, ',')::uuid[], u.id)`;
+        WHERE EXISTS (SELECT 1 FROM json_each(a.source_ids) WHERE value = u.id)
+          AND NOT EXISTS (SELECT 1 FROM json_each(a.source_ids) WHERE value NOT IN (SELECT value FROM json_each(${JSON.stringify(visible)})))
+        ORDER BY a.created_at)) AS artifacts
+    FROM ingested_units u JOIN json_each(${JSON.stringify(ids)}) selected ON selected.value = u.id
+    ORDER BY CAST(selected.key AS INTEGER)`;
   return rows.map((row) => describeUnit(row));
 }
 

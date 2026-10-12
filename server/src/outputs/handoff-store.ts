@@ -2,7 +2,8 @@
 // the processor claims it, writes the refined brief and every agent's prompt, or the actual error.
 
 import { randomUUID } from "node:crypto";
-import type pg from "pg";
+import type { Database } from "../db.js";
+import { NOW } from "../ingest/ledger.js";
 import type { HandoffBrief, HandoffSkill } from "./handoff.js";
 import type { ActionItem } from "./types.js";
 
@@ -68,45 +69,36 @@ export function rowToSkill(r: any): HandoffSkill {
   };
 }
 
-export class PgHandoffStore implements HandoffStore {
-  constructor(private pool: pg.Pool) {}
-
-  async claim(briefId: string) {
-    const { rows } = await this.pool.query(
-      `UPDATE agent_briefs SET status = 'running', error = NULL, updated_at = now(), claim_token = gen_random_uuid()
-       WHERE id = $1 AND (status = 'pending' OR (status = 'running' AND updated_at < now() - make_interval(mins => $2)))
-       RETURNING claim_token, skill_result_ids`, [briefId, STALE_BRIEF_MINUTES]);
-    return rows[0] ? { id: briefId, token: rows[0].claim_token as string, skill_result_ids: rows[0].skill_result_ids as string[] } : null;
+export class D1HandoffStore implements HandoffStore {
+  constructor(private db: Database) {}
+  async claim(id: string) {
+    const { rows } = await this.db.query(`UPDATE agent_briefs SET status='running',error=NULL,updated_at=${NOW},claim_token=?2
+      WHERE id=?1 AND (status='pending' OR (status='running' AND julianday(updated_at)<julianday('now','-${STALE_BRIEF_MINUTES} minutes')))
+      RETURNING claim_token,skill_result_ids`,[id,randomUUID()]);
+    return rows[0] ? { id,token: rows[0].claim_token as string,skill_result_ids: rows[0].skill_result_ids as string[] } : null;
   }
-
   async loadSkills(ids: string[]) {
-    const { rows } = await this.pool.query(
-      `SELECT s.id, s.skill_markdown, a.name AS artifact_name, a.category, a.sources, a.evidence,
-         (SELECT json_object_agg(u.id, u.title) FROM ingested_units u WHERE u.id = ANY (a.source_ids)) AS unit_titles,
-         (SELECT json_object_agg(u.id, u.source_url) FROM ingested_units u WHERE u.id = ANY (a.source_ids)) AS unit_urls,
-         COALESCE((SELECT json_agg(json_build_object('task', i.task, 'applicability_evidence', i.applicability_evidence,
-             'prerequisites', i.prerequisites, 'steps', i.steps, 'source_refs', i.source_refs, 'completion_check', i.completion_check)
-             ORDER BY i.position) FROM action_items i WHERE i.skill_result_id = s.id), '[]') AS action_items
-       FROM skill_results s
-       JOIN artifacts a ON a.id = s.artifact_id AND a.version = s.artifact_version
-       WHERE s.id = ANY ($1::uuid[]) AND s.status = 'ready' AND a.ingestion_status = 'ready'
-       ORDER BY array_position($1::uuid[], s.id)`, [ids]);
+    const { rows } = await this.db.query(`SELECT s.id,s.skill_markdown,a.name AS artifact_name,a.category,a.sources,a.evidence,
+      (SELECT json_group_object(u.id,u.title) FROM ingested_units u WHERE u.id IN (SELECT value FROM json_each(a.source_ids))) AS unit_titles,
+      (SELECT json_group_object(u.id,u.source_url) FROM ingested_units u WHERE u.id IN (SELECT value FROM json_each(a.source_ids))) AS unit_urls,
+      (SELECT json_group_array(json(item)) FROM (
+        SELECT json_object('task',i.task,'applicability_evidence',json(i.applicability_evidence),'prerequisites',json(i.prerequisites),
+          'steps',json(i.steps),'source_refs',json(i.source_refs),'completion_check',i.completion_check) AS item
+        FROM action_items i WHERE i.skill_result_id=s.id ORDER BY i.position)) AS action_items
+      FROM json_each(?1) picked JOIN skill_results s ON s.id=picked.value
+      JOIN artifacts a ON a.id=s.artifact_id AND a.version=s.artifact_version
+      WHERE s.status='ready' AND a.ingestion_status='ready' ORDER BY CAST(picked.key AS INTEGER)`,[JSON.stringify(ids)]);
     return uniqueSlugs(rows.map(rowToSkill));
   }
-
   async finish(c: BriefClaim, brief: HandoffBrief, prompts: unknown, revision: string) {
-    const { rowCount } = await this.pool.query(
-      `UPDATE agent_briefs SET status = 'ready', brief = $3, prompts = $4, prompt_revision = $5, error = NULL, updated_at = now()
-       WHERE id = $1 AND claim_token = $2 AND status = 'running'`,
-      [c.id, c.token, JSON.stringify(brief), JSON.stringify(prompts), revision]);
-    return rowCount === 1;
+    const { rowCount } = await this.db.query(`UPDATE agent_briefs SET status='ready',brief=?3,prompts=?4,prompt_revision=?5,error=NULL,updated_at=${NOW}
+      WHERE id=?1 AND claim_token=?2 AND status='running'`,[c.id,c.token,JSON.stringify(brief),JSON.stringify(prompts),revision]);
+    return rowCount===1;
   }
-
   async fail(c: BriefClaim, error: string) {
-    const { rowCount } = await this.pool.query(
-      `UPDATE agent_briefs SET status = 'failed', error = $3, updated_at = now() WHERE id = $1 AND claim_token = $2 AND status = 'running'`,
-      [c.id, c.token, error.slice(0, 2000)]);
-    return rowCount === 1;
+    const { rowCount } = await this.db.query(`UPDATE agent_briefs SET status='failed',error=?3,updated_at=${NOW}
+      WHERE id=?1 AND claim_token=?2 AND status='running'`,[c.id,c.token,error.slice(0,2000)]);
+    return rowCount===1;
   }
 }
 

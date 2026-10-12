@@ -20,14 +20,12 @@
     "@hono/node-server": "^2.1.4",
     "aws4fetch": "1.0.20",
     "hono": "^4.13.13",
-    "pg": "^8.23.1",
     "puppeteer-core": "23.11.1",
     "zod": "^4.6.6"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261011.1",
     "@types/node": "^22.20.5",
-    "@types/pg": "^8.15.0",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "wrangler": "^4.149.0"

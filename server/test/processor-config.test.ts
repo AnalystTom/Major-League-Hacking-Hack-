@@ -1,17 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { poolConfig } from "../src/db.js";
+import { D1Database, databaseFromEnv } from "../src/db.js";
 import { recordError, lastErrorSeen, redact } from "../src/activity.js";
 import { reasoningEffort, effortField } from "../src/openaiEffort.js";
 
-test("a hosted database gets TLS unless the URL picks an sslmode; a local one stays plain", () => {
-  const hosted = poolConfig("postgres://u:p@kc5lnts1vn.vy2oiaal4n.tsdb.cloud.timescale.com:32440/tsdb?");
-  assert.equal(hosted.ssl, true);
-  assert.equal(hosted.connectionTimeoutMillis, 10_000);
-  assert.equal(hosted.keepAlive, true);
-  assert.equal(poolConfig("postgres://u:p@db.example.com/tsdb?sslmode=require").ssl, undefined, "the URL's own sslmode wins");
-  assert.equal(poolConfig("postgres://u:p@127.0.0.1:54329/dev").ssl, undefined);
-  assert.equal(poolConfig("postgres://u:p@localhost/dev").ssl, undefined);
+test("D1 requires a complete URL/token pair and HTTPS outside local development", () => {
+  assert.equal(databaseFromEnv({}),null);
+  assert.throws(()=>databaseFromEnv({D1_URL:'https://processor.example/internal/d1'}),/both/);
+  assert.throws(()=>new D1Database('http://processor.example/internal/d1','token'),/HTTPS/);
+  assert.throws(()=>new D1Database('https://processor.example/internal/d1',''),/required/);
+  assert.ok(new D1Database('http://localhost:8787/internal/d1','token'));
 });
 
 test("the last processing error is kept for /health without credentials", () => {
@@ -44,9 +42,6 @@ test("redaction removes configured secret values and quoted or JSON-style creden
   assert.match(r, /"password":<redacted>/);
 });
 
-test("IPv6 loopback stays a plain local connection", () => {
-  assert.equal(poolConfig("postgres://u:p@[::1]:5432/dev").ssl, undefined);
-});
 
 test("/health shows last_error only with the processor's token", async () => {
   const { createApp } = await import("../src/app.js");

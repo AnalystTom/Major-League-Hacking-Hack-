@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run } from "./ffmpeg.js";
 
-/** How a stored file is referenced in TigerData (media_ref, caption_ref, narration_ref); the web Worker resolves it. */
+/** How a stored file is referenced in D1 (media_ref, caption_ref, narration_ref); the web Worker resolves it. */
 export const r2Ref = (key: string) => `r2:${key}`;
 
 export interface MediaStore {

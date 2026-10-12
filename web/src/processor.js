@@ -1,5 +1,5 @@
 // Hands new units to the processing service (Gemini extraction -> Digestion Prompt -> Opus script ->
-// narration/music/render -> R2 upload). The service writes its progress back to TigerData itself.
+// narration/music/render -> R2 upload). The service writes its progress back to D1 itself.
 
 // The processor accepts at most 10 unit ids per request, so larger imports go out in batches.
 export const PROCESSOR_BATCH = 10;

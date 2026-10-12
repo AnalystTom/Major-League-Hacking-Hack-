@@ -23,6 +23,7 @@
   // WINDOW_SECONDS: read only the first 5 minutes of each video. About $0.12 a short in provider costs,
   // against about $0.21 at the processor's one-hour default, to keep the whole bill under $10 a month.
   "vars": {
+    "D1_URL": "https://resurface-processor.thomasmann2001.workers.dev/internal/d1",
     "R2_BUCKET": "resurface-media",
     "WEB_ORIGINS": "https://resurface.thomasmann2001.workers.dev",
     "WINDOW_SECONDS": "300",
@@ -40,8 +41,10 @@
     "MONTHLY_VIDEO_LIMIT": "400"
   },
   // Secrets, set once with `npx wrangler secret put <NAME>`: GEMINI_API_KEY, OPENAI_API_KEY, TWITTERAPI_IO_KEY (X posts), INGEST_TOKEN
-  // (checked here before waking the container; the web Worker's PROCESSOR_TOKEN must equal it), DATABASE_URL (TigerData), R2_ACCOUNT_ID,
+  // (checked here before waking the container; the web Worker's PROCESSOR_TOKEN must equal it), R2_ACCOUNT_ID,
   // R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY (an R2 API token with write access to resurface-media).
   // Then point the web Worker at it: PROCESSOR_URL=https://resurface-processor.<subdomain>.workers.dev/api/ingest/process
+  "d1_databases": [{ "binding": "DB", "database_name": "resurface-waitlist",
+    "database_id": "89d777a6-eb11-4feb-9484-6f555a3ba96e", "migrations_dir": "../../web/migrations" }],
   "observability": { "enabled": true }
 }

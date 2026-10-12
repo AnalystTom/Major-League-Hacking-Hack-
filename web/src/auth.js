@@ -1,4 +1,4 @@
-// Accounts: email + password in TigerData, PBKDF2-SHA256 via Web Crypto, and an httpOnly session
+// Accounts: email + password in D1, PBKDF2-SHA256 via Web Crypto, and an httpOnly session
 // cookie whose token is stored only as a SHA-256 hash. Pure helpers are unit tested with node --test.
 
 // workerd caps PBKDF2 at 100,000 iterations.
@@ -73,7 +73,7 @@ export async function createSession(sql, userId) {
   const token = b64(crypto.getRandomValues(new Uint8Array(32))).replace(/[+/=]/g, (c) => ({ "+": "-", "/": "_", "=": "" })[c]);
   await sql`
     INSERT INTO sessions (token_hash, user_id, expires_at)
-    VALUES (${await sha256(token)}, ${userId}, now() + make_interval(days => ${SESSION_DAYS}))`;
+    VALUES (${await sha256(token)}, ${userId}, strftime('%Y-%m-%dT%H:%M:%fZ','now', ${`+${SESSION_DAYS} days`}))`;
   return token;
 }
 
@@ -84,7 +84,7 @@ export async function currentUser(sql, request) {
   const [user] = await sql`
     SELECT u.id, u.email, u.name
     FROM sessions s JOIN users u ON u.id = s.user_id
-    WHERE s.token_hash = ${await sha256(token)} AND s.expires_at > now()`;
+    WHERE s.token_hash = ${await sha256(token)} AND julianday(s.expires_at) > julianday('now')`;
   return user ?? null;
 }
 

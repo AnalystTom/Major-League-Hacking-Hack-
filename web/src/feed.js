@@ -8,29 +8,18 @@ import { resolveMediaRef } from "./media.js";
  */
 export async function readFeed(sql, unitIds = null) {
   if (unitIds && unitIds.length === 0) return [];
-  const list = unitIds ? unitIds.join(",") : null;
   const rows = await sql`
-    SELECT * FROM (
-      SELECT DISTINCT ON (a.id, a.version)
-        a.id, a.version, a.name, a.category, a.source_url, a.sources, a.selection_reason, a.created_at,
-        v.id AS video_id, v.media_ref, v.caption_ref, v.duration_seconds, v.feed_order,
-        s.id AS skill_id, s.status AS skill_status
-      FROM artifacts a
-      JOIN video_results v
-        ON v.artifact_id = a.id AND v.artifact_version = a.version
-       AND v.status = 'ready'
-      LEFT JOIN LATERAL (
-        SELECT id, status FROM skill_results s
-        WHERE s.artifact_id = a.id AND s.artifact_version = a.version
-        ORDER BY s.created_at DESC, s.id DESC LIMIT 1
-      ) s ON true
-      WHERE a.ingestion_status = 'ready'
-        -- A user's feed has only digests built entirely from their own imports, never someone else's videos.
-        AND (${list}::text IS NULL OR a.source_ids <@ string_to_array(${list}::text, ',')::uuid[])
-        AND (${list}::text IS NOT NULL OR v.feed_order IS NOT NULL)
-      ORDER BY a.id, a.version, v.created_at DESC, v.id DESC
-    ) eligible
-    ORDER BY feed_order NULLS LAST, created_at, id`;
+    SELECT a.id, a.version, a.name, a.category, a.source_url, a.sources, a.selection_reason, a.created_at,
+      v.id AS video_id, v.media_ref, v.caption_ref, v.duration_seconds, v.feed_order,
+      s.id AS skill_id, s.status AS skill_status
+    FROM artifacts a
+    JOIN video_results v ON v.artifact_id = a.id AND v.artifact_version = a.version AND v.status = 'ready'
+    LEFT JOIN skill_results s ON s.artifact_id = a.id AND s.artifact_version = a.version
+    WHERE a.ingestion_status = 'ready'
+      AND (${unitIds === null ? 1 : 0} = 1 OR NOT EXISTS (
+        SELECT 1 FROM json_each(a.source_ids) WHERE value NOT IN (SELECT value FROM json_each(${JSON.stringify(unitIds ?? [])}))))
+      AND (${unitIds === null ? 1 : 0} = 0 OR v.feed_order IS NOT NULL)
+    ORDER BY v.feed_order IS NULL, v.feed_order, a.created_at, a.id`;
   return rows.map(serializeItem).filter(Boolean);
 }
 

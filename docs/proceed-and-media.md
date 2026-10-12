@@ -23,21 +23,21 @@ There is no project, setup step, or review gate: whatever the processor marks `r
 visitors see "Open your feed" on the landing page.
 
 ```
-Browser ──POST /api/auth/signup──▶ Worker ──INSERT users, sessions──▶ TigerData   (httpOnly cookie back)
-        ──POST /api/imports──▶ Worker ──INSERT ingested_units, user_imports──▶ TigerData
+Browser ──POST /api/auth/signup──▶ Worker ──INSERT users, sessions──▶ D1   (httpOnly cookie back)
+        ──POST /api/imports──▶ Worker ──INSERT ingested_units, user_imports──▶ D1
                                   └──POST PROCESSOR_URL {unit_ids}──▶ Processor (server/src)
 Processor: Gemini extraction → Digestion Prompt (OpenAI) → artifacts
            → skill + up to 3 tasks (OpenAI)             ──▶ skill_results, action_items
            → script (OpenAI) → narration (Gemini TTS) → ffmpeg ──PUT mp4, vtt, m4a──▶ R2 ──▶ video_results
-Browser ──GET /api/imports, /api/feed?scope=mine, /api/skills (every 4 s while anything moves)──▶ Worker ──▶ TigerData
-        ──POST /api/handoffs {skill_ids}──▶ Worker ──INSERT agent_briefs──▶ TigerData
+Browser ──GET /api/imports, /api/feed?scope=mine, /api/skills (every 4 s while anything moves)──▶ Worker ──▶ D1
+        ──POST /api/handoffs {skill_ids}──▶ Worker ──INSERT agent_briefs──▶ D1
                                   └──POST …/api/ingest/handoff {brief_id}──▶ Processor
 Processor: merge the picked skills → Handoff refinement (OpenAI) → prompt per agent and mode ──▶ agent_briefs
 Browser ──GET /api/handoffs/:id (every 3 s until ready)──▶ Worker   then copy or download the prompt into the agent
         ──GET /media/videos/…mp4 (Range)──▶ Worker ──▶ R2
-        ──POST /api/handoffs {skill_ids}──▶ Worker ──INSERT agent_briefs──▶ TigerData
+        ──POST /api/handoffs {skill_ids}──▶ Worker ──INSERT agent_briefs──▶ D1
                                   └──POST …/api/ingest/handoff {brief_id}──▶ Processor
-Processor: merge the picked skills → Handoff refinement → prompt per agent and mode ──UPDATE agent_briefs──▶ TigerData
+Processor: merge the picked skills → Handoff refinement → prompt per agent and mode ──UPDATE agent_briefs──▶ D1
 Browser ──GET /api/handoffs/:id (every 3 s until ready)──▶ Worker   then copy/download the prompt into Codex
 ```
 
@@ -117,7 +117,7 @@ taken over after 60 minutes (`server/src/claims.ts`), which is longer than the s
 worker whose claim was taken over can't write its result.
 
 **Configuration** (`server/.env.example`): `GEMINI_API_KEY` and `INGEST_TOKEN` mount ingestion. `OPENAI_API_KEY`
-enables digests, skills and scripts; without it, units are only extracted. `DATABASE_URL` enables the sweeps.
+enables digests, skills and scripts; without it, units are only extracted. `D1_URL and D1_TOKEN` enables the sweeps.
 Media goes to R2 through its S3 API (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`),
 or to local wrangler dev with `MEDIA_LOCAL_WEB_DIR`. Optional: `OPENAI_MODEL`, `GEMINI_MODEL`, `GEMINI_TTS_MODEL`,
 `GEMINI_TTS_VOICE`, `RENDER_FONT`, `SWEEP_INTERVAL_MS`. Renders need `ffmpeg` and `ffprobe` on the host.
@@ -131,59 +131,29 @@ around $5–10 a month. It isn't deployed. It needs Workers Paid and a Workers B
 - No egress fees, which matters for video. Storage is about $0.015/GB-month; a 40 s 1080×1920 short at
   ~4 Mbps is ~20 MB, so 1,000 shorts is ~20 GB, about $0.30 a month.
 - S3-compatible, so a Node/Python renderer uploads with any S3 client.
-- TigerData keeps only references and metadata (Postgres is the wrong place for video bytes).
+- D1 keeps only references and metadata (D1 is the wrong place for video bytes).
 
 Move to Cloudflare Stream only if adaptive bitrate (HLS) becomes necessary. It bills per minute stored
 and delivered, and it re-encodes the uploads. 30 to 45 s progressive MP4s don't need it.
 
-## Setup before deploy
+## Setup and local development
 
-Migrations: 001–004 are applied to TigerData. **`005_outputs.sql` isn't yet**: it adds `claimed_at`, one video
-and one skill result per artifact revision, `claim_token`, and a stricter ready check. Run the duplicate checks
-in its header first.
+Apply `web/migrations/` to the D1 binding with `npm run db:migrate:local --prefix web` or
+`npm run db:migrate:remote --prefix web`. The same D1 database holds the waitlist and application records.
+See [D1 migration and cutover](applying-migration.md) for preserving existing TigerData records.
 
-```
-cd web
-npx wrangler r2 bucket create resurface-media   # done
-npx wrangler secret put DATABASE_URL            # done
-npx wrangler secret put PROCESSOR_URL           # https://resurface-processor.<subdomain>.workers.dev/api/ingest/process, once PR #5 is live
-npx wrangler secret put PROCESSOR_TOKEN         # equal to the processor's INGEST_TOKEN
-```
+The web Worker needs its D1 `DB` binding, R2 `MEDIA` binding, `PROCESSOR_URL` and `PROCESSOR_TOKEN`.
+The processor Worker holds a binding to the same D1 database and forwards it to the Node container
+through its authenticated `/internal/d1` route. The container receives `D1_URL` and `D1_TOKEN` at startup.
 
-For local dev, put the same keys in `web/.dev.vars` (gitignored). For production, a Hyperdrive config
-bound as `HYPERDRIVE` is preferred over `DATABASE_URL` (pooled connections); `src/db.js` uses it when present.
-
-## Local dev
-
-Database for both options:
-
-```
-createdb resurface_dev
-for f in db/migrations/00{1,2,3,4,5}_*.sql; do psql -d resurface_dev -v ON_ERROR_STOP=1 -f "$f"; done
-# web/.dev.vars (gitignored):
-#   DATABASE_URL=postgres://you@127.0.0.1:5432/resurface_dev
-#   PROCESSOR_URL=http://127.0.0.1:8799/process          (simulated) or http://127.0.0.1:3000/api/ingest/process (real)
-```
-
-**Simulated processor**, with no provider keys. `web/scripts/dev-processor.mjs` refuses any database that isn't on
-this machine, labels every record `[Simulated]`, and points every short at one test clip. It writes no skills:
-the skill generator only reads real digests.
-
-```
-cd web
-npx wrangler r2 object put resurface-media/videos/dev/simulation/short.mp4 --file <any 9:16 mp4> --local
-npx wrangler r2 object put resurface-media/captions/dev/simulation/short.vtt --file <any .vtt> --local
-DATABASE_URL=postgres://you@127.0.0.1:5432/resurface_dev FAIL_IDS=dQw4w9WgXcQ node scripts/dev-processor.mjs
-npm run dev     # http://localhost:8787
-```
-
-**Real processor**: copy `server/.env.example` to `server/.env`. Fill in the keys, the same `DATABASE_URL`, and
-`MEDIA_LOCAL_WEB_DIR=../web`, so renders land in the web Worker's local R2. Then run `npm run dev --prefix server`
-alongside `npm run dev --prefix web`, with the web `PROCESSOR_TOKEN` equal to `INGEST_TOKEN`.
+For local development, run `npm run dev --prefix web` after applying local migrations. A standalone
+Node processor uses the same D1 bridge; configure both variables and provider keys in `server/.env`
+from `server/.env.example`, and point the web Worker's `PROCESSOR_URL` at its processing route.
+Use isolated test databases and accounts. When no processor is configured, imported links remain queued
+and the page reports that state; no simulated clips or processing records are created.
 
 ## Known gaps
 
-- **No processor in production yet** (PR #5), and migration 005 isn't on TigerData. Links queue as `Queued`.
 - **Shorts are basic title cards**: one large text frame per scene over narration, with no motion design and no
   stored animation code. The spec's Opus script and animation-code step isn't built.
 - **Length isn't held to 30–45 s.** Only the script's word count (40–160) is checked, so roughly 15–65 s passes.
@@ -203,4 +173,4 @@ alongside `npm run dev --prefix web`, with the web `PROCESSOR_TOKEN` equal to `I
 
 The landing page has an email form and **Join the waitlist** links. It shows success only after D1 accepts the signup; duplicate emails stay as one record. Existing waitlist rows are retained.
 
-Deploy with `npm run deploy:waitlist --prefix web`. `web/wrangler.waitlist.jsonc` targets the same `resurface` Worker and `resurface-waitlist` D1 database without requiring the product's TigerData or R2 setup. This Worker redirects `/start` and `/app` to the form and does not expose product APIs. The normal `web/wrangler.jsonc` retains the product backend for development and a later launch. Apply `web/migrations/0001_waitlist.sql` only if the table does not exist.
+Deploy with `npm run deploy:waitlist --prefix web`. `web/wrangler.waitlist.jsonc` targets the same `resurface` Worker and `resurface-waitlist` D1 database without requiring the product's D1 or R2 setup. This Worker redirects `/start` and `/app` to the form and does not expose product APIs. The normal `web/wrangler.jsonc` retains the product backend for development and a later launch. Apply `web/migrations/0001_waitlist.sql` only if the table does not exist.
