@@ -88,11 +88,18 @@ export function fillTemplate(template: string, spec: MotionSpec): string {
   return template.replace("/*DATA*/null", () => json);
 }
 
-/** Chromium for record.js: CHROME, else the container's wrapper (adds --no-sandbox), else record.js finds one itself. */
-function chromeEnv(): Record<string, string> {
-  if (process.env.CHROME) return { CHROME: process.env.CHROME };
-  const wrapper = join(SKILL_DIR, "chromium-no-sandbox.sh");
-  return existsSync("/usr/bin/chromium") ? { CHROME: wrapper } : {};
+const RECORD_ENV = ["PATH", "HOME", "TMPDIR", "LANG", "TZ", "FONTCONFIG_PATH", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"];
+
+/**
+ * The environment record.js (and so Chromium) runs with: only what it, Chromium and ffmpeg need, never the
+ * processor's keys or DATABASE_URL, since Chromium runs without its sandbox in the container. CHROME is the given
+ * one, else the container's wrapper (adds --no-sandbox), else record.js finds a Chrome itself.
+ */
+export function recordEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = Object.fromEntries(RECORD_ENV.filter((n) => env[n] !== undefined).map((n) => [n, env[n]]));
+  if (env.CHROME) out.CHROME = env.CHROME;
+  else if (existsSync("/usr/bin/chromium")) out.CHROME = join(SKILL_DIR, "chromium-no-sandbox.sh");
+  return out;
 }
 
 /**
@@ -102,8 +109,7 @@ function chromeEnv(): Record<string, string> {
 export async function renderMotion(dir: string, spec: MotionSpec, narrationWav: string): Promise<{ mp4: string; duration: number }> {
   const html = join(dir, "short.html"), film = join(dir, "film.mp4"), mp4 = join(dir, "short.mp4");
   await writeFile(html, fillTemplate(await readFile(join(SKILL_DIR, "resurface-short.html"), "utf8"), spec));
-  const env = { ...process.env, ...chromeEnv() };
-  await runWithEnv(process.execPath, [join(SKILL_DIR, "scripts", "record.js"), html, "--out", film, "--crf", "20"], env);
+  await runWithEnv(process.execPath, [join(SKILL_DIR, "scripts", "record.js"), html, "--out", film, "--crf", "20"], recordEnv());
   await run("ffmpeg", [
     "-y", "-hide_banner", "-loglevel", "error", "-i", film, "-i", narrationWav, "-filter_complex",
     "[0:a]volume=0.32[m];[1:a]aresample=48000,asplit=2[v][v2];[m][v]sidechaincompress=threshold=0.04:ratio=6:attack=20:release=350[md];" +

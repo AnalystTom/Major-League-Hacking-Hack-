@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { probe } from "../../src/outputs/render/ffmpeg.js";
 import type { MediaStore } from "../../src/outputs/render/media.js";
 import { renderArtifact } from "../../src/outputs/render/render.js";
-import { fillTemplate, motionSpec } from "../../src/outputs/render/motion-skill.js";
+import { fillTemplate, motionSpec, recordEnv } from "../../src/outputs/render/motion-skill.js";
 import { MemoryOutputStore, skillNameOf } from "../../src/outputs/store.js";
 import { artifact, outputsFetch } from "./helpers.js";
 
@@ -96,4 +96,10 @@ test("renders a motion short with the narration over the engine's music", { skip
   } finally {
     await rm(out, { recursive: true, force: true });
   }
+});
+
+test("Chromium never sees the processor's keys", () => {
+  const env = recordEnv({ PATH: "/usr/bin", HOME: "/home/node", CHROME: "/c", OPENAI_API_KEY: "sk-x", GEMINI_API_KEY: "g", DATABASE_URL: "postgres://u:p@h/db",
+    R2_SECRET_ACCESS_KEY: "r", INGEST_TOKEN: "t", TWITTERAPI_IO_KEY: "k" });
+  assert.deepEqual(env, { PATH: "/usr/bin", HOME: "/home/node", CHROME: "/c" });
 });
