@@ -10,6 +10,9 @@ import type { MediaStore } from "../../src/outputs/render/media.js";
 import { renderArtifact } from "../../src/outputs/render/render.js";
 import { artifact, outputsFetch } from "./helpers.js";
 
+// These cover the plain ffmpeg renderer; motion-skill.test.ts covers the motion-graphic-skill path.
+process.env.RENDER_STYLE = "basic";
+
 const hasFfmpeg = (() => { try { execFileSync("ffmpeg", ["-version"]); execFileSync("ffprobe", ["-version"]); return true; } catch { return false; } })();
 
 class DirMedia implements MediaStore {

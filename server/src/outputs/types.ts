@@ -67,4 +67,6 @@ export interface RenderedVideo {
   caption_ref: string;
   narration_ref: string;
   duration_seconds: number;
+  /** Where the music came from; absent when the short has none. */
+  music_provenance?: string | null;
 }

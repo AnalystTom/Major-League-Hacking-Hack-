@@ -7,6 +7,9 @@ import type { MediaStore } from "../../src/outputs/render/media.js";
 import { artifact, outputsFetch, takeOver } from "./helpers.js";
 
 const hasFfmpeg = (() => { try { execFileSync("ffmpeg", ["-version"]); return true; } catch { return false; } })();
+// These cover the plain ffmpeg renderer; motion-skill.test.ts covers the motion-graphic-skill path.
+process.env.RENDER_STYLE = "basic";
+
 const media: MediaStore = { put: async (key) => `r2:${key}` };
 
 test("an artifact gets a ready skill and a ready short, once", { skip: !hasFfmpeg && "ffmpeg not installed", timeout: 120_000 }, async () => {

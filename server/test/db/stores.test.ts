@@ -97,14 +97,16 @@ test('D1 outputs retain claim ownership, bounded retries and transactional task 
     await assert.rejects(s.outputs.finishSkill(second,{...skill,action_items:[]}),/taken over/);
     assert.equal((await s.db.query('SELECT count(*) AS n FROM action_items')).rows[0].n,1,'lost claim cannot delete tasks');
     assert.deepEqual((await s.handoffs.loadSkills([second.id]))[0].action_items[0].steps,['Inspect']);
+    assert.deepEqual(await s.outputs.skillCard(art),{status:'ready',card:{name:'check-first',tasks:1}});
     const v=(await s.outputs.claim('video',art))!;
     await assert.rejects(s.db.query("UPDATE video_results SET status='ready' WHERE id=?1",[v.id]),/CHECK|positive duration/);
     await s.db.query("UPDATE video_results SET updated_at='2000-01-01T00:00:00Z' WHERE id=?1",[v.id]);
     const v2=(await s.outputs.claim('video',art))!;
-    const rendered={script:{scenes:[]},prompt_revision:'script-v1',media_ref:`r2:videos/${a.id}/1/short.mp4`,caption_ref:`r2:captions/${a.id}/1/short.vtt`,narration_ref:`r2:audio/${a.id}/1/narration.m4a`,duration_seconds:34.5};
+    const rendered={script:{scenes:[]},prompt_revision:'script-v1',media_ref:`r2:videos/${a.id}/1/short.mp4`,caption_ref:`r2:captions/${a.id}/1/short.vtt`,narration_ref:`r2:audio/${a.id}/1/narration.m4a`,duration_seconds:34.5,music_provenance:'Licensed test provenance'};
     await assert.rejects(s.outputs.finishVideo(v,rendered),/taken over/);
     assert.equal(await s.outputs.fail('video',v,'late'),false);
     await s.outputs.finishVideo(v2,rendered);
+    assert.equal((await s.db.query('SELECT music_provenance FROM video_results WHERE id=?1',[v2.id])).rows[0].music_provenance,rendered.music_provenance);
     assert.equal(await s.outputs.claim('video',art),null);
     const b=await s.artifact([id]),retry={...art,id:b.id};
     const failed=(await s.outputs.claim('skill',retry))!;
