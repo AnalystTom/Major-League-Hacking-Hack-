@@ -1,0 +1,61 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:02.637
+How do you tell a model what good
+
+2
+00:00:02.637 --> 00:00:04.395
+looks like? Give it an
+
+3
+00:00:04.395 --> 00:00:05.354
+environment.
+
+4
+00:00:05.504 --> 00:00:07.994
+It packs the data, the scenarios,
+
+5
+00:00:07.994 --> 00:00:10.409
+how the model acts, and how it's
+
+6
+00:00:10.409 --> 00:00:10.937
+scored.
+
+7
+00:00:11.087 --> 00:00:12.305
+Build it: tasks and rewards.
+
+8
+00:00:12.455 --> 00:00:14.270
+Evaluate: score the model, then
+
+9
+00:00:14.270 --> 00:00:15.324
+read its rollouts.
+
+10
+00:00:15.474 --> 00:00:16.793
+Train it with reinforcement
+
+11
+00:00:16.793 --> 00:00:17.966
+learning or fine-tuning.
+
+12
+00:00:18.116 --> 00:00:19.774
+Deploy by serving the trained
+
+13
+00:00:19.774 --> 00:00:20.231
+adapter.
+
+14
+00:00:20.381 --> 00:00:22.237
+Then loop. Start by building your
+
+15
+00:00:22.237 --> 00:00:23.250
+first environment.

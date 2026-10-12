@@ -4,6 +4,17 @@ import { createFilm } from "./film.js";
 
 createFilm(document.querySelector("[data-film]")).refresh();
 
+const examples = document.querySelectorAll(".example-card video");
+for (const video of examples) {
+  video.addEventListener("play", () => {
+    for (const other of examples) if (other !== video) other.pause();
+  });
+  // Capture also catches a failed URL's error on the nested <source>.
+  video.addEventListener("error", () => {
+    video.closest(".example-card").querySelector(".example-error").hidden = false;
+  }, true);
+}
+
 // "Join the waitlist" links jump to the hero form and put the cursor in the email field.
 document.querySelectorAll('a[href="#join"]').forEach((a) =>
   a.addEventListener("click", () => {

@@ -233,6 +233,14 @@ button { font: inherit; color: inherit; }
 .section-head h2 { font-weight: 800; font-size: clamp(2.25rem, 5.2vw, 4.25rem); letter-spacing: -.035em; line-height: .98; }
 .section-head p { margin-top: 16px; font-size: 1.1875rem; color: var(--ink-soft); }
 
+.example-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 48px 32px; margin-top: 40px; }
+.example-card { min-width: 0; display: flex; flex-direction: column; align-items: start; gap: 16px; }
+.example-card video { display: block; width: min(100%, 320px); aspect-ratio: 9 / 16; align-self: center; border-radius: 20px; background: #000; }
+.example-card h3 { font-size: 1.5rem; line-height: 1.15; letter-spacing: -.02em; }
+.example-card p { color: var(--ink-soft); }
+.example-card a { color: var(--accent-ink); }
+.example-card .example-error { color: var(--late); }
+
 /* ======================================================
    A short: one takeaway, one motion scene
    ====================================================== */
