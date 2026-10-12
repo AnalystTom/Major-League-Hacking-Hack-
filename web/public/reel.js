@@ -44,12 +44,18 @@ export function createReel(root) {
   let active = -1;
   let soundOn = false;
   const shown = new Map(); // `${id}:${version}` -> slide
+  const visibility = new Map();
 
   const observer = new IntersectionObserver(
     (entries) => {
-      for (const e of entries) if (e.isIntersecting) activate(Number(e.target.dataset.index));
+      for (const e of entries) if (e.target.isConnected) visibility.set(Number(e.target.dataset.index), e.isIntersecting ? e.intersectionRatio : 0);
+      // A threshold callback also fires when leaving. Do not reactivate the
+      // departing clip or depend on callback entry order.
+      const best = [...visibility].filter(([, ratio]) => ratio >= 0.6)
+        .sort((a, b) => b[1] - a[1] || a[0] - b[0])[0];
+      if (best) activate(best[0]);
     },
-    { root: track, threshold: 0.6 }
+    { root: null, threshold: 0.6 }
   );
 
   function slideFor(item, index) {
@@ -62,10 +68,10 @@ export function createReel(root) {
       crossorigin: item.video.captions_url && /^https?:/.test(item.video.url) ? "anonymous" : null,
     });
     video.muted = true;
-    // The browser times the WebVTT cues; the reel draws them itself, above the title and buttons and
-    // wrapped to the frame, which native cue rendering won't reliably do in a 9:16 crop.
+    // The browser times WebVTT cues; captions occupy a separate row below the
+    // uncropped video, so captions and controls cannot cover source graphics.
     const caption = el("p", { class: "reel-caption", "aria-hidden": "true" });
-    if (item.video.captions_url) {
+    if (item.video.captions_url && !item.video.captions_burned_in) {
       const track = el("track", { kind: "captions", srclang: "en", label: "English", src: item.video.captions_url, default: true });
       video.append(track);
       track.track.mode = "hidden";
@@ -95,21 +101,27 @@ export function createReel(root) {
     );
 
     const soundBtn = el("button", { type: "button", class: "reel-btn reel-sound", "data-sound": true, "aria-pressed": String(soundOn), text: soundOn ? "Sound on" : "Tap for sound" });
+    const pauseBtn = el("button", { type: "button", class: "reel-btn", text: "Play", onclick: () => video.paused ? play(video) : video.pause() });
+    video.addEventListener("play", () => { pauseBtn.textContent = "Pause"; });
+    video.addEventListener("pause", () => { pauseBtn.textContent = "Play"; });
     const slide = el("article", { class: "reel-item", "data-index": String(index), "aria-label": item.name },
-      el("div", { class: "reel-progress" }, progress),
-      video,
-      caption,
-      failed,
+      el("div", { class: "reel-stage", "data-index": String(index) }, video, failed),
       el("div", { class: "reel-overlay" },
+        el("p", { class: "reel-eyebrow", text: "FROM YOUR SAVED SOURCES" }),
         el("div", { class: "reel-tags" },
           item.category ? el("span", { class: "reel-chip", text: item.category }) : null,
           skillChip(item.skill)
         ),
         el("h3", { class: "reel-title", text: item.name }),
         item.selection_reason ? el("p", { class: "reel-reason", text: item.selection_reason }) : null,
+        caption,
+        el("div", { class: "reel-progress" }, progress),
+        el("p", { class: "reel-duration", text: item.video.duration_seconds ? `${Math.round(item.video.duration_seconds)} sec · Source-backed short` : "Source-backed short" }),
         sheet,
         el("div", { class: "reel-actions" },
+          pauseBtn,
           soundBtn,
+          el("button", { type: "button", class: "reel-btn", text: "Fullscreen", onclick: () => { if(video.requestFullscreen) video.requestFullscreen().catch(()=>{}); } }),
           el("button", { type: "button", class: "reel-btn", "aria-expanded": "false", text: "View sources",
             onclick: (e) => { sheet.hidden = !sheet.hidden; e.currentTarget.setAttribute("aria-expanded", String(!sheet.hidden)); } }),
           // The skill and its tasks open in a sheet over the reel; only a ready skill gets a way there.
@@ -131,7 +143,13 @@ export function createReel(root) {
     video.muted = !soundOn;
     const p = video.play();
     // Browsers may block unmuted autoplay; fall back to muted rather than leaving a frozen frame.
-    if (p) p.catch(() => { if (!video.muted) { video.muted = true; setSound(false); video.play().catch(() => {}); } });
+    if (p) p.catch((error) => {
+      // pause() during a scroll cancels play(); retrying that stale promise
+      // can start the offscreen clip and toggle sound repeatedly.
+      if (error.name === 'NotAllowedError' && track.children[active]?.querySelector('video') === video && !video.muted) {
+        video.muted = true; setSound(false); video.play().catch(() => {});
+      }
+    });
   }
 
   function setSound(on) {
@@ -172,16 +190,31 @@ export function createReel(root) {
 
   return {
     root,
-    /** Appends clips that weren't shown yet, keeping the one playing in place. */
+    /** Keep unchanged players in place; replace a regenerated rendition of the same artifact. */
     render(next) {
       for (const item of next) {
         const key = `${item.id}:${item.version}`;
-        if (shown.has(key)) continue;
+        const existing = shown.get(key);
+        if (existing) {
+          const index = Number(existing.dataset.index);
+          if (JSON.stringify(items[index].video) === JSON.stringify(item.video)) continue;
+          const oldVideo = existing.querySelector('video');
+          const resume = index === active && !oldVideo.paused;
+          observer.unobserve(existing.querySelector('.reel-stage'));
+          oldVideo.pause();
+          const replacement = slideFor(item, index);
+          items[index] = item;
+          shown.set(key, replacement);
+          existing.replaceWith(replacement);
+          observer.observe(replacement.querySelector('.reel-stage'));
+          if (resume) play(replacement.querySelector('video'));
+          continue;
+        }
         const slide = slideFor(item, items.length);
         items.push(item);
         shown.set(key, slide);
         track.append(slide);
-        observer.observe(slide);
+        observer.observe(slide.querySelector('.reel-stage'));
       }
       root.hidden = items.length === 0;
       if (active === -1 && items.length) activate(0);

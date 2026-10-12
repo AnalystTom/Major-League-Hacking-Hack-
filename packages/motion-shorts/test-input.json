@@ -1,0 +1,34 @@
+{
+  "id": "technique-feedback-loop",
+  "version": "1",
+  "name": "Verification Feedback Loop",
+  "category": "AI Engineering",
+  "processed_text": "How autonomous coding agents improve reliability through implementation, test execution, failure inspection, correction, and verification. The agent makes a change, runs tests, observes failures, feeds the failure back as context, corrects the implementation, and verifies the fix.",
+  "source_ids": ["src-1"],
+  "sources": [
+    {
+      "id": "src-1",
+      "url": "https://example.com/agent-feedback-loop",
+      "title": "Agent Feedback Loops in Practice"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "ev-1",
+      "source_id": "src-1",
+      "excerpt": "Agents that implement a verification feedback loop show 40% fewer production bugs compared to agents that generate code without verification.",
+      "timestamp": "2026-01-15T10:00:00Z"
+    },
+    {
+      "id": "ev-2",
+      "source_id": "src-1",
+      "excerpt": "The loop consists of: implement -> test -> inspect failure -> correct -> verify. Each iteration reduces error rate.",
+      "timestamp": "2026-01-15T10:05:00Z"
+    }
+  ],
+  "ingestion_status": "ready",
+  "review_status": "approved",
+  "project_context_version": "1",
+  "editorial_notes": "Focus on the feedback mechanism",
+  "mode": "reviewed"
+}

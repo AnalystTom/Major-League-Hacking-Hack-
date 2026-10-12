@@ -11,6 +11,8 @@ import type { StoredArtifact } from "../ingest/types.js";
 
 export interface OutputOptions extends ProviderOptions {
   outputs: OutputStore;
+  /** False when the standalone motion worker owns video_results; skills still run. */
+  generateVideos?: boolean;
   /** Where rendered files go; without one, renders fail with that reason instead of waiting forever. */
   media: MediaStore | null;
   log?: (msg: string) => void;
@@ -71,12 +73,12 @@ function queueRender(a: ReadyArtifact, o: OutputOptions): Promise<void> {
 
 /** Produces the skill and the short for each artifact. Resolves when all of them have settled. */
 export async function produceOutputs(artifacts: ReadyArtifact[], o: OutputOptions): Promise<void> {
-  await Promise.all([...artifacts.map((a) => produce("skill", a, o)), ...artifacts.map((a) => queueRender(a, o))]);
+  await Promise.all([...artifacts.map((a) => produce("skill", a, o)), ...(o.generateVideos === false ? [] : artifacts.map((a) => queueRender(a, o)))]);
 }
 
 /** Finds ready artifacts still missing a skill or a short and produces them. Returns how many it started. */
 export async function sweepOutputs(o: OutputOptions, limit = 10): Promise<number> {
-  const [skills, videos] = await Promise.all([o.outputs.artifactsNeeding("skill", limit), o.outputs.artifactsNeeding("video", limit)]);
+  const [skills, videos] = await Promise.all([o.outputs.artifactsNeeding("skill", limit), o.generateVideos === false ? Promise.resolve([]) : o.outputs.artifactsNeeding("video", limit)]);
   await Promise.all([
     ...skills.map((a) => produce("skill", a, o)),
     ...videos.map((a) => queueRender(a, o)),

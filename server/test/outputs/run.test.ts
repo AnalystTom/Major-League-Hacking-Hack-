@@ -101,3 +101,19 @@ test("a worker whose claim was taken over can't save or fail the result", async 
   assert.equal(await outputs.fail("video", stale, "late"), false);
   assert.equal([...outputs.rows.video.values()][0].status, "running", "the newer worker's row is untouched");
 });
+
+test("external motion worker owns videos while immediate and swept skills still run", async () => {
+  const a = artifact();
+  const outputs = new MemoryOutputStore();
+  const { impl, calls } = outputsFetch(a);
+  const o = { outputs, openaiKey: "o", media: null, fetchImpl: impl, generateVideos: false };
+  await produceOutputs([a], o);
+  assert.equal([...outputs.rows.skill.values()][0].status, "ready");
+  assert.equal(outputs.rows.video.size, 0);
+  const b = artifact();
+  outputs.artifacts.push(b);
+  await sweepOutputs({ ...o, fetchImpl: outputsFetch(b).impl });
+  assert.equal(outputs.rows.skill.size, 2);
+  assert.equal(outputs.rows.video.size, 0);
+  assert.equal(calls.script, 0);
+});

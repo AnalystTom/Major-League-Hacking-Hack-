@@ -1,0 +1,16 @@
+import '../src/env';
+import {Pipeline} from '../src/jobs';
+import {LocalStore} from '../src/storage';
+import {feedbackFixture} from '../src/fixtures';
+import {descriptionInput} from '../src/contracts';
+import {productionConfig} from '../src/renderer';
+import {synthesizeMusic} from '../src/music';
+import path from 'node:path';
+const pipeline=new Pipeline(new LocalStore('artifacts/audio-qa'));
+const plan=feedbackFixture();
+const job=await pipeline.create(descriptionInput('Audio pipeline verification using synthetic test tones, not narration'),productionConfig,'fixture',plan);
+const dir=pipeline.store.directory(job.id);
+const voice=await synthesizeMusic(path.join(dir,'test-voice.wav'),plan.duration);
+const bed=await synthesizeMusic(path.join(dir,'test-bed.wav'),plan.duration);
+const result=await pipeline.render(job.id,{narration:voice.file,music:bed.file,voiceProvenance:'Synthetic test tone, not human or AI speech',musicProvenance:bed.provenance});
+console.log(JSON.stringify({job:result.id,qa:result.qa,video:path.join(dir,'video.mp4')},null,2));

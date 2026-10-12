@@ -125,6 +125,13 @@ test("serializeItem drops clips it can't serve and normalises numbers", () => {
   assert.equal(item.video.url, "/media/videos/x/1/short.mp4");
   assert.equal(item.video.duration_seconds, 34.2);
   assert.equal(item.video.captions_url, null);
+    assert.equal(item.video.captions_burned_in, false);
+    assert.equal(serializeItem({ ...row, opus_prompt_revision: 'resurface-creative-v1' }).video.captions_burned_in, true);
+    assert.equal(serializeItem({ ...row, opus_prompt_revision: 'resurface-fast-v1' }).video.captions_burned_in, true);
+    assert.equal(serializeItem({ ...row, opus_prompt_revision: 'resurface-motion-v4' }).video.captions_burned_in, true);
+    assert.equal(serializeItem({ ...row, opus_prompt_revision: 'resurface-editorial-v8' }).video.captions_burned_in, true);
+    assert.equal(serializeItem({ ...row, opus_prompt_revision: 'resurface-editorial-v9' }).video.captions_burned_in, true);
+    assert.equal(serializeItem({ ...row, opus_prompt_revision: 'resurface-editorial-v10' }).video.captions_burned_in, true);
   assert.equal(item.skill, null);
   assert.deepEqual(item.sources, []);
   assert.equal(serializeItem({ ...row, media_ref: "/var/render/out.mp4" }), null);

@@ -1,0 +1,13 @@
+{
+  "id": "feedback-preview",
+  "version": "1",
+  "name": "Verification Feedback Loop",
+  "category": "AI Engineering",
+  "processed_text": "Explain the workflow: implement a code change, run a test, inspect a failure, correct the implementation, and rerun the test. A passing test only checks the behavior covered by that test. Use a simple animated flow diagram. Do not claim measured performance improvements.",
+  "source_ids": [],
+  "sources": [],
+  "evidence": [],
+  "ingestion_status": "ready",
+  "review_status": "pending",
+  "mode": "preview"
+}

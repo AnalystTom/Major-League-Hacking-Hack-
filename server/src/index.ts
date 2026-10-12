@@ -1,5 +1,6 @@
 // Node entry point: `npm run dev` locally, or `npm run build && npm start` on any Node host.
 
+import './env.js';
 import { serve } from "@hono/node-server";
 import pg from "pg";
 import type { StoredArtifact } from "./ingest/types.js";
@@ -45,6 +46,9 @@ if (process.env.GEMINI_API_KEY) {
   // Each ready artifact gets a skill with tasks and a rendered short (src/outputs). Renders need ffmpeg on
   // this host and media storage: R2_* for the bucket, or MEDIA_LOCAL_WEB_DIR for local wrangler dev.
   const outputs = {
+    // Existing motion installations already configure MOTION_MEDIA_STORAGE.
+    // An explicit provider overrides that detection for other deployments.
+    generateVideos: (process.env.VIDEO_PROVIDER ?? (process.env.MOTION_MEDIA_STORAGE ? "motion" : "builtin")) !== "motion",
     outputs: pool ? new PgOutputStore(pool) : new MemoryOutputStore(),
     openaiKey: options.openaiKey,
     openaiModel: options.openaiModel,

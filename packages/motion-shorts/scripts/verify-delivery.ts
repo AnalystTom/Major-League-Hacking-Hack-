@@ -1,0 +1,14 @@
+import '../src/env';
+import {LocalR2Uploader} from '../src/delivery';
+import {stat} from 'node:fs/promises';
+const [video,captions]=process.argv.slice(2);
+if(!video||!captions)throw new Error('Usage: tsx scripts/verify-delivery.ts <fixture video.mp4> <captions.vtt>');
+const uploader=new LocalR2Uploader();
+await uploader.upload(video,'videos/dev/simulation/short.mp4','video/mp4');
+await uploader.upload(captions,'captions/dev/simulation/short.vtt','text/vtt');
+const url='http://127.0.0.1:8787/media/videos/dev/simulation/short.mp4';
+const head=await fetch(url,{method:'HEAD'});
+if(!head.ok||Number(head.headers.get('content-length'))!==(await stat(video)).size)throw new Error('Frontend does not serve the verified local R2 object');
+const range=await fetch(url,{headers:{Range:'bytes=0-1023'}});
+if(range.status!==206||(await range.arrayBuffer()).byteLength!==1024)throw new Error('Frontend video seeking failed');
+console.log(JSON.stringify({url,headStatus:head.status,rangeStatus:range.status,note:'Local development fixture only; no feed row or cloud upload.'},null,2));

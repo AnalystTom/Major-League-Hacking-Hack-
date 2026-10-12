@@ -1,0 +1,4 @@
+interface:
+  display_name: "Resurface Motion Graphic"
+  short_description: "Create clear, source-backed Resurface motion shorts"
+  default_prompt: "Use $motion-graphic to improve our Resurface shorts with meaningful animation, readable captions, and measured rendering performance."

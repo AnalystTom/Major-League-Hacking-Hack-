@@ -210,3 +210,14 @@ $("[data-signout]").addEventListener("click", async () => {
     onError: (err) => (err.status === 401 ? location.assign("/start") : showError(err)),
   });
 })();
+
+// Settled imports stop polling. A return to the app must still pick up regenerated media.
+let returnRefresh;
+const refreshOnReturn = () => {
+  if (document.hidden) return;
+  clearTimeout(returnRefresh);
+  returnRefresh = setTimeout(() => follower?.refresh(), 100);
+};
+window.addEventListener('focus', refreshOnReturn);
+window.addEventListener('pageshow', refreshOnReturn);
+document.addEventListener('visibilitychange', refreshOnReturn);

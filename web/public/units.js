@@ -68,7 +68,10 @@ export const SKILL_WAIT_CHECKS = 15;
 export function followImports({ onUnits, onItems, onSkills, onError }) {
   let timer = null;
   let skillChecks = 0;
+  let refreshing = false;
   async function refresh() {
+    if (refreshing) return;
+    refreshing = true;
     clearTimeout(timer);
     try {
       // Read the feed after progress so a final ready update cannot stop polling before its clip arrives.
@@ -101,6 +104,8 @@ export function followImports({ onUnits, onItems, onSkills, onError }) {
     } catch (err) {
       onError?.(err);
       if (err.status !== 401) timer = setTimeout(refresh, POLL_MS * 3);
+    } finally {
+      refreshing = false;
     }
   }
   refresh();

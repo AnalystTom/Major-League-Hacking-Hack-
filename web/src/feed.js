@@ -13,7 +13,7 @@ export async function readFeed(sql, unitIds = null) {
     SELECT * FROM (
       SELECT DISTINCT ON (a.id, a.version)
         a.id, a.version, a.name, a.category, a.source_url, a.sources, a.selection_reason, a.created_at,
-        v.id AS video_id, v.media_ref, v.caption_ref, v.duration_seconds, v.feed_order,
+        v.id AS video_id, v.media_ref, v.caption_ref, v.duration_seconds, v.feed_order, v.opus_prompt_revision,
         s.id AS skill_id, s.status AS skill_status
       FROM artifacts a
       JOIN video_results v
@@ -50,6 +50,7 @@ export function serializeItem(row) {
       id: row.video_id,
       url: media,
       captions_url: resolveMediaRef(row.caption_ref),
+      captions_burned_in: ['resurface-creative-v1', 'resurface-fast-v1', 'resurface-visual-v3', 'resurface-motion-v4', 'resurface-distinct-v5', 'resurface-distinct-v6', 'resurface-connected-v7', 'resurface-editorial-v8','resurface-editorial-v9','resurface-editorial-v10'].includes(row.opus_prompt_revision),
       duration_seconds: row.duration_seconds === null ? null : Number(row.duration_seconds),
       feed_order: row.feed_order ?? null,
     },
