@@ -50,8 +50,11 @@ export function createFeed(root) {
     prevBtn.disabled = index === 0;
     nextBtn.disabled = index === SHORTS.length - 1;
     const isSent = sent.has(short.id);
-    sendBtn.disabled = isSent;
-    sendBtn.textContent = isSent ? "Sent to your agents" : "Send to your agents";
+    // The landing page links to sign-up instead of a send button; the sample reel never claims a delivery.
+    if (sendBtn) {
+      sendBtn.disabled = isSent;
+      sendBtn.textContent = isSent ? "Sent to your agents" : "Send to your agents";
+    }
     resetCopy();
 
     clearInterval(loop);
@@ -107,7 +110,7 @@ export function createFeed(root) {
 
   prevBtn.addEventListener("click", () => go(-1));
   nextBtn.addEventListener("click", () => go(1));
-  sendBtn.addEventListener("click", send);
+  sendBtn?.addEventListener("click", send);
   copyBtn.addEventListener("click", copy);
 
   // Clicking a neighbouring short in the filmstrip brings it to the centre.

@@ -6,7 +6,7 @@
   <title>Resurface</title>
   <meta name="description" content="Tutorials stuck in Watch Later. Bring the YouTube videos you saved and Resurface turns them into 30-second shorts, then installs the ones you keep in Claude Code, Codex, Cursor or Hermes.">
   <meta property="og:title" content="Resurface: you saved it, your agent never saw it">
-  <meta property="og:description" content="Your backlog as 30-second shorts. Join the waitlist to hear when Resurface opens.">
+  <meta property="og:description" content="Your backlog as 30-second shorts. Bring your saved videos, watch what's worth keeping, and send it to your coding agent.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <script>
     // Apply the chosen colour palette before first paint: ?palette= wins, then the last pick.
@@ -21,7 +21,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Funnel+Display:wght@400..800&family=Funnel+Sans:wght@400..700&family=Martian+Mono:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
-  <link rel="stylesheet" href="/film.css">
 </head>
 <body>
   <header class="topbar">
@@ -34,7 +33,8 @@
         <a href="#shorts">Shorts</a>
         <a href="#how">How it works</a>
       </nav>
-      <a class="btn btn-small" href="#join">Join the waitlist</a>
+      <a class="topnav-signin" href="/start#signin" data-signin-link>Sign in</a>
+      <a class="btn btn-small" href="/start" data-cta>Get started</a>
     </div>
   </header>
 
@@ -47,13 +47,10 @@
         <span class="line"><span class="kw" style="--i:3">Your</span> <span class="kw" style="--i:4">agent</span> <span class="kw" style="--i:5">never</span> <span class="kw" style="--i:6">saw</span> <span class="kw" style="--i:7">it.</span></span>
       </h1>
       <p class="lede">Resurface turns the bookmarks, Watch Later videos and conference talks you never got to into 30-second shorts. Keep the good ones and they're installed in your coding agent as skills.</p>
-      <form class="signup signup-hero" id="join" data-signup novalidate>
-        <label class="visually-hidden" for="hero-email">Email address</label>
-        <input id="hero-email" name="email" type="email" autocomplete="email" placeholder="Email address" required>
-        <input class="visually-hidden" name="company" tabindex="-1" autocomplete="off" aria-hidden="true">
-        <button type="submit" class="btn">Join the waitlist</button>
-        <p class="form-status" role="status" aria-live="polite"></p>
-      </form>
+      <div class="hero-cta" id="get-started">
+        <a class="btn" href="/start" data-cta>Get started, it's free</a>
+        <p>Create an account, paste the YouTube videos you saved, and watch them back as 30-second shorts.</p>
+      </div>
       <div class="works-with">
         <p>Sends to</p>
         <ul>
@@ -64,130 +61,43 @@
         </ul>
       </div>
 
-      <figure class="film" data-film aria-label="Early access walkthrough: saved content, shorts, skills and agent tasks">
-        <svg class="f-glyphs" width="0" height="0" aria-hidden="true">
-          <symbol id="g-youtube" viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="5" fill="#ff3b30"/><path d="M10 8.6v6.8l5.8-3.4z" fill="#fff"/></symbol>
-          <symbol id="g-x" viewBox="0 0 24 24"><path fill="currentColor" d="M18.24 2.25h3.31l-7.23 8.26 8.5 11.24h-6.65l-5.21-6.82-5.97 6.82H1.68l7.73-8.84L1.25 2.25h6.83l4.71 6.23zm-1.16 17.52h1.83L7.08 4.13H5.12z"/></symbol>
-          <symbol id="g-substack" viewBox="0 0 24 24"><path fill="#ff6719" d="M22.54 8.24H1.46V5.41h21.08zM1.46 10.81V24L12 18.11 22.54 24V10.81zM22.54 0H1.46v2.84h21.08z"/></symbol>
-          <symbol id="g-resurface" viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10 9.5l4.5 2.5-4.5 2.5z" fill="currentColor"/></symbol>
-        </svg>
-
-        <div class="film-screen" data-screen>
-          <div class="f-canvas" data-canvas>
-
-            <!-- 1. Saved: the backlog on YouTube, X and Substack, read into shorts -->
-            <div class="scene is-on" data-scene data-ms="5000" data-caption="You saved them on YouTube, X and Substack. You never went back.">
-              <div class="f-info">
-                <p class="f-chip"><svg><use href="#g-youtube"/></svg><svg class="g-x"><use href="#g-x"/></svg><svg><use href="#g-substack"/></svg>YouTube, X, Substack</p>
-                <p class="f-head">Saved for later.</p>
-                <p class="f-sub">Your videos, threads and posts. Ready to revisit.</p>
-              </div>
-              <ol class="f-vis src" aria-hidden="true">
-                <li class="f-in" style="--d:.1s"><svg><use href="#g-youtube"/></svg><p><small>YouTube</small>Videos saved for later</p></li>
-                <li class="f-in" style="--d:.25s"><svg class="g-x"><use href="#g-x"/></svg><p><small>X</small>Posts worth revisiting</p></li>
-                <li class="f-in" style="--d:.4s"><svg><use href="#g-substack"/></svg><p><small>Substack</small>Reading to come back to</p></li>
-              </ol>
-            </div>
-
-            <!-- 2. Reel: the backlog plays as shorts; keeps are collected -->
-            <div class="scene" data-scene data-ms="5500" data-caption="Resurface turns your backlog into a reel. Keep what matters.">
-              <div class="f-info">
-                <p class="f-chip f-brand"><svg><use href="#g-resurface"/></svg>Resurface</p>
-                <p class="f-head">A reel, not a backlog.</p>
-                <p class="f-sub">Each save becomes a 30-second short of the part worth keeping.</p>
-              </div>
-              <div class="f-vis ph-wrap" aria-hidden="true">
-                <div class="ph">
-                  <div class="ph-track">
-                    <section class="ph-short" style="--acc:var(--sh-signal); --from:.1s; --keep:1.05s">
-                      <i class="ph-bar"></i>
-                      <p class="ph-src"><svg><use href="#g-youtube"/></svg>YouTube</p>
-                      <p class="ph-take">Watch the key idea.</p>
-                      <span class="ph-keep">Keep</span>
-                    </section>
-                    <section class="ph-short" style="--acc:var(--sh-sky); --from:1.8s; --keep:2.85s">
-                      <i class="ph-bar"></i>
-                      <p class="ph-src"><svg class="g-x"><use href="#g-x"/></svg>X</p>
-                      <p class="ph-take">Keep what matters.</p>
-                      <span class="ph-keep">Keep</span>
-                    </section>
-                    <section class="ph-short" style="--acc:var(--sh-coral); --from:3.7s; --keep:4.6s">
-                      <i class="ph-bar"></i>
-                      <p class="ph-src"><svg><use href="#g-substack"/></svg>Substack</p>
-                      <p class="ph-take">Return to the source.</p>
-                      <span class="ph-keep">Keep</span>
-                    </section>
-                  </div>
-                </div>
-                <div class="kp">
-                  <p class="kp-head">How you'll use it</p>
-                  <ol>
-                    <li style="--d:1.2s"><svg><use href="#g-youtube"/></svg>Watch</li>
-                    <li style="--d:3s"><svg class="g-x"><use href="#g-x"/></svg>Keep</li>
-                    <li style="--d:4.75s"><svg><use href="#g-substack"/></svg>Revisit</li>
-                  </ol>
-                </div>
-              </div>
-            </div>
-
-            <!-- 3. Skills: keeps land in the repo -->
-            <div class="scene" data-scene data-ms="4500" data-caption="Skills are coming at launch, linked to what you keep.">
-              <div class="f-info">
-                <p class="f-chip f-brand"><svg><use href="#g-resurface"/></svg>Skills · coming at launch</p>
-                <p class="f-head">Keeps become skills.</p>
-                <p class="f-sub">Skills will be linked to the source you kept.</p>
-              </div>
-              <div class="f-vis repo" aria-hidden="true">
-                <div class="repo-file f-in" style="--d:.2s">
-                  <p class="repo-tab">Skills</p>
-                  <pre>Skills aren't available yet.
-Join the waitlist for early access.</pre>
-                </div>
-              </div>
-            </div>
-
-            <!-- 4. Tasks: the agent runs them -->
-            <div class="scene" data-scene data-ms="5500" data-caption="Agent tasks are coming at launch. Join the waitlist for early access.">
-              <div class="f-info">
-                <p class="f-chip"><span class="logo logo-claude-code"></span>Your agent</p>
-                <p class="f-head">Skills become tasks.</p>
-                <p class="f-sub">Turn what you keep into tasks for your coding agent.</p>
-              </div>
-              <div class="f-vis term" aria-hidden="true">
-                <p class="term-bar"><i></i><i></i><i></i><span>Agent tasks · coming at launch</span></p>
-                <div class="term-body">
-                  <p class="term-note f-in" style="--d:.2s">Agent tasks aren't available yet.</p>
-                  <p class="term-note f-in" style="--d:.5s">We'll email you when Resurface opens.</p>
-                </div>
-              </div>
-            </div>
-
-          </div>
-          <p class="film-caption" data-caption-out aria-live="polite"></p>
-        </div>
-
-        <figcaption class="film-controls">
-          <button type="button" class="film-toggle" data-toggle aria-label="Pause demo" data-state="playing">
-            <svg class="i-pause" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="2" width="3.5" height="12" rx="1"/><rect x="9.5" y="2" width="3.5" height="12" rx="1"/></svg>
-            <svg class="i-play" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9.5-5.5z"/></svg>
-          </button>
-          <ol class="chapters">
-            <li><button type="button" data-chapter><span>Saved</span><i></i></button></li>
-            <li><button type="button" data-chapter><span>Reel</span><i></i></button></li>
-            <li><button type="button" data-chapter><span>Skills</span><i></i></button></li>
-            <li><button type="button" data-chapter><span>Tasks</span><i></i></button></li>
-          </ol>
-          <p class="film-time" aria-hidden="true" data-time>0:00 / 0:21</p>
-        </figcaption>
+      <figure class="hero-demo">
+        <video class="video-frame" controls playsinline preload="metadata" poster="/resurface-reel-poster.jpg" aria-label="Resurface preview with sound">
+          <source src="/resurface-reel.mp4" type="video/mp4">
+          <a href="/resurface-reel.mp4">Watch the Resurface preview</a>
+        </video>
+        <figcaption>Resurface in 20 seconds. Press play with sound.</figcaption>
       </figure>
     </section>
 
-    <section class="feed" id="shorts" aria-labelledby="feed-title">
+    <!-- ============ Shorts feed ============ -->
+    <section class="feed" id="shorts" data-feed-root aria-labelledby="feed-title">
       <div class="section-head">
-        <h2 id="feed-title">Your backlog, as shorts</h2>
-        <p>Shorts aren't available yet. Join the waitlist and we'll email you when Resurface opens.</p>
+        <h2 id="feed-title">Swipe through your backlog</h2>
+        <p>Five sample takeaways from saved posts, repos and talks. Move with the arrows, then send the ones worth keeping.</p>
       </div>
-      <div class="nudge"><a class="btn" href="#join">Join the waitlist</a></div>
+      <div class="fb-strip">
+        <div class="fb-viewport" data-viewport>
+          <div class="fb-track" data-track></div>
+        </div>
+      </div>
+      <div class="fb-panel">
+        <div class="fb-nav">
+          <button type="button" class="arrow" data-prev aria-label="Previous short"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M12.5 5l-5 5 5 5"/></svg></button>
+          <p class="feed-counter" data-counter>1 of 5</p>
+          <button type="button" class="arrow" data-next aria-label="Next short"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7.5 5l5 5-5 5"/></svg></button>
+        </div>
+        <p class="feed-why" data-why></p>
+        <div class="feed-actions">
+          <button type="button" class="btn-copy" data-copy>Copy to clipboard</button>
+          <a class="btn btn-send" href="/start" data-cta>Get started</a>
+        </div>
+        <p class="feed-status" data-feed-status role="status" aria-live="polite"></p>
+      </div>
+      <div class="nudge">
+        <p>That was five samples. Your backlog is probably a few hundred.</p>
+        <a class="btn" href="/start" data-cta>Get started</a>
+      </div>
     </section>
 
     <!-- ============ How it works ============ -->
@@ -215,11 +125,20 @@ Join the waitlist for early access.</pre>
       </ol>
     </section>
 
+    <section class="walkthrough" aria-labelledby="walkthrough-title">
+      <div class="section-head">
+        <h2 id="walkthrough-title">Watch the full walkthrough</h2>
+        <p>See how saved content becomes shorts and skills for your coding agent.</p>
+      </div>
+      <iframe class="video-frame" src="https://www.loom.com/embed/29f84662ff2245c1ad29d8207f300cc9" title="Resurface: turn bookmarks into coding agent skills" loading="lazy" allow="fullscreen; picture-in-picture" allowfullscreen></iframe>
+      <p class="watch-link"><a href="https://www.loom.com/share/29f84662ff2245c1ad29d8207f300cc9" target="_blank" rel="noopener">Watch on Loom</a></p>
+    </section>
+
   </main>
 
   <footer class="footer">
     <p>Resurface. Built at AI Engineer NYC 2026.</p>
-    <a href="#join">Join the waitlist</a>
+    <a href="/start" data-cta>Get started</a>
   </footer>
 
   <aside class="palette-picker" data-palette-picker aria-label="Colour palette" hidden>

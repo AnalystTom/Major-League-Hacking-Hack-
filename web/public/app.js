@@ -1,15 +1,20 @@
-// Page wiring: the demo film and the waitlist.
+// Page wiring: the sample shorts feed, palette picker and Get started call to action.
 
-import { createFilm } from "./film.js";
+import { createFeed } from "./feed.js";
 
-createFilm(document.querySelector("[data-film]")).refresh();
+const feed = createFeed(document.querySelector("[data-feed-root]"));
+feed.refresh();
 
-// "Join the waitlist" links jump to the hero form and put the cursor in the email field.
-document.querySelectorAll('a[href="#join"]').forEach((a) =>
-  a.addEventListener("click", () => {
-    setTimeout(() => document.querySelector("#hero-email").focus({ preventScroll: true }), 350);
-  })
-);
+// Arrow keys drive the feed while it's on screen, without hijacking form fields.
+let feedInView = false;
+new IntersectionObserver(([e]) => (feedInView = e.isIntersecting), { threshold: 0.5 }).observe(feed.root);
+
+document.addEventListener("keydown", (e) => {
+  if (e.target.closest("input, textarea, select, [role='radiogroup'], [data-reel-track]")) return;
+  if (!feedInView && !feed.root.contains(document.activeElement)) return;
+  if (feed.key(e)) e.preventDefault();
+});
+
 
 // ---------- Colour palette picker (shown with ?pick) ----------
 
@@ -35,53 +40,17 @@ picker.addEventListener("click", (e) => {
 });
 markPalette();
 
-// ---------- Waitlist ----------
+// ---------- Get started ----------
 
-for (const form of document.querySelectorAll("[data-signup]")) {
-  const status = form.querySelector(".form-status");
-  const button = form.querySelector('button[type="submit"]');
-  const emailInput = form.querySelector('input[type="email"]');
-  const say = (text, tone) => {
-    status.textContent = text;
-    status.dataset.tone = tone;
-  };
-
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const data = new FormData(form);
-    const email = String(data.get("email") || "").trim();
-    if (!email || !emailInput.checkValidity()) {
-      say("Enter an email address like you@example.com.", "error");
-      emailInput.focus();
-      return;
-    }
-
-    button.disabled = true;
-    say("Joining…", "pending");
-    try {
-      const res = await fetch("/api/waitlist", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          email,
-          agent: data.get("agent"),
-          sources: data.getAll("sources"),
-          company: data.get("company"),
-        }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok || body.joined !== true) throw new Error(body.error || "The waitlist is unavailable right now. Try again in a minute.");
-      say(
-        body.alreadyJoined
-          ? "You're already on the list. We'll email you when your spot opens."
-          : "You're on the list. We'll email you when your spot opens.",
-        "ok"
-      );
-      form.reset();
-    } catch (err) {
-      say(err.message, "error");
-    } finally {
-      button.disabled = false;
-    }
-  });
-}
+// Signed-in visitors go straight to their feed instead of onboarding.
+fetch("/api/me", { credentials: "same-origin" })
+  .then((res) => (res.ok ? res.json() : null))
+  .then((me) => {
+    if (!me?.user) return;
+    document.querySelectorAll("[data-cta]").forEach((a) => {
+      a.href = "/app";
+      a.textContent = "Open your feed";
+    });
+    document.querySelector("[data-signin-link]")?.remove();
+  })
+  .catch(() => {});
