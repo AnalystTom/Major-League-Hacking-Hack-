@@ -569,7 +569,7 @@ function buildSound(ac, out, t0, T0){
     if (arpOn.has(id)) GROOVE === 'electro' ? SYN.arp(e, CH[bar][n % 3] * (n % 8 < 4 ? 1 : 2)) : (n % 2 === 0 && SYN.arp(e, CH[bar][(n / 2) % 3], .02, 'sine'));
   }
   SC.forEach((s, i) => {
-    for (const [lt, name, ...args] of S[s.id].cues(s.d)){ const e = s.t0 + lt; if (e < 0 || e > DUR) continue; SYN[name](e, ...args); }
+    for (const [lt, name, ...args] of S[s.id].cues(s.d, s)){ const e = s.t0 + lt; if (e < 0 || e > DUR) continue; SYN[name](e, ...args); }
     if (i > 0) SYN.whoosh(s.t0 - .12, .2, .12);
   });
 }
