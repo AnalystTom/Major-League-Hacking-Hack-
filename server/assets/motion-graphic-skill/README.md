@@ -5,9 +5,12 @@ vendored from upstream commit `21e875e` (v0.4.0). `server/src/outputs/render/mot
 
 - `scripts/record.js`, `scripts/assemble.py`: the skill's recorder and part assembler, unmodified.
   `scripts/package.json` only marks them CommonJS inside this ESM package.
-- `resurface/_shell.html`: the skill's `assets/engine.html` split with `assemble.py split`, with two changes:
-  a portrait 1080x1920 canvas instead of 16:9, and the Resurface reel fonts (Funnel Display/Sans, Martian Mono,
-  Instrument Serif) in place of the engine's.
+- `resurface/_shell.html`: the skill's `assets/engine.html` split with `assemble.py split`, with three changes:
+  a portrait 1080x1920 canvas instead of 16:9, the Resurface reel fonts (Funnel Display/Sans, Martian Mono,
+  Instrument Serif) in place of the engine's, and `cues(d, scene)` receiving its scene so a cue can follow that
+  scene's move.
+- `REFERENCE.md`: the reel the shorts follow, the three posts it was made from, and where each rule lives
+  (the script prompt, the grounds, the moves).
 - `resurface/*.js`, `resurface/head.html`: the Resurface template, written for this repo. Each short's `DATA`
   (source, one entry per narrated scene with its measured length, and the skill if it's ready) fills the
   `/*DATA*/null` placeholder in `config.js`.

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { pcmToWav } from "../../src/outputs/render/tts.js";
+import { SCRIPT_SYSTEM_PROMPT } from "../../src/outputs/render/script.js";
 import type { ReadyArtifact } from "../../src/outputs/types.js";
 import type { Kind, MemoryOutputStore } from "../../src/outputs/store.js";
 
@@ -50,7 +51,7 @@ export function outputsFetch(a: ReadyArtifact, opts: { skill?: unknown; ttsStatu
     if (u.includes("openai")) {
       if (opts.openaiStatus) return new Response("boom", { status: opts.openaiStatus });
       const system: string = JSON.parse(init!.body!).messages[0].content;
-      const isScript = system.includes("narration for a 30-45 second");
+      const isScript = system === SCRIPT_SYSTEM_PROMPT;
       calls[isScript ? "script" : "skill"]++;
       const content = isScript ? scriptReply(a) : (opts.skill ?? skillReply(a));
       return Response.json({ choices: [{ message: { content: JSON.stringify(content) } }] });

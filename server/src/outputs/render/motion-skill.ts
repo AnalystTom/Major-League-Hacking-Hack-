@@ -24,7 +24,7 @@ const RECORD_TIMEOUT_MS = 40 * 60_000;
 /** The ready skill an end card can name; null while it's still being written or if it failed. */
 export interface SkillCard { name: string; tasks: number }
 
-export interface MotionScene { d: number; code: string; theme: string; text: string; sub: string; label: string }
+export interface MotionScene { d: number; code: string; theme: string; text: string; sub: string; label: string; move: string; swap: string }
 export interface MotionSpec {
   id: string;
   category: string;
@@ -33,7 +33,8 @@ export interface MotionSpec {
   skill: { name: string; path: string; tasks: string } | null;
 }
 
-const THEMES = ["night", "signal", "paper"];
+/** Grounds for scenes the script left open, in the reel's order of cuts. Scene 1 is always night, the end card paper. */
+const ROTATION = ["signal", "cobalt", "night", "paper"];
 const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
 /** At most max characters, cut at a word boundary when there is one. */
 const clip = (s: string, max: number) => {
@@ -58,20 +59,39 @@ function sourceOf(a: ReadyArtifact): MotionSpec["source"] {
   return { kind, platform, title: clip(text, 110), byline: m ? m[1] : "", tag: `${platform.toUpperCase()}${more}` };
 }
 
+/** What the template needs from a script scene; aside, move, swap and ground come from script-v2. */
+export interface SpecScene { on_screen_text: string; narration_text: string; aside?: string; move?: string; swap?: string; ground?: string }
+
+/** One ground per scene: night first, paper last, the script's choice between, and never the same twice in a row. */
+export function groundsFor(scenes: SpecScene[]): string[] {
+  const last = scenes.length - 1, out: string[] = [];
+  scenes.forEach((s, i) => {
+    if (i === 0) return out.push("night");
+    if (i === last) return out.push("paper");
+    const wanted = [s.ground, ...ROTATION.slice((i - 1) % 4), ...ROTATION].filter((g): g is string => !!g && ROTATION.includes(g));
+    out.push(wanted.find((g) => g !== out[i - 1] && !(i === last - 1 && g === "paper")) ?? "signal");
+  });
+  return out;
+}
+
 /** The template's data: one entry per narrated scene, timed to its measured narration slot. */
-export function motionSpec(a: ReadyArtifact, scenes: { on_screen_text: string; narration_text: string }[], slots: Slot[], skill: SkillCard | null): MotionSpec {
-  const last = scenes.length - 1;
+export function motionSpec(a: ReadyArtifact, scenes: SpecScene[], slots: Slot[], skill: SkillCard | null): MotionSpec {
+  const last = scenes.length - 1, grounds = groundsFor(scenes);
   return {
     id: a.id.slice(0, 8),
     category: oneLine(a.category ?? a.name),
     source: sourceOf(a),
     scenes: scenes.map((s, i) => {
-      const text = clip(oneLine(s.on_screen_text), 90), sub = clip(firstSentence(s.narration_text), 140);
+      // script-v2 writes its own aside; an older script's aside was the narration's first sentence.
+      const text = clip(oneLine(s.on_screen_text), 90);
+      const sub = s.aside !== undefined ? clip(oneLine(s.aside), 90) : clip(firstSentence(s.narration_text), 140);
+      const move = i === last ? "slam" : s.move ?? "slam";
       return {
         d: Math.round((slots[i].end - slots[i].start) * 100) / 100,
         code: i === 0 ? "SAVED" : i === last ? "SKILL" : "LESSON",
-        theme: i === last && last > 0 ? "paper" : THEMES[i % THEMES.length],
+        theme: grounds[i],
         text, sub: i === last || sub.toLowerCase() === text.toLowerCase() ? "" : sub, label: "",
+        move, swap: move === "slam" || move === "count" ? "" : clip(oneLine(s.swap ?? ""), 24),
       };
     }),
     skill: skill && {
