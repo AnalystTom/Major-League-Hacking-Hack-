@@ -1,10 +1,8 @@
-// Page wiring: the demo film, the sample shorts feed, and the Get started call to action.
+// Page wiring: the sample shorts feed, palette picker and Get started call to action.
 
 import { createFeed } from "./feed.js";
-import { createFilm } from "./film.js";
 
 const feed = createFeed(document.querySelector("[data-feed-root]"));
-createFilm(document.querySelector("[data-film]")).refresh();
 feed.refresh();
 
 // Arrow keys drive the feed while it's on screen, without hijacking form fields.

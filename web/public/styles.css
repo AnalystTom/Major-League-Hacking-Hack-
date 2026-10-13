@@ -1,6 +1,6 @@
 /* Resurface: your backlog, as shorts.
    Four colour palettes share one set of tokens; pick with ?palette= (or ?pick for the swatch picker).
-   Shorts and the demo film always play on a dark "screen". */
+   Video previews play on a dark screen. */
 
 :root {
   --display: "Funnel Display", "Funnel Sans", system-ui, sans-serif;
@@ -133,6 +133,18 @@ button { font: inherit; color: inherit; }
   clip: rect(0 0 0 0); white-space: nowrap; padding: 0; margin: -1px; border: 0;
 }
 
+/* ---------- Video previews ---------- */
+
+.hero-demo { margin: clamp(48px, 7vw, 88px) 0 0; }
+.video-frame {
+  display: block; width: 100%; aspect-ratio: 16 / 9; border: 0;
+  background: var(--night); border-radius: 24px; overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.hero-demo figcaption, .watch-link { margin-top: 12px; font-size: .9375rem; color: var(--ink-soft); }
+.walkthrough { background: var(--bg-2); }
+.walkthrough .video-frame { margin-top: 32px; }
+
 /* ---------- Buttons ---------- */
 
 .btn {
@@ -226,7 +238,7 @@ button { font: inherit; color: inherit; }
    Sections
    ====================================================== */
 
-.feed, .steps { padding: clamp(72px, 10vw, 128px) var(--inline); }
+.feed, .steps, .walkthrough { padding: clamp(72px, 10vw, 128px) var(--inline); }
 .feed { background: var(--bg-2); }
 
 .section-head { max-width: 46rem; }
