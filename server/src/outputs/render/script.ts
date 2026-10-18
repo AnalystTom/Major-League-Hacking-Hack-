@@ -4,7 +4,7 @@
 
 import { z } from "zod";
 import { chatJson } from "../openai.js";
-import type { OpenAIOptions, ReadyArtifact } from "../types.js";
+import type { NicrronOptions, ReadyArtifact } from "../types.js";
 
 export const SCRIPT_PROMPT_REVISION = "script-v2";
 
@@ -111,7 +111,7 @@ export function validateScript(raw: unknown, a: ReadyArtifact): DraftScene[] {
   });
 }
 
-export async function writeScript(a: ReadyArtifact, o: OpenAIOptions): Promise<DraftScene[]> {
+export async function writeScript(a: ReadyArtifact, o: NicrronOptions): Promise<DraftScene[]> {
   const raw = await chatJson({
     ...o, system: SCRIPT_SYSTEM_PROMPT, step: "script", ref: a.id,
     user: JSON.stringify({

@@ -748,6 +748,15 @@ a.reel-btn { text-decoration: none; }
   .topbar-tasks { display: none; }
   .topbar-pill { padding: 6px 10px; font-size: .8125rem; }
   .status > summary { padding: 6px 10px; font-size: .8125rem; }
+  /* 44 px tap targets; the bar's padding shrinks so it stays 57 px tall. */
+  .app-bar .topbar-inner { padding-block: 6px; }
+}
+
+/* Touch targets: at least 44 px tall on a phone. */
+@media (max-width: 640px) {
+  .btn-small, .topbar-pill, .status > summary, .topnav-signin, .wordmark, .watch-link a, .footer a, .onboard-switch .linkish { display: inline-flex; align-items: center; min-height: 44px; }
+  .btn-small, .topbar-pill { justify-content: center; }
+  .add-open { min-width: 44px; }
 }
 
 /* ---------- How it works ---------- */

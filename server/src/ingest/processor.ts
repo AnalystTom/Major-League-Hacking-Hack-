@@ -75,7 +75,7 @@ async function processNow(unitIds: string[], o: ProcessorOptions): Promise<Proce
   const units = others.length ? [...extracted, ...(await waitForSettled(others, o))] : extracted;
   summary.waitedFor = units.length - extracted.length;
 
-  if (!o.openaiKey) { summary.skipped = "OPENAI_API_KEY not configured"; return summary; }
+  if (!o.openaiKey) { summary.skipped = "NICRRON_API_KEY not configured"; return summary; }
 
   const readyIds = units.filter((u) => u.status === "ready").map((u) => u.id);
   // Taken as in flight in the same tick as the check, before any await, so a concurrent request can't digest them too.

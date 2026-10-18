@@ -26,13 +26,13 @@ visitors see "Open your feed" on the landing page.
 Browser ──POST /api/auth/signup──▶ Worker ──INSERT users, sessions──▶ D1   (httpOnly cookie back)
         ──POST /api/imports──▶ Worker ──INSERT ingested_units, user_imports──▶ D1
                                   └──POST PROCESSOR_URL {unit_ids}──▶ Processor (server/src)
-Processor: Gemini extraction → Digestion Prompt (OpenAI) → artifacts
-           → skill + up to 3 tasks (OpenAI)             ──▶ skill_results, action_items
-           → script (OpenAI) → narration (Gemini TTS) → ffmpeg ──PUT mp4, vtt, m4a──▶ R2 ──▶ video_results
+Processor: Gemini extraction → Digestion Prompt (Nicrron) → artifacts
+           → skill + up to 3 tasks (Nicrron)             ──▶ skill_results, action_items
+           → script (Nicrron) → narration (Gemini TTS) → ffmpeg ──PUT mp4, vtt, m4a──▶ R2 ──▶ video_results
 Browser ──GET /api/imports, /api/feed?scope=mine, /api/skills (every 4 s while anything moves)──▶ Worker ──▶ D1
         ──POST /api/handoffs {skill_ids}──▶ Worker ──INSERT agent_briefs──▶ D1
                                   └──POST …/api/ingest/handoff {brief_id}──▶ Processor
-Processor: merge the picked skills → Handoff refinement (OpenAI) → prompt per agent and mode ──▶ agent_briefs
+Processor: merge the picked skills → Handoff refinement (Nicrron) → prompt per agent and mode ──▶ agent_briefs
 Browser ──GET /api/handoffs/:id (every 3 s until ready)──▶ Worker   then copy or download the prompt into the agent
         ──GET /media/videos/…mp4 (Range)──▶ Worker ──▶ R2
         ──POST /api/handoffs {skill_ids}──▶ Worker ──INSERT agent_briefs──▶ D1
@@ -94,12 +94,12 @@ Node, in `server/src`. `POST /api/ingest/process` takes `{ "unit_ids": [...] }` 
 
 1. **Extract** (`ingest/`): claim pending units, read each video's window with Gemini, then `ready` with the
    evidence, or `failed` with the actual error. A unit that's already `ready` isn't read again.
-2. **Digest**: the Digestion Prompt (OpenAI) writes `artifacts` (`project_context_id` null) and
+2. **Digest**: the Digestion Prompt (Nicrron) writes `artifacts` (`project_context_id` null) and
    `artifact_exclusions` with reasons. A digest that fails is stored as a failed artifact with its error and is
    retried, up to 3 times per unit.
 3. **Skill** (`outputs/skills.ts`): one ready artifact becomes a `SKILL.md` (front matter `name` and `description`,
    a review warning, `## Sources`) and up to three tasks, each with steps and a `completion_check`.
-4. **Short** (`outputs/render/`): OpenAI writes a 4–6 scene script (about 70–110 words of narration). Gemini TTS
+4. **Short** (`outputs/render/`): Nicrron writes a 4–6 scene script (about 70–110 words of narration). Gemini TTS
    speaks each scene, and the scene times come from the measured speech. Captions are WebVTT cues spread over
    that speech. ffmpeg composes one title card per scene over the narration, 1080×1920 H.264 + AAC with
    `+faststart`. There's no music in v0.
@@ -116,10 +116,10 @@ R2 keys (resolved by the Worker as `r2:<key>`):
 taken over after 60 minutes (`server/src/claims.ts`), which is longer than the slowest extraction or render. A
 worker whose claim was taken over can't write its result.
 
-**Configuration** (`server/.env.example`): `GEMINI_API_KEY` and `INGEST_TOKEN` mount ingestion. `OPENAI_API_KEY`
+**Configuration** (`server/.env.example`): `GEMINI_API_KEY` and `INGEST_TOKEN` mount ingestion. `NICRRON_API_KEY`
 enables digests, skills and scripts; without it, units are only extracted. `D1_URL and D1_TOKEN` enables the sweeps.
 Media goes to R2 through its S3 API (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`),
-or to local wrangler dev with `MEDIA_LOCAL_WEB_DIR`. Optional: `OPENAI_MODEL`, `GEMINI_MODEL`, `GEMINI_TTS_MODEL`,
+or to local wrangler dev with `MEDIA_LOCAL_WEB_DIR`. Optional: `NICRRON_MODEL`, `GEMINI_MODEL`, `GEMINI_TTS_MODEL`,
 `GEMINI_TTS_VOICE`, `RENDER_FONT`, `SWEEP_INTERVAL_MS`. Renders need `ffmpeg` and `ffprobe` on the host.
 
 **Hosting** is PR #5: a Cloudflare Container behind a `resurface-processor` Worker that sleeps when idle, to stay

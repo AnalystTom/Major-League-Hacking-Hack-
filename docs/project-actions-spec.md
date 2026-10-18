@@ -314,8 +314,8 @@ processor the web Worker calls with `{ unit_ids }`.
 
 The POST body is `{ links, request, window_seconds? }`, where `request` is the
 categorization instruction. It accepts 1–20 links and a 30–3,600 second window.
-Gemini extracts source evidence; `OPENAI_API_KEY` enables digestion (otherwise it
-reports skipped). `GEMINI_MODEL` and `OPENAI_MODEL` select the configured models.
+Gemini extracts source evidence; `NICRRON_API_KEY` enables digestion (otherwise it
+reports skipped). `GEMINI_MODEL` and `NICRRON_MODEL` select the configured models.
 `DATABASE_URL` selects TigerData storage; without it, results remain in memory.
 Jobs are process-local and are lost on restart. From `server/`, the CLI uses
 `npm run ingest -- "<request>" <youtube-url>...` with the same provider and project configuration.

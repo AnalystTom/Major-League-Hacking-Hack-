@@ -30,7 +30,7 @@ export async function runHandoff(briefId: string, o: HandoffOptions): Promise<"r
   }
   if (!claimed) return "not_claimed";
   try {
-    if (!o.openaiKey) throw new Error("OPENAI_API_KEY isn't configured on the processor");
+    if (!o.openaiKey) throw new Error("NICRRON_API_KEY isn't configured on the processor");
     const skills = await o.store.loadSkills(claimed.skill_result_ids);
     if (skills.length !== claimed.skill_result_ids.length) {
       throw new Error(`${claimed.skill_result_ids.length - skills.length} of the selected skills aren't ready any more`);

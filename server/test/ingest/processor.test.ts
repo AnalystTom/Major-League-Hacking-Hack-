@@ -115,13 +115,13 @@ test("waits for a unit another worker is extracting, then digests it", async () 
   assert.equal(calls.gemini, 0);
 });
 
-test("without an OpenAI key units are extracted but not digested", async () => {
+test("without an Nicrron key units are extracted but not digested", async () => {
   const store = new MemoryStore();
   const unit = pendingUnit("VQy50fuxI34");
   await store.saveUnit(unit);
   const { impl, calls } = mockFetch();
   const s = await processUnits([unit.id], { ...base(store, impl), openaiKey: undefined });
-  assert.match(s.skipped!, /OPENAI_API_KEY/);
+  assert.match(s.skipped!, /NICRRON_API_KEY/);
   assert.equal((await store.getUnits([unit.id]))[0].status, "ready");
   assert.equal(calls.openai, 0);
   assert.equal(store.artifacts.length, 0);

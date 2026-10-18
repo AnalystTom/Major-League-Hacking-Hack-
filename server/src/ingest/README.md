@@ -18,8 +18,8 @@ Every route needs `Authorization: Bearer $INGEST_TOKEN`. The web Worker sends it
 | `NIMBLE_API_KEY` | [Nimble](https://docs.nimbleway.com) key, used to read public Substack posts (`ingested_units.content_type = 'substack_post'`). Without it Substack units fail with "NIMBLE_API_KEY is not configured". |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | Extraction. Model defaults to `gemini-3.5-flash-lite`. |
 | `WINDOW_SECONDS` | Seconds extracted from each unit's start time (30-3600, default 3600, i.e. 1 hour). |
-| `OPENAI_API_KEY`, `OPENAI_MODEL` | Digestion. Without a key units are extracted but not digested. |
-| `OPENAI_MAX_OUTPUT_TOKENS` | Digest output cap including reasoning tokens (default 20000). Raise it if digests report hitting the cap. |
+| `NICRRON_API_KEY`, `NICRRON_MODEL` | Digestion. Without a key units are extracted but not digested. |
+| `NICRRON_MAX_OUTPUT_TOKENS` | Digest output cap including reasoning tokens (default 20000). Raise it if digests report hitting the cap. |
 | `DIGESTION_REQUEST` | Categorization request stored with each Digestion Prompt revision. |
 | `D1_URL`, `D1_TOKEN` | Authenticated processor Worker D1 bridge. Enables the sweep; without both, ephemeral CLI runs use memory. |
 | `SWEEP_INTERVAL_MS` | Pending-unit sweep interval (default 60000). |

@@ -64,10 +64,10 @@ test("skill names are normalised to kebab-case", () => {
   assert.equal(slugify("x".repeat(80)).length, 64);
 });
 
-test("an OpenAI error surfaces with its status", async () => {
+test("an Nicrron error surfaces with its status", async () => {
   const a = artifact();
   const { impl } = outputsFetch(a, { openaiStatus: 429 });
-  await assert.rejects(generateSkill(a, { apiKey: "k", fetchImpl: impl }), /OpenAI HTTP 429/);
+  await assert.rejects(generateSkill(a, { apiKey: "k", fetchImpl: impl }), /Nicrron HTTP 429/);
 });
 
 test("a hostile video title can't add lines or Markdown to the SKILL.md", async () => {
