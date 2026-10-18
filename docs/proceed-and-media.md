@@ -116,11 +116,11 @@ R2 keys (resolved by the Worker as `r2:<key>`):
 taken over after 60 minutes (`server/src/claims.ts`), which is longer than the slowest extraction or render. A
 worker whose claim was taken over can't write its result.
 
-**Configuration** (`server/.env.example`): `GEMINI_API_KEY` and `INGEST_TOKEN` mount ingestion. `NICRRON_API_KEY`
-enables digests, skills and scripts; without it, units are only extracted. `D1_URL and D1_TOKEN` enables the sweeps.
+**Configuration**: see the [ingestion README](../server/src/ingest/README.md) for provider credentials, models,
+output caps and sweep settings, and [`server/.env.example`](../server/.env.example) for local settings.
 Media goes to R2 through its S3 API (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`),
-or to local wrangler dev with `MEDIA_LOCAL_WEB_DIR`. Optional: `NICRRON_MODEL`, `GEMINI_MODEL`, `GEMINI_TTS_MODEL`,
-`GEMINI_TTS_VOICE`, `RENDER_FONT`, `SWEEP_INTERVAL_MS`. Renders need `ffmpeg` and `ffprobe` on the host.
+or to local wrangler dev with `MEDIA_LOCAL_WEB_DIR`. Optional render settings: `GEMINI_TTS_MODEL`,
+`GEMINI_TTS_VOICE`, `RENDER_FONT`. Renders need `ffmpeg` and `ffprobe` on the host.
 
 **Hosting** is PR #5: a Cloudflare Container behind a `resurface-processor` Worker that sleeps when idle, to stay
 around $5–10 a month. It isn't deployed. It needs Workers Paid and a Workers Builds connection.
