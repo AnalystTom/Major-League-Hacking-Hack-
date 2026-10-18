@@ -731,11 +731,12 @@ a.reel-btn { text-decoration: none; }
 
 @media (max-width: 640px) {
   .app-page { --bar: 57px; }
+  .app-page:has(.topbar-pill:not([hidden])) { --bar: 111px; }
   .stage { padding: 0; }
   .app-page .reel, .frame-card { --h: calc(100svh - var(--bar)); width: 100vw; }
   .app-page .reel-track, .frame-card { border-radius: 0; }
   .app-page .reel-counter { display: none; }
-  /* Icon-only wordmark and a "+" add button keep the bar to one row at 390 px. */
+  /* Populated controls wrap to two rows while retaining their touch targets. */
   .app-bar .btn-small { padding: 9px 12px; }
   .app-bar .add-label { display: none; }
   .add-open span[aria-hidden] { font-size: 1.25rem; line-height: .8; }
@@ -744,11 +745,11 @@ a.reel-btn { text-decoration: none; }
      filter makes it the containing block for this fixed panel. */
   .status-panel { position: fixed; left: 12px; right: 12px; top: calc(var(--bar) + 6px); width: auto; }
   .app-bar .wordmark { display: none; }
-  .app-bar .topbar-inner { justify-content: flex-end; }
+  .app-bar .topbar-inner { justify-content: flex-end; flex-wrap: wrap; min-height: calc(var(--bar) - 1px); }
   .topbar-tasks { display: none; }
   .topbar-pill { padding: 6px 10px; font-size: .8125rem; }
   .status > summary { padding: 6px 10px; font-size: .8125rem; }
-  /* 44 px tap targets; the bar's padding shrinks so it stays 57 px tall. */
+  /* 44 px tap targets with 6 px vertical padding per row. */
   .app-bar .topbar-inner { padding-block: 6px; }
 }
 
