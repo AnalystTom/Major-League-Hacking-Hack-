@@ -3,7 +3,7 @@
 
 export interface Usage {
   step: "extract" | "digest" | "skill" | "script" | "tts" | "handoff";
-  provider: "gemini" | "openai";
+  provider: "gemini" | "nicrron";
   model: string;
   input_tokens: number | null;
   output_tokens: number | null;

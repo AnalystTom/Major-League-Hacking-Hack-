@@ -2,7 +2,7 @@
 // extraction -> Digestion Prompt artifacts -> one skill per artifact -> one merged agent handoff.
 //
 // usage: npm run handoff -- [--out <dir>] <youtube-url>...
-// env: GEMINI_API_KEY, OPENAI_API_KEY; optional D1_URL and D1_TOKEN (also stores units, artifacts and skills), DIGESTION_REQUEST.
+// env: GEMINI_API_KEY, NICRRON_API_KEY; optional D1_URL and D1_TOKEN (also stores units, artifacts and skills), DIGESTION_REQUEST.
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -24,8 +24,8 @@ const links = args;
 if (links.length === 0) { console.error("usage: npm run handoff -- [--out <dir>] <youtube-url>..."); process.exit(2); }
 const need = (k: string) => process.env[k] || (() => { throw new Error(`${k} is not set`); })();
 const geminiKey = need("GEMINI_API_KEY");
-const openaiKey = need("OPENAI_API_KEY");
-const model = process.env.OPENAI_MODEL;
+const openaiKey = need("NICRRON_API_KEY");
+const model = process.env.NICRRON_MODEL;
 
 const db = databaseFromEnv();
 const store: Store = db ? new D1Store(db) : new MemoryStore();

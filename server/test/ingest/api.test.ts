@@ -38,7 +38,7 @@ test("POST /imports reports per-link state; bad link shows its error", async () 
 test("API returns extracted evidence and stores digested artifacts", async () => {
   const store = new MemoryStore();
   const fetchImpl = (async (url: string, init: { body: string }) => {
-    if (String(url).includes("openai")) {
+    if (String(url).includes("nicrron")) {
       const unitId = JSON.parse(JSON.parse(init.body).messages[1].content).units[0].ref;
       return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
         artifacts: [{ name: "a", source_ids: [unitId], category: "c", processed_text: "t", selection_reason: "r",
@@ -109,7 +109,7 @@ test("failed artifact storage is not reported as a ready digest", async () => {
   const store = new MemoryStore();
   store.saveArtifacts = async () => { throw new Error("artifact write failed"); };
   const app = createIngestApp({ token: "test-token", devImports: true, geminiKey: "k", openaiKey: "a", store,
-    fetchImpl: (async (url) => String(url).includes("openai")
+    fetchImpl: (async (url) => String(url).includes("nicrron")
       ? Response.json({ choices: [{ message: { content: JSON.stringify({ artifacts: [], exclusions: [] }) } }] })
       : ok()) as typeof fetch });
   const { id } = await (await post(app, { links: ["https://youtu.be/VQy50fuxI34"], request: "r" })).json();

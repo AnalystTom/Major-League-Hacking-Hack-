@@ -68,7 +68,7 @@ export function createIngestApp(o: ApiOptions): Hono {
       }
     }));
     const ready = job.units.filter((u) => u.status === "ready");
-    if (!o.openaiKey) { job.digest = { ...EMPTY_DIGEST, status: "skipped", error: "OPENAI_API_KEY not configured" }; return; }
+    if (!o.openaiKey) { job.digest = { ...EMPTY_DIGEST, status: "skipped", error: "NICRRON_API_KEY not configured" }; return; }
     if (ready.length === 0) { job.digest = { ...EMPTY_DIGEST, status: "skipped", error: "no successfully extracted sources" }; return; }
     job.digest.status = "running";
     try {

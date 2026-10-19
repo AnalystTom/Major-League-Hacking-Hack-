@@ -191,7 +191,7 @@ One video result per `(artifact_id, artifact_version)` in v0. Retry updates that
 Processing `ready` requires valid script, prompt revision, nonempty code/media/asset references, music provenance, and positive measured duration. A storage reference alone is insufficient: the pipeline must verify the files exist and the final video plays with narration, music, and usable captions. Processing validates grounding, readability, pacing, audio balance, and duration. A failed step records `failed` and its actual error; it does not manufacture missing assets.
 
 **Implementation (v0):** migration 005 enforces one result per artifact revision, adds claim tokens, and rejects a `ready` video with empty references or a non-positive duration. Migration 004 keys artifacts on immutable `(id, version)` revisions. The basic renderer differs from the contract above in these ways:
-- The OpenAI model writes the script, not Opus.
+- Script generation follows the [processor flow](proceed-and-media.md#the-processor).
 - Frames are ffmpeg title cards, so there's no animation code and no `animation_code_ref` column.
 - There's no music.
 - Length is bounded by the script's word count (40–160 words, roughly 15–65 s), not held to 30–45 s.
@@ -306,19 +306,14 @@ This is a candidate shape for workstream 3's export, not a delivery route. It wr
 
 ### Node ingestion backend (`server/src/ingest/`)
 
-The Node server mounts `POST /api/ingest/imports` and `GET /api/ingest/imports/:id`
-when `GEMINI_API_KEY` is configured. Both require `Authorization: Bearer <INGEST_TOKEN>`.
-Startup fails when the token is missing. There is no project brief: digests are generic
-and shared by everyone who imports the same video. `POST /api/ingest/process` is the
-processor the web Worker calls with `{ unit_ids }`.
+For ingestion route availability, authentication, provider configuration and storage,
+see the [ingestion README](../server/src/ingest/README.md). Digest visibility follows
+[Who sees what](proceed-and-media.md#who-sees-what).
 
 The POST body is `{ links, request, window_seconds? }`, where `request` is the
 categorization instruction. It accepts 1–20 links and a 30–3,600 second window.
-Gemini extracts source evidence; `OPENAI_API_KEY` enables digestion (otherwise it
-reports skipped). `GEMINI_MODEL` and `OPENAI_MODEL` select the configured models.
-`DATABASE_URL` selects TigerData storage; without it, results remain in memory.
 Jobs are process-local and are lost on restart. From `server/`, the CLI uses
-`npm run ingest -- "<request>" <youtube-url>...` with the same provider and project configuration.
+`npm run ingest -- "<request>" <youtube-url>...` with the same provider and storage configuration.
 
 These dev routes stay alongside `POST /api/ingest/process`, which implements the
 web Worker's `PROCESSOR_URL` contract and, with `src/outputs/`, the skill and render steps
@@ -343,7 +338,7 @@ Choose one concrete transport before building the **Use in Codex** CTA. Copy/dow
 
 - **Nimble:** authenticated v0 watch-page retrieval passed for both supplied videos; the tested caption route failed. Do not treat metadata as a spoken transcript. V1 adds supporting-source research.
 - **TigerData:** PostgreSQL storage for raw evidence, processed text, context, topics, video metadata, processed skills, action items, and handoffs. Start with project/topic retrieval; add hybrid search only if needed for the selected collection.
-- **Opus 5.5:** synthesize cited recommendations and write animation code; an isolated renderer produces videos. Not used in v0: the OpenAI model writes the digest, skills and scripts.
+- **Opus 5.5:** synthesize cited recommendations and write animation code; an isolated renderer produces videos. Not used in v0; current generation providers are documented in the [processor flow](proceed-and-media.md#the-processor).
 - **Gemini:** explicit-window video-content extraction (`gemini-3.5-flash-lite` in the first real run) and TTS narration (`gemini-3.8-flash-tts`).
 - **Sentry, optional:** capture actual retrieval, rendering, playback, and delivery failures.
 

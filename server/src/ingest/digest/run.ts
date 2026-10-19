@@ -5,14 +5,14 @@ import { SYSTEM_PROMPT, buildUserMessage } from "./prompt.js";
 import { validateDigest } from "./validate.js";
 import type { DigestOutput, IngestedUnit } from "../types.js";
 
-export const DEFAULT_DIGEST_MODEL = "gpt-5";
+export const DEFAULT_DIGEST_MODEL = "nicrron/auto";
 export const DEFAULT_MAX_OUTPUT_TOKENS = 20000;
 
 export interface DigestOptions {
   apiKey: string;
-  /** Override with OPENAI_MODEL; defaults to DEFAULT_DIGEST_MODEL. */
+  /** Override with NICRRON_MODEL; defaults to DEFAULT_DIGEST_MODEL. */
   model?: string;
-  /** Output cap, including a reasoning model's hidden thinking tokens. Override with OPENAI_MAX_OUTPUT_TOKENS. */
+  /** Output cap, including a reasoning model's hidden thinking tokens. Override with NICRRON_MAX_OUTPUT_TOKENS. */
   maxOutputTokens?: number;
   /** Tries before giving up on a reply that fails validation; each retry tells the model what was wrong (default 2). */
   maxAttempts?: number;
@@ -50,9 +50,9 @@ export async function runDigestion(o: DigestOptions): Promise<DigestOutput> {
   throw new Error(attempts > 1 ? `${failure} (after ${attempts} attempts)` : failure);
 }
 
-/** One OpenAI call. Transport, refusal, truncation and empty-reply problems throw with their details and are not retried. */
+/** One Nicrron call. Transport, refusal, truncation and empty-reply problems throw with their details and are not retried. */
 async function complete(o: DigestOptions, messages: Message[], cap: number): Promise<string> {
-  const res = await (o.fetchImpl ?? fetch)("https://api.openai.com/v1/chat/completions", {
+  const res = await (o.fetchImpl ?? fetch)("https://api.nicrron.ai/v1/chat/completions", {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${o.apiKey}` },
     body: JSON.stringify({
@@ -66,7 +66,7 @@ async function complete(o: DigestOptions, messages: Message[], cap: number): Pro
   const text = await res.text();
   if (!res.ok) throw new Error(httpError("Digestion", res.status, text));
   const data = JSON.parse(text);
-  recordUsage({ step: "digest", provider: "openai", model: o.model ?? DEFAULT_DIGEST_MODEL, ...openaiUsage(data.usage), ref: `${o.units.length} unit(s)` });
+  recordUsage({ step: "digest", provider: "nicrron", model: o.model ?? DEFAULT_DIGEST_MODEL, ...openaiUsage(data.usage), ref: `${o.units.length} unit(s)` });
   const choice = data.choices?.[0];
   const content: string | undefined = choice?.message?.content;
   const finish: string | undefined = choice?.finish_reason;
@@ -75,7 +75,7 @@ async function complete(o: DigestOptions, messages: Message[], cap: number): Pro
   const detail = `finish_reason: ${finish ?? "none"}; completion tokens ${used ?? "?"} of ${cap}${reasoning != null ? ` (${reasoning} reasoning)` : ""}`;
   if (choice?.message?.refusal) throw new Error(`Digestion was refused: ${String(choice.message.refusal).slice(0, 200)}`);
   if (finish === "length") {
-    throw new Error(`Digestion hit the ${cap}-token output cap before finishing (${detail}); raise OPENAI_MAX_OUTPUT_TOKENS or digest fewer videos at once`);
+    throw new Error(`Digestion hit the ${cap}-token output cap before finishing (${detail}); raise NICRRON_MAX_OUTPUT_TOKENS or digest fewer videos at once`);
   }
   if (!content) throw new Error(`Digestion returned no content (${detail})`);
   return content;

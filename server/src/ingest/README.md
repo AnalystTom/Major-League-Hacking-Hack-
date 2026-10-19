@@ -1,7 +1,7 @@
 # Ingestion (workflow 1)
 
 Node-only. Extracts supplied YouTube videos with Gemini and X posts (bookmarked post links) from twitterapi.io and public Substack posts with Nimble, then digests them with the Digestion Prompt. There is no
-project: extraction and digests are shared, so a video imported by several users is read and digested once.
+project: extraction is shared. Digest sharing and per-user visibility follow [Who sees what](../../../docs/proceed-and-media.md#who-sees-what).
 Mounted by `src/index.ts` at `/api/ingest` when `GEMINI_API_KEY` is set (and then `INGEST_TOKEN` is required, or startup fails).
 
 | Route | Purpose |
@@ -18,14 +18,15 @@ Every route needs `Authorization: Bearer $INGEST_TOKEN`. The web Worker sends it
 | `NIMBLE_API_KEY` | [Nimble](https://docs.nimbleway.com) key, used to read public Substack posts (`ingested_units.content_type = 'substack_post'`). Without it Substack units fail with "NIMBLE_API_KEY is not configured". |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | Extraction. Model defaults to `gemini-3.5-flash-lite`. |
 | `WINDOW_SECONDS` | Seconds extracted from each unit's start time (30-3600, default 3600, i.e. 1 hour). |
-| `OPENAI_API_KEY`, `OPENAI_MODEL` | Digestion. Without a key units are extracted but not digested. |
-| `OPENAI_MAX_OUTPUT_TOKENS` | Digest output cap including reasoning tokens (default 20000). Raise it if digests report hitting the cap. |
+| `NICRRON_API_KEY`, `NICRRON_MODEL` | Digests, skills/tasks, scripts and handoffs use the Nicrron gateway at `https://api.nicrron.ai/v1`. Without a key units are extracted but not digested. The default model is defined in [`digest/run.ts`](digest/run.ts) as `DEFAULT_DIGEST_MODEL`. |
+| `NICRRON_MAX_OUTPUT_TOKENS` | Digest and generated-output cap including reasoning tokens; its fallback is `DEFAULT_MAX_OUTPUT_TOKENS` in [`digest/run.ts`](digest/run.ts). Raise it if digests report hitting the cap. |
+| `NICRRON_REASONING_EFFORT` | Optional reasoning effort for digests, skills, scripts and handoffs. Unset uses the model's default; accepted values are defined in [`openaiEffort.ts`](../openaiEffort.ts). |
 | `DIGESTION_REQUEST` | Categorization request stored with each Digestion Prompt revision. |
 | `D1_URL`, `D1_TOKEN` | Authenticated processor Worker D1 bridge. Enables the sweep; without both, ephemeral CLI runs use memory. |
 | `SWEEP_INTERVAL_MS` | Pending-unit sweep interval (default 60000). |
 
 Behavior: pending units are claimed atomically (`UPDATE ... WHERE status = 'pending'`); a `ready` unit is never re-extracted;
-a unit is digested once (skipped when it already has a non-failed artifact or an exclusion); artifacts are written with
+artifacts are written with
 `project_context_id` null; a failed digest is stored as a failed artifact with its error and retried by the next request.
 The D1 schema in `web/migrations/0002_application.sql` makes `(id, version)` the artifact key and freezes a ready revision.
 

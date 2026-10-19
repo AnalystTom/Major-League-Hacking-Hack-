@@ -21,20 +21,20 @@ test("the last processing error is kept for /health without credentials", () => 
   assert.equal(redact("x".repeat(900)).length, 500);
 });
 
-test("OPENAI_REASONING_EFFORT is validated and only sent when set", () => {
+test("NICRRON_REASONING_EFFORT is validated and only sent when set", () => {
   assert.equal(reasoningEffort("xhigh"), "xhigh");
   assert.equal(reasoningEffort(""), undefined);
   assert.equal(reasoningEffort(undefined), undefined);
   assert.throws(() => reasoningEffort("extra-high"), /must be one of/);
-  const before = process.env.OPENAI_REASONING_EFFORT;
-  delete process.env.OPENAI_REASONING_EFFORT; assert.deepEqual(effortField(), {});
-  process.env.OPENAI_REASONING_EFFORT = "xhigh"; assert.deepEqual(effortField(), { reasoning_effort: "xhigh" });
-  if (before === undefined) delete process.env.OPENAI_REASONING_EFFORT; else process.env.OPENAI_REASONING_EFFORT = before;
+  const before = process.env.NICRRON_REASONING_EFFORT;
+  delete process.env.NICRRON_REASONING_EFFORT; assert.deepEqual(effortField(), {});
+  process.env.NICRRON_REASONING_EFFORT = "xhigh"; assert.deepEqual(effortField(), { reasoning_effort: "xhigh" });
+  if (before === undefined) delete process.env.NICRRON_REASONING_EFFORT; else process.env.NICRRON_REASONING_EFFORT = before;
 });
 
 test("redaction removes configured secret values and quoted or JSON-style credentials", () => {
   process.env.TEST_FAKE_API_KEY = "sk-live-abcdef123456";
-  const r = redact(`OpenAI said sk-live-abcdef123456 was bad; {"password":"hunter 2 two"} and token: 'abc def'`);
+  const r = redact(`Nicrron said sk-live-abcdef123456 was bad; {"password":"hunter 2 two"} and token: 'abc def'`);
   delete process.env.TEST_FAKE_API_KEY;
   assert.ok(!r.includes("sk-live-abcdef123456"));
   assert.ok(!r.includes("hunter"));

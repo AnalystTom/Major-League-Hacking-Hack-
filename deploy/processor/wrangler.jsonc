@@ -27,11 +27,10 @@
     "R2_BUCKET": "resurface-media",
     "WEB_ORIGINS": "https://resurface.thomasmann2001.workers.dev",
     "WINDOW_SECONDS": "300",
-    // Digest, skills, scripts and handoffs: GPT 6.1 at extra-high reasoning, with room in the output cap for its
-    // hidden reasoning tokens (they count against max_completion_tokens).
-    "OPENAI_MODEL": "gpt-6.1-sol",
-    "OPENAI_REASONING_EFFORT": "xhigh",
-    "OPENAI_MAX_OUTPUT_TOKENS": "40000",
+    // Digest, skills, scripts and handoffs go through the Nicrron gateway (api.nicrron.ai); nicrron/auto picks the
+    // model. The output cap leaves room for a reasoning model's hidden tokens (they count against it).
+    "NICRRON_MODEL": "nicrron/auto",
+    "NICRRON_MAX_OUTPUT_TOKENS": "40000",
     // Narration: gemini-3.8-flash-tts allows only 100 requests a day on this key's tier (~7 per short), and ran out on
     // 11 Oct. The lite TTS model works with the same request and voice and has its own quota.
     "GEMINI_TTS_MODEL": "gemini-3.8-flash-lite-tts",
@@ -40,7 +39,7 @@
     "DAILY_VIDEO_LIMIT": "100",
     "MONTHLY_VIDEO_LIMIT": "400"
   },
-  // Secrets, set once with `npx wrangler secret put <NAME>`: GEMINI_API_KEY, OPENAI_API_KEY, TWITTERAPI_IO_KEY (X posts), INGEST_TOKEN
+  // Secrets, set once with `npx wrangler secret put <NAME>`: GEMINI_API_KEY, NICRRON_API_KEY, TWITTERAPI_IO_KEY (X posts), INGEST_TOKEN
   // (checked here before waking the container; the web Worker's PROCESSOR_TOKEN must equal it), R2_ACCOUNT_ID,
   // R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY (an R2 API token with write access to resurface-media).
   // Then point the web Worker at it: PROCESSOR_URL=https://resurface-processor.<subdomain>.workers.dev/api/ingest/process

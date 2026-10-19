@@ -9,7 +9,7 @@ export function pendingUnit(videoId: string, start: number | null = null): Inges
   };
 }
 
-/** Routes Gemini, YouTube oEmbed and OpenAI calls to canned replies and counts them. */
+/** Routes Gemini, YouTube oEmbed and Nicrron calls to canned replies and counts them. */
 export function mockFetch(opts: { failVideo?: string; digestStatus?: () => number; title?: string | null } = {}) {
   const calls = { gemini: 0, openai: 0, oembed: 0, lastDigestRequest: null as unknown };
   const impl = (async (url: string, init?: { body?: string }) => {
@@ -28,7 +28,7 @@ export function mockFetch(opts: { failVideo?: string; digestStatus?: () => numbe
         source_url: `https://www.youtube.com/watch?v=${video}`, content_accessed: true,
         evidence_items: [{ start_seconds: lo + 5, end_seconds: lo + 20, observed_spoken_content: `about ${video}` }] }) }] } }] });
     }
-    if (u.includes("openai")) {
+    if (u.includes("nicrron")) {
       calls.openai++;
       const status = opts.digestStatus?.() ?? 200;
       if (status !== 200) return new Response("boom", { status });

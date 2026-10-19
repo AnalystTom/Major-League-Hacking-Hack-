@@ -138,11 +138,11 @@ test("a brief fails with the actual reason: missing key, a skill no longer ready
   store.briefs.set("gone", { skill_result_ids: s.map((x) => x.id), status: "pending" });
   store.briefs.set("http", { skill_result_ids: [s[0].id], status: "pending" });
   await runHandoff("nokey", { token: "t", store });
-  assert.match(store.briefs.get("nokey")!.error!, /OPENAI_API_KEY/);
+  assert.match(store.briefs.get("nokey")!.error!, /NICRRON_API_KEY/);
   await runHandoff("gone", { token: "t", store, openaiKey: "k", fetchImpl: openai(brief()).impl });
   assert.match(store.briefs.get("gone")!.error!, /1 of the selected skills aren't ready/);
   await runHandoff("http", { token: "t", store, openaiKey: "k", fetchImpl: openai(null, 500).impl });
-  assert.match(store.briefs.get("http")!.error!, /OpenAI HTTP 500/);
+  assert.match(store.briefs.get("http")!.error!, /Nicrron HTTP 500/);
 });
 
 test("scaffolding gets one retry with the reason, then is left out and named instead of failing the brief", async () => {
