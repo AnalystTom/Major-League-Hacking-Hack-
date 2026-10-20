@@ -43,12 +43,12 @@ export const scriptReply = (a: ReadyArtifact) => ({
   ],
 });
 
-/** Routes Nicrron (skill or script, told apart by the system prompt) and Gemini TTS to canned replies. */
+/** Routes OpenAI (skill or script, told apart by the system prompt) and Gemini TTS to canned replies. */
 export function outputsFetch(a: ReadyArtifact, opts: { skill?: unknown; ttsStatus?: number; openaiStatus?: number } = {}) {
   const calls = { skill: 0, script: 0, tts: 0 };
   const impl = (async (url: string, init?: { body?: string }) => {
     const u = String(url);
-    if (u.includes("nicrron")) {
+    if (u.includes("openai")) {
       if (opts.openaiStatus) return new Response("boom", { status: opts.openaiStatus });
       const system: string = JSON.parse(init!.body!).messages[0].content;
       const isScript = system === SCRIPT_SYSTEM_PROMPT;

@@ -22,6 +22,6 @@ test("a skill call records its tokens against the artifact", async (t) => {
     choices: [{ finish_reason: "stop", message: { content: JSON.stringify(skillReply(a)) } }],
     usage: { prompt_tokens: 2100, completion_tokens: 3400, completion_tokens_details: { reasoning_tokens: 2500 } },
   })) as unknown as typeof fetch;
-  await generateSkill(a, { apiKey: "k", model: "nicrron/auto", fetchImpl: impl });
-  assert.deepEqual(seen, [{ step: "skill", provider: "nicrron", model: "nicrron/auto", input_tokens: 2100, output_tokens: 3400, reasoning_tokens: 2500, ref: a.id }]);
+  await generateSkill(a, { apiKey: "k", model: "gpt-6-luna", fetchImpl: impl });
+  assert.deepEqual(seen, [{ step: "skill", provider: "openai", model: "gpt-6-luna", input_tokens: 2100, output_tokens: 3400, reasoning_tokens: 2500, ref: a.id }]);
 });

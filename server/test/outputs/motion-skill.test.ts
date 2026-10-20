@@ -99,7 +99,7 @@ test("renders a motion short with the narration over the engine's music", { skip
 });
 
 test("Chromium never sees the processor's keys", () => {
-  const env = recordEnv({ PATH: "/usr/bin", HOME: "/home/node", CHROME: "/c", NICRRON_API_KEY: "sk-x", GEMINI_API_KEY: "g", DATABASE_URL: "postgres://u:p@h/db",
+  const env = recordEnv({ PATH: "/usr/bin", HOME: "/home/node", CHROME: "/c", OPENAI_API_KEY: "sk-x", GEMINI_API_KEY: "g", DATABASE_URL: "postgres://u:p@h/db",
     R2_SECRET_ACCESS_KEY: "r", INGEST_TOKEN: "t", TWITTERAPI_IO_KEY: "k" });
   assert.deepEqual(env, { PATH: "/usr/bin", HOME: "/home/node", CHROME: "/c" });
 });

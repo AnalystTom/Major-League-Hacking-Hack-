@@ -1,8 +1,8 @@
 // What the processor makes from a ready artifact: a rendered short (workflow 2) and a skill with tasks (workflow 3).
 // Both read one artifact revision and write only their own tables (video_results, skill_results, action_items).
 
-/** One Nicrron call's credentials and model. */
-export interface NicrronOptions { apiKey: string; model?: string; fetchImpl?: typeof fetch }
+/** One OpenAI call's credentials and model. */
+export interface OpenAIOptions { apiKey: string; model?: string; fetchImpl?: typeof fetch }
 
 /** The provider settings both outputs read, set once in src/index.ts. */
 export interface ProviderOptions {
