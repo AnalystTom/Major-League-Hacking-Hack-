@@ -33,9 +33,9 @@ if (process.env.GEMINI_API_KEY) {
     geminiModel: process.env.GEMINI_MODEL,
     nimbleKey: process.env.NIMBLE_API_KEY,
     windowSeconds: process.env.WINDOW_SECONDS ? Number(process.env.WINDOW_SECONDS) : undefined,
-    openaiKey: process.env.NICRRON_API_KEY,
-    openaiModel: process.env.NICRRON_MODEL,
-    openaiMaxOutputTokens: process.env.NICRRON_MAX_OUTPUT_TOKENS ? Number(process.env.NICRRON_MAX_OUTPUT_TOKENS) : undefined,
+    openaiKey: process.env.OPENAI_API_KEY,
+    openaiModel: process.env.OPENAI_MODEL,
+    openaiMaxOutputTokens: process.env.OPENAI_MAX_OUTPUT_TOKENS ? Number(process.env.OPENAI_MAX_OUTPUT_TOKENS) : undefined,
     categorizationRequest: process.env.DIGESTION_REQUEST,
     // A hard cap on provider spend: new units per UTC day and month across all users (DAILY_/MONTHLY_VIDEO_LIMIT).
     limits: limitsFromEnv(),

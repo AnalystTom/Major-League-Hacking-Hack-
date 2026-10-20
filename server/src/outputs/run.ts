@@ -40,7 +40,7 @@ async function produceNow(kind: Kind, a: ReadyArtifact, o: OutputOptions) {
     const claim = await o.outputs.claim(kind, a);
     if (!claim) return;
     try {
-      if (!o.openaiKey) throw new Error("NICRRON_API_KEY isn't configured on the processor");
+      if (!o.openaiKey) throw new Error("OPENAI_API_KEY isn't configured on the processor");
       if (kind === "skill") {
         await o.outputs.finishSkill(claim, await generateSkill(a, { apiKey: o.openaiKey, model: o.openaiModel, fetchImpl: o.fetchImpl }));
       } else {

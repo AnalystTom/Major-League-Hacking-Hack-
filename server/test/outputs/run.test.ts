@@ -47,7 +47,7 @@ test("a skill failure is recorded with the provider error", async () => {
   await produceOutputs([a], { outputs, openaiKey: "o", media: null, fetchImpl: impl });
   const s = [...outputs.rows.skill.values()][0];
   assert.equal(s.status, "failed");
-  assert.match(s.error!, /Nicrron HTTP 500/);
+  assert.match(s.error!, /OpenAI HTTP 500/);
 });
 
 test("a failed skill is retried by the sweep until it lands, at most MAX_OUTPUT_ATTEMPTS times", async () => {
@@ -74,7 +74,7 @@ test("a failed skill is retried by the sweep until it lands, at most MAX_OUTPUT_
   const s = [...stuck.rows.skill.values()][0];
   assert.equal(s.attempts, 3);
   assert.equal(s.status, "failed", "after three failures it stays failed with the last error");
-  assert.match(s.error!, /Nicrron HTTP 500/);
+  assert.match(s.error!, /OpenAI HTTP 500/);
 });
 
 test("a failed result waits before it's retried", async () => {
