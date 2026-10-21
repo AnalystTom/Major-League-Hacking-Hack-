@@ -2,6 +2,8 @@ import { httpError } from "../../httpError.js";
 import type { EvidenceItem, IngestedUnit } from "../types.js";
 
 export const X_POST_METHOD = "twitterapi.io:tweets";
+export const X_PUBLIC_METHOD = "x-embed:tweet-result";
+export const UNAVAILABLE = "X post unavailable: not found, deleted or protected";
 
 interface TwitterApiTweet {
   id: string;
@@ -104,22 +106,68 @@ export async function extractXPost(o: XPostOptions): Promise<{ title: string; tr
   }
   if (body.status === "error") throw new Error(`twitterapi.io error: ${body.message ?? body.msg ?? "unknown"}`);
   const post = body.tweets?.find((t) => t.id === o.postId);
-  if (!post) throw new Error("X post unavailable: not found, deleted or protected");
+  if (!post) throw new Error(UNAVAILABLE);
 
   const own = (post.text ?? "").trim();
   // An X Article's post is just a link; its body is what the bookmark is for.
   const article = onlyLinks(own) ? await readArticle(o, fetchUrl) : null;
-  let content = article?.text ?? own;
   const quoted = post.quoted_tweet?.text?.trim();
-  if (quoted) content += `\n\nQuoted post${post.quoted_tweet?.author?.userName ? ` by @${post.quoted_tweet.author.userName}` : ""}: ${quoted}`;
+  return shape({ own, article, quoted, quotedHandle: post.quoted_tweet?.author?.userName, author: post.author, createdAt: post.createdAt });
+}
+
+interface PostParts {
+  own: string;
+  article: { title: string | null; text: string } | null;
+  quoted?: string;
+  quotedHandle?: string;
+  author?: { userName?: string; name?: string };
+  createdAt?: string;
+}
+
+/** The stored title and transcript for one post, whichever route it was read from. */
+function shape(p: PostParts): { title: string; transcript: NonNullable<IngestedUnit["transcript"]> } {
+  let content = p.article?.text ?? p.own;
+  if (p.quoted) content += `\n\nQuoted post${p.quotedHandle ? ` by @${p.quotedHandle}` : ""}: ${p.quoted}`;
   if (!content) throw new Error("X post has no text");
 
-  const handle = post.author?.userName;
-  const byline = post.author ? `${post.author.name ?? handle ?? "unknown"}${handle ? ` (@${handle})` : ""}` : "unknown author";
-  const created = post.createdAt && !Number.isNaN(Date.parse(post.createdAt)) ? new Date(post.createdAt).toISOString().slice(0, 10) : null;
+  const handle = p.author?.userName;
+  const byline = p.author ? `${p.author.name ?? handle ?? "unknown"}${handle ? ` (@${handle})` : ""}` : "unknown author";
+  const created = p.createdAt && !Number.isNaN(Date.parse(p.createdAt)) ? new Date(p.createdAt).toISOString().slice(0, 10) : null;
   const item: EvidenceItem = { start_seconds: 0, end_seconds: 0, observed_spoken_content: content };
   return {
-    title: `${handle ? `@${handle}` : "X post"}: ${(article?.title ?? (own || content)).replace(/\s+/g, " ").slice(0, 80)}`,
-    transcript: { overview: `${article ? "X Article" : "X post"} by ${byline}${created ? ` on ${created}` : ""}.`, window: [0, 0], evidence_items: [item] },
+    title: `${handle ? `@${handle}` : "X post"}: ${(p.article?.title ?? (p.own || content)).replace(/\s+/g, " ").slice(0, 80)}`,
+    transcript: { overview: `${p.article ? "X Article" : "X post"} by ${byline}${created ? ` on ${created}` : ""}.`, window: [0, 0], evidence_items: [item] },
   };
+}
+
+interface SyndicatedPost {
+  text?: string;
+  created_at?: string;
+  user?: { screen_name?: string; name?: string };
+  quoted_tweet?: { text?: string; user?: { screen_name?: string } };
+  article?: { title?: string; preview_text?: string };
+  tombstone?: unknown;
+}
+
+/** The token X's own embed widget derives from the post id; the endpoint only checks that it is well formed. */
+const syndicationToken = (id: string) => ((Number(id) / 1e15) * Math.PI).toString(36).replace(/(0+|\.)/g, "");
+
+/**
+ * Reads one post from X's public embed endpoint (cdn.syndication.twimg.com), which needs no key, login or paid plan.
+ * An X Article comes back as its title and preview only; the full body needs twitterapi.io.
+ */
+export async function extractXPostPublic(o: Pick<XPostOptions, "postId" | "fetchImpl" | "timeoutMs">): Promise<{ title: string; transcript: NonNullable<IngestedUnit["transcript"]> }> {
+  const res = await (o.fetchImpl ?? fetch)(`https://cdn.syndication.twimg.com/tweet-result?id=${o.postId}&token=${syndicationToken(o.postId)}`, { signal: AbortSignal.timeout(o.timeoutMs ?? 15_000) });
+  const text = await res.text();
+  if (res.status === 404) throw new Error(UNAVAILABLE);
+  if (!res.ok) throw new Error(httpError("X embed", res.status, text));
+  let post: SyndicatedPost;
+  try { post = JSON.parse(text); } catch { throw new Error("X embed reply was not valid JSON"); }
+  if (post.tombstone || (!post.text && !post.article)) throw new Error(UNAVAILABLE);
+  const own = (post.text ?? "").trim();
+  const a = post.article;
+  const preview = [a?.title?.trim() && `Article: ${a.title.trim()}`, a?.preview_text?.trim()].filter(Boolean).join("\n\n");
+  const article = a && onlyLinks(own) && preview ? { title: a.title?.trim() || null, text: preview } : null;
+  const quoted = post.quoted_tweet?.text?.trim();
+  return shape({ own, article, quoted, quotedHandle: post.quoted_tweet?.user?.screen_name, author: { userName: post.user?.screen_name, name: post.user?.name }, createdAt: post.created_at });
 }

@@ -135,6 +135,20 @@ export async function readUnits(sql, ids, visible = ids) {
 export const MAX_OUTPUT_ATTEMPTS = 3;
 export const willRetry = (r) => r?.status === "failed" && Number.isInteger(r.attempts) && r.attempts < MAX_OUTPUT_ATTEMPTS;
 
+// Provider and tool failures (an HTTP status, a JSON body, a key name, an ffmpeg exit) are for the logs, not for people.
+const TECHNICAL = /HTTP \d{3}|[{}]|_KEY\b|\bAPI\b|JSON|token|Gemini|OpenAI|twitterapi|Nimble|ffmpeg|chromium|exit(?:ed)? \d|\bgpt-|Digestion/i;
+const PLAIN_FAILURE = {
+  failed: "Resurface couldn't turn this into a short. Paste the link again to try once more.",
+  render_failed: "The short couldn't be finished. Paste the link again to try once more.",
+  render_retrying: "The short hit a snag and is being tried again.",
+};
+
+/**
+ * The reason a person sees: the stored one when it is already plain, otherwise a short sentence for the stage.
+ * Not-selected reasons are written by the digest for people, so they are never replaced.
+ */
+export const plainReason = (error, stage) => (stage !== "not_selected" && error && (error.length > 200 || TECHNICAL.test(error)) ? PLAIN_FAILURE[stage] ?? PLAIN_FAILURE.failed : error);
+
 /**
  * Collapses a unit's records into the one stage the page shows. `settled` means nothing more will
  * happen automatically: a failure, an exclusion, or a ready clip.
@@ -147,7 +161,7 @@ export function describeUnit(row, now = new Date()) {
     title: row.title ?? null,
     content_type: row.content_type ?? "youtube_video",
   };
-  const at = (stage, settled, error = null) => ({ ...base, stage, settled, error });
+  const at = (stage, settled, error = null) => ({ ...base, stage, settled, error: plainReason(error, stage) });
 
   // Held back by the processor's daily or monthly limit (before reading it, or before digesting a video that's
   // already read): nothing happens before then, so it's settled.

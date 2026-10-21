@@ -7,12 +7,12 @@ export const DEFAULT_WINDOW_SECONDS = 3600;
 export const MAX_WINDOW_SECONDS = 3600;
 export const MIN_WINDOW_SECONDS = 30;
 
-export const EXTRACTION_PROMPT = `You are extracting evidence from a YouTube video segment for an AI engineer.
+export const EXTRACTION_PROMPT = `You are extracting evidence from a YouTube video segment.
 Report only what is actually said or shown inside the provided segment. Do not guess. Do not quote verbatim; paraphrase speech.
 Return JSON: {"source_url": string, "content_accessed": boolean, "overview": string,
 "evidence_items": [{"start_seconds": int, "end_seconds": int, "observed_spoken_content": string,
 "observed_visual_content": string, "technique": string}]}.
-Timestamps are absolute seconds in the full video. Prefer concrete, actionable engineering techniques, workflows or claims
+Timestamps are absolute seconds in the full video. Prefer concrete techniques, workflows, facts or claims
 over descriptions of presentation style. Set content_accessed=false if you cannot see/hear the segment.`;
 
 export interface GeminiRequestOptions {

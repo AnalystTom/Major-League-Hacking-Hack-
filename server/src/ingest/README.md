@@ -14,7 +14,7 @@ Every route needs `Authorization: Bearer $INGEST_TOKEN`. The web Worker sends it
 | Env | Meaning |
 | --- | --- |
 | `INGEST_TOKEN` | Bearer token callers must send. Required when ingestion is enabled. |
-| `TWITTERAPI_IO_KEY` | [twitterapi.io](https://twitterapi.io) API key, used to read X posts (`ingested_units.content_type = 'x_post'`). Without it X units fail with "TWITTERAPI_IO_KEY is not configured". |
+| `TWITTERAPI_IO_KEY` | [twitterapi.io](https://twitterapi.io) API key, used to read X posts (`ingested_units.content_type = 'x_post'`) and the full body of X Articles. Optional: without it, or when twitterapi.io fails, posts are read from X's public embed endpoint (`cdn.syndication.twimg.com`, no key; an Article comes back as its title and preview only). |
 | `NIMBLE_API_KEY` | [Nimble](https://docs.nimbleway.com) key, used to read public Substack posts (`ingested_units.content_type = 'substack_post'`). Without it Substack units fail with "NIMBLE_API_KEY is not configured". |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | Extraction. Model defaults to `gemini-3.5-flash-lite`. |
 | `WINDOW_SECONDS` | Seconds extracted from each unit's start time (30-3600, default 3600, i.e. 1 hour). |

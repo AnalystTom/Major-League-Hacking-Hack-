@@ -41,8 +41,11 @@ function render(units, items) {
   reel.render(items);
   const hasShorts = reel.count > 0;
 
+  // Until the first short is ready the frame below lists every link, so the top-bar list would show each twice
+  // and, on a phone, cover the paste box.
   const status = $("[data-status]");
-  status.hidden = units.length === 0;
+  status.hidden = units.length === 0 || !hasShorts;
+  if (status.hidden) status.open = false;
   status.dataset.busy = String(units.some((u) => !u.settled));
   $("[data-status-summary]").textContent = summarize(units);
   renderUnits($("[data-units]"), units);
@@ -136,7 +139,8 @@ form.addEventListener("submit", async (e) => {
   button.disabled = true;
   try {
     const body = await api("/api/imports", { method: "POST", body: { links } });
-    $("[data-run-note]").textContent = PROCESSOR[body.processor] ?? "";
+    // Beside the form while the frame is showing, in the status list once shorts have taken the frame's place.
+    $($("[data-status]").hidden ? "[data-first-note]" : "[data-run-note]").textContent = PROCESSOR[body.processor] ?? "";
     status.textContent = "";
     form.reset();
     if (sheet.open) sheet.close();
