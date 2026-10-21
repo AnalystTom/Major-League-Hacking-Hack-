@@ -127,7 +127,7 @@ async function authorized(request, env) {
 // saved, and the processor's first sweep, a second after it starts, picks them up either way.
 const ANSWER_WITHIN_MS = 6000;
 
-// The only routes callers need: the web Worker's processing and handoff requests, and a health check.
+// Allow processing, handoff, health and settings requests, plus the container's D1 and media bridges.
 // Anything else (such as the processor's dev import route, which skips the processing limits) never
 // reaches the container.
 const ROUTES = new Set(["GET /health", "POST /api/ingest/process", "POST /api/ingest/handoff", "GET /settings-status", "POST /internal/d1", "PUT /internal/media"]);

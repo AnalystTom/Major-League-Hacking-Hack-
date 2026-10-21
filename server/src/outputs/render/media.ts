@@ -1,5 +1,4 @@
-// Where rendered files go: the R2 bucket the web Worker serves /media/ from. Every upload is read back before
-// the processor stores its reference, so a video result never points at a missing file.
+// Verify the stored size before saving a reference, so an incomplete upload cannot become a ready video.
 
 import { readFile, stat, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
