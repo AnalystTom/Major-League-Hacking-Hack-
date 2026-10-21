@@ -5,6 +5,7 @@
 import { database } from "./database.js";
 import { media } from "./media.js";
 import { Container, getContainer } from "@cloudflare/containers";
+import { DEFAULT_CATEGORIZATION_REQUEST, promptRegistrationStatements, promptRevisionText } from "../../../server/src/ingest/digest/contract.ts";
 
 // Worker secrets and vars the processor reads from process.env.
 const ENV_NAMES = [
@@ -132,6 +133,12 @@ const ANSWER_WITHIN_MS = 6000;
 // reaches the container.
 const ROUTES = new Set(["GET /health", "POST /api/ingest/process", "POST /api/ingest/handoff", "GET /settings-status", "POST /internal/d1", "PUT /internal/media"]);
 
+async function registerDigestionPrompt(env) {
+  if (!env.OPENAI_API_KEY) return;
+  const text = promptRevisionText(env.DIGESTION_REQUEST ?? DEFAULT_CATEGORIZATION_REQUEST);
+  await env.DB.batch(promptRegistrationStatements(text, []).map(({ sql, params }) => env.DB.prepare(sql).bind(...params)));
+}
+
 export default {
   async fetch(request, env, ctx) {
     const { pathname } = new URL(request.url);
@@ -145,6 +152,7 @@ export default {
     // and a slow container would get a request without its unit ids.
     const body = request.method === "GET" ? undefined : await request.arrayBuffer();
     const forward = new Request(request.url, { method: request.method, headers: request.headers, body });
+    await registerDigestionPrompt(env);
     const processor = getContainer(env.PROCESSOR);
     await applySettings(processor, env);
     if (pathname === "/settings-status") {
@@ -164,6 +172,6 @@ export default {
   // A health check starts the container if it's asleep; it then sleeps again once its sweeps find nothing to do.
   async scheduled(_event, env, ctx) {
     const processor = getContainer(env.PROCESSOR);
-    ctx.waitUntil(applySettings(processor, env).then(() => processor.fetch(new Request("http://processor/health"))));
+    ctx.waitUntil(registerDigestionPrompt(env).then(() => applySettings(processor, env)).then(() => processor.fetch(new Request("http://processor/health"))));
   },
 };

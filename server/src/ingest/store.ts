@@ -3,6 +3,7 @@ import type { Database, Statement } from "../db.js";
 import type { DigestArtifact, IngestedUnit, StoredArtifact } from "./types.js";
 import { remaining, resumesAt, type Limits } from "./limits.js";
 import { available, deferredUntil, limitParams, NOW, USED_DAY, USED_MONTH } from "./ledger.js";
+import { promptRegistrationStatements } from "./digest/contract.js";
 
 export interface Claimed { claimed: IngestedUnit[]; deferred: string[]; resumesAt: Date | null }
 export interface Reserved { allowed: string[]; deferred: string[]; resumesAt: Date | null }
@@ -265,13 +266,7 @@ export class D1Store implements Store {
     return rows.map((r) => r.id as string);
   }
   async registerPrompt(promptText: string, fewShot: unknown[]) {
-    const params = [promptText,JSON.stringify(fewShot)];
-    const results = await this.db.batch([
-      { sql: `INSERT INTO digestion_prompts(revision,prompt_text,few_shot)
-        SELECT (SELECT coalesce(max(revision),0)+1 FROM digestion_prompts WHERE name='Digestion Prompt'),?1,?2
-        WHERE NOT EXISTS(SELECT 1 FROM digestion_prompts WHERE name='Digestion Prompt' AND prompt_text=?1 AND few_shot=?2)`, params },
-      { sql: `SELECT id FROM digestion_prompts WHERE name='Digestion Prompt' AND prompt_text=?1 AND few_shot=?2 LIMIT 1`, params },
-    ]);
+    const results = await this.db.batch(promptRegistrationStatements(promptText, fewShot));
     return results[1].rows[0].id as string;
   }
   async saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null) {
