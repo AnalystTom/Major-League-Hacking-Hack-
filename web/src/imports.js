@@ -114,8 +114,14 @@ export async function readUnits(sql, ids, visible = ids) {
   if (ids.length === 0) return [];
   const rows = await sql`
     SELECT u.id, u.source_url, u.start_seconds, u.title, u.content_type, u.status, u.error, u.deferred_until,
+      (SELECT count(*) FROM artifacts a WHERE a.ingestion_status = 'failed'
+        AND EXISTS (SELECT 1 FROM json_each(a.source_ids) WHERE value = u.id)) AS digest_failures,
       (SELECT json_group_array(reason) FROM
-        (SELECT reason FROM artifact_exclusions e WHERE e.unit_id = u.id ORDER BY e.created_at)) AS exclusions,
+        (SELECT reason FROM artifact_exclusions e WHERE e.unit_id = u.id
+          AND e.digestion_prompt_id = (SELECT id FROM digestion_prompts WHERE name = 'Digestion Prompt' ORDER BY revision DESC LIMIT 1)
+          AND NOT EXISTS (SELECT 1 FROM processing_starts d WHERE d.unit_id = u.id AND d.kind = 'digest'
+            AND julianday(d.created_at) > julianday(e.created_at))
+          ORDER BY e.created_at)) AS exclusions,
       (SELECT json_group_array(json(item)) FROM (
         SELECT json_object('id', a.id, 'version', a.version, 'name', a.name,
           'ingestion_status', a.ingestion_status, 'error', a.error,
@@ -125,6 +131,9 @@ export async function readUnits(sql, ids, visible = ids) {
         FROM artifacts a
         WHERE EXISTS (SELECT 1 FROM json_each(a.source_ids) WHERE value = u.id)
           AND NOT EXISTS (SELECT 1 FROM json_each(a.source_ids) WHERE value NOT IN (SELECT value FROM json_each(${JSON.stringify(visible)})))
+          AND (a.ingestion_status <> 'failed' OR NOT EXISTS (
+            SELECT 1 FROM processing_starts d WHERE d.unit_id = u.id AND d.kind = 'digest'
+              AND julianday(d.created_at) > julianday(a.created_at)))
         ORDER BY a.created_at)) AS artifacts
     FROM ingested_units u JOIN json_each(${JSON.stringify(ids)}) selected ON selected.value = u.id
     ORDER BY CAST(selected.key AS INTEGER)`;
@@ -134,6 +143,7 @@ export async function readUnits(sql, ids, visible = ids) {
 /** The processor's MAX_OUTPUT_ATTEMPTS (server/src/outputs/store.ts): a failed skill or short with attempts left is retried. */
 export const MAX_OUTPUT_ATTEMPTS = 3;
 export const willRetry = (r) => r?.status === "failed" && Number.isInteger(r.attempts) && r.attempts < MAX_OUTPUT_ATTEMPTS;
+const MAX_DIGEST_ATTEMPTS = 3;
 
 // Provider and tool failures (an HTTP status, a JSON body, a key name, an ffmpeg exit) are for the logs, not for people.
 const TECHNICAL = /HTTP \d{3}|[{}]|_KEY\b|\bAPI\b|JSON|token|Gemini|OpenAI|twitterapi|Nimble|ffmpeg|chromium|exit(?:ed)? \d|\bgpt-|Digestion/i;
@@ -174,13 +184,14 @@ export function describeUnit(row, now = new Date()) {
   if (row.status === "failed") return at("failed", true, row.error ?? null);
 
   const artifacts = row.artifacts ?? [];
-  if (artifacts.length === 0) {
+  const usable = artifacts.filter((a) => a.ingestion_status !== "failed");
+  if (usable.length === 0) {
     if ((row.exclusions ?? []).length) return at("not_selected", true, row.exclusions.join(" "));
-    return held ? limited() : at("digesting", false);
+    if (artifacts.length === 0 || row.digest_failures < MAX_DIGEST_ATTEMPTS) return held ? limited() : at("digesting", false);
   }
 
   // A unit can feed several artifacts; report the one furthest along.
-  const stages = artifacts.map((a) => {
+  const stages = (usable.length ? usable : artifacts).map((a) => {
     const v = a.video;
     if (a.ingestion_status === "failed") return at("failed", true, a.error ?? null);
     if (a.ingestion_status !== "ready") return at("digesting", false);

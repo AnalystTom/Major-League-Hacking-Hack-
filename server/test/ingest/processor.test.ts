@@ -160,11 +160,11 @@ test("sweep processes imported pending units and leaves unimported ones", async 
   assert.equal(store.artifacts.length, 1);
 });
 
-test("POST /process requires the bearer token, validates the body, and returns 202", async () => {
+test("POST /process requires the bearer token, validates the body, and returns 202", async (t) => {
   const store = new MemoryStore();
   const unit = pendingUnit("VQy50fuxI34");
   await store.saveUnit(unit);
-  const { impl } = mockFetch();
+  const { impl, calls } = mockFetch();
   const app = createIngestApp({ ...base(store, impl), token: "secret" });
   const send = (headers: Record<string, string>, body: unknown) => app.request("/process", { method: "POST", headers, body: JSON.stringify(body) });
   const good = { unit_ids: [unit.id] };
@@ -177,9 +177,20 @@ test("POST /process requires the bearer token, validates the body, and returns 2
   assert.equal((await send(auth, { unit_ids: [] })).status, 400);
 
   // An older caller that still sends `project` is accepted; the key is ignored.
-  const res = await send(auth, { ...good, project: null });
-  assert.equal(res.status, 202);
-  assert.deepEqual(await res.json(), { accepted: 1 });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const claim = store.claimWithinLimits.bind(store);
+  t.mock.method(store, "claimWithinLimits", async (...args: Parameters<typeof claim>) => {
+    await gate;
+    return claim(...args);
+  });
+  try {
+    const res = await send(auth, { ...good, project: null });
+    assert.equal(res.status, 202);
+    assert.deepEqual(await res.json(), { accepted: 1 });
+    assert.equal(store.prompts.length, 1);
+    assert.equal(calls.openai, 0);
+  } finally { release(); }
   for (let i = 0; i < 100 && store.artifacts.length === 0; i++) await new Promise((r) => setTimeout(r, 10));
   assert.equal(store.artifacts[0].project_context_id, null);
 });

@@ -126,7 +126,7 @@ interface PostParts {
 
 /** The stored title and transcript for one post, whichever route it was read from. */
 function shape(p: PostParts): { title: string; transcript: NonNullable<IngestedUnit["transcript"]> } {
-  let content = p.article?.text ?? p.own;
+  let content = p.article ? [onlyLinks(p.own) ? "" : p.own, p.article.text].filter(Boolean).join("\n\n") : p.own;
   if (p.quoted) content += `\n\nQuoted post${p.quotedHandle ? ` by @${p.quotedHandle}` : ""}: ${p.quoted}`;
   if (!content) throw new Error("X post has no text");
 
@@ -167,7 +167,7 @@ export async function extractXPostPublic(o: Pick<XPostOptions, "postId" | "fetch
   const own = (post.text ?? "").trim();
   const a = post.article;
   const preview = [a?.title?.trim() && `Article: ${a.title.trim()}`, a?.preview_text?.trim()].filter(Boolean).join("\n\n");
-  const article = a && onlyLinks(own) && preview ? { title: a.title?.trim() || null, text: preview } : null;
+  const article = a && preview ? { title: a.title?.trim() || null, text: preview } : null;
   const quoted = post.quoted_tweet?.text?.trim();
   return shape({ own, article, quoted, quotedHandle: post.quoted_tweet?.user?.screen_name, author: { userName: post.user?.screen_name, name: post.user?.name }, createdAt: post.created_at });
 }

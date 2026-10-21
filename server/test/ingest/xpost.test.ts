@@ -1,11 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { processUnits } from "../../src/ingest/processor.js";
 import { MemoryStore } from "../../src/ingest/store.js";
 import { mockFetch } from "./helpers.js";
 import { DEFAULT_CATEGORIZATION_REQUEST } from "../../src/ingest/digest/prompt.js";
 import { runDigestion } from "../../src/ingest/digest/run.js";
+import { extractXPostPublic } from "../../src/ingest/extract/xpost.js";
 import type { IngestedUnit } from "../../src/ingest/types.js";
 
 process.env.TWITTERAPI_MIN_INTERVAL_MS = "0"; // no pacing in tests
@@ -158,6 +160,22 @@ test("an X Article read through the embed route keeps its title and preview", as
   assert.equal(saved.status, "ready");
   assert.equal(saved.title, "@someone: 0 to 5,000 followers");
   assert.equal(saved.transcript?.evidence_items[0].observed_spoken_content, "Article: 0 to 5,000 followers\n\nWhat I did and what failed.");
+});
+
+test("the captured pfernan95dev post retains its introduction and supplied article preview without keys", async () => {
+  const post = JSON.parse(readFileSync(new URL("./fixtures/xpost-2111437891322745223.json", import.meta.url), "utf8"));
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    assert.equal(url.origin + url.pathname, "https://cdn.syndication.twimg.com/tweet-result");
+    assert.equal(url.searchParams.get("id"), "2111437891322745223");
+    assert.equal(init?.headers, undefined);
+    return Response.json(post);
+  };
+  const read = await extractXPostPublic({ postId: post.id_str, fetchImpl });
+  assert.equal(read.title, `@pfernan95dev: ${post.article.title}`);
+  assert.equal(read.transcript.evidence_items[0].observed_spoken_content,
+    `${post.text}\n\nArticle: ${post.article.title}\n\n${post.article.preview_text}`);
+  assert.deepEqual(read.transcript.window, [0, 0]);
 });
 
 test("twitterapi.io failures and empty results both allow the public route to read the post", async () => {

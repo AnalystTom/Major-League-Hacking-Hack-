@@ -96,3 +96,58 @@ test('D1 JSON output reads preserve source order, real errors, private digests a
     assert.equal((await createHandoff(sql,{},user,sources,[s.id])).brief.status,'pending');
   }finally{sqlite.close();}
 });
+
+test('shared import progress ignores obsolete exclusions and keeps digest retries unsettled',async()=>{
+  const {sqlite,env,sql}=database();
+  const call=(path,body,cookie)=>app.fetch(new Request(`http://localhost${path}`,{method:body?'POST':'GET',headers:{'content-type':'application/json',...(cookie?{cookie}:{})},...(body?{body:JSON.stringify(body)}:{})}),env,{});
+  try {
+    const [old]=await sql`INSERT INTO digestion_prompts(revision,prompt_text) VALUES(1,'Engineering only') RETURNING id`;
+    const url='https://x.com/i/status/2111437891322745223';
+    const [unit]=await sql`INSERT INTO ingested_units(submitted_url,source_url,content_type,status,transcript)
+      VALUES(${url},${url},'x_post','ready','{}') RETURNING id`;
+    await sql`INSERT INTO artifact_exclusions(unit_id,digestion_prompt_id,reason,created_at)
+      VALUES(${unit.id},${old.id},'Not an engineering problem.','2026-01-01T00:00:00.000Z')`;
+    const [current]=await sql`INSERT INTO digestion_prompts(revision,prompt_text) VALUES(2,'Any substantive topic') RETURNING id`;
+    const signup=await call('/api/auth/signup',{email:'retry@example.com',password:'correct horse battery'});
+    const cookie=signup.headers.get('set-cookie').split(';')[0];
+    const imported=await (await call('/api/imports',{links:[url]},cookie)).json();
+    assert.equal(imported.units[0].id,unit.id);
+    assert.deepEqual([imported.units[0].stage,imported.units[0].settled,imported.units[0].error],['digesting',false,null]);
+    const progress=async()=>{
+      const {units}=await (await call('/api/imports',null,cookie)).json();
+      return units[0];
+    };
+    const expect=async(stage,settled,error=null)=>{
+      const row=await progress();
+      assert.deepEqual([row.stage,row.settled,row.error],[stage,settled,error]);
+    };
+    await expect('digesting',false);
+    await sql`UPDATE ingested_units SET deferred_until='2999-01-01T00:00:00.000Z' WHERE id=${unit.id}`;
+    assert.equal((await progress()).stage,'limited');
+    await sql`UPDATE ingested_units SET deferred_until=NULL WHERE id=${unit.id}`;
+    for(let attempt=1;attempt<=3;attempt++) {
+      await sql`INSERT INTO artifacts(name,source_url,source_ids,ingestion_status,error,digestion_prompt_id,created_at)
+        VALUES('Digestion failed',${url},${JSON.stringify([unit.id])},'failed','Digestion HTTP 500',${current.id},'2026-01-01T01:00:00.000Z')`;
+      if(attempt<3) await expect('digesting',false);
+      else await expect('failed',true,"Resurface couldn't turn this into a short.");
+    }
+    await sql`INSERT INTO processing_starts(unit_id,kind,charged,created_at)
+      VALUES(${unit.id},'digest',1,'2026-01-02T00:00:00.000Z')`;
+    await expect('digesting',false);
+    const reason='Only a greeting, with nothing to explain.';
+    await sql`INSERT INTO artifact_exclusions(unit_id,digestion_prompt_id,reason,created_at)
+      VALUES(${unit.id},${current.id},${reason},'2026-01-03T00:00:00.000Z')`;
+    await expect('not_selected',true,reason);
+    await sql`INSERT INTO digestion_prompts(revision,prompt_text) VALUES(3,'Revised topic policy')`;
+    await sql`INSERT INTO processing_starts(unit_id,kind,charged,created_at)
+      VALUES(${unit.id},'digest',1,'2026-01-04T00:00:00.000Z')`;
+    await expect('digesting',false);
+    const [artifact]=await sql`INSERT INTO artifacts(name,source_url,source_ids,processed_text,ingestion_status,created_at)
+      VALUES('Growing an audience',${url},${JSON.stringify([unit.id])},'Source-grounded narration','ready','2026-01-05T00:00:00.000Z') RETURNING id`;
+    await expect('rendering',false);
+    await sql`INSERT INTO video_results(artifact_id,artifact_version,status,media_ref,caption_ref,narration_ref,duration_seconds)
+      VALUES(${artifact.id},1,'ready','r2:videos/retry/1/short.mp4','r2:captions/retry/1/short.vtt','r2:audio/retry/1/narration.m4a',30)`;
+    await expect('ready',true);
+    assert.equal((await sql`SELECT count(*) AS n FROM artifact_exclusions WHERE unit_id=${unit.id}`)[0].n,2);
+  }finally{sqlite.close();}
+});
