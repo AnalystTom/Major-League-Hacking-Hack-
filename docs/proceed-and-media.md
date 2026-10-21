@@ -118,7 +118,7 @@ worker whose claim was taken over can't write its result.
 
 **Configuration**: see the [ingestion README](../server/src/ingest/README.md) for provider credentials, models,
 output caps and sweep settings, and [`server/.env.example`](../server/.env.example) for local settings.
-Media goes to R2 through its S3 API (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`),
+Media goes to R2 through the processor Worker's `MEDIA` binding (`PUT /internal/media`, same bearer token as the D1 bridge),
 or to local wrangler dev with `MEDIA_LOCAL_WEB_DIR`. Optional render settings: `GEMINI_TTS_MODEL`,
 `GEMINI_TTS_VOICE`, `RENDER_FONT`. Renders need `ffmpeg` and `ffprobe` on the host.
 

@@ -1,7 +1,6 @@
 // Where rendered files go: the R2 bucket the web Worker serves /media/ from. Every upload is read back before
 // the processor stores its reference, so a video result never points at a missing file.
 
-import { AwsClient } from "aws4fetch";
 import { readFile, stat, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,20 +14,16 @@ export interface MediaStore {
   put(key: string, file: string, contentType: string): Promise<string>;
 }
 
-/** R2 through its S3 API: R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET. */
-export class R2Media implements MediaStore {
-  private client: AwsClient;
-  constructor(private o: { accountId: string; accessKeyId: string; secretAccessKey: string; bucket: string; fetchImpl?: typeof fetch }) {
-    this.client = new AwsClient({ accessKeyId: o.accessKeyId, secretAccessKey: o.secretAccessKey, service: "s3", region: "auto" });
-  }
+/** R2 through the processor Worker's /internal/media bridge, which holds the R2 binding; the container only has its bearer token. */
+export class WorkerMedia implements MediaStore {
+  constructor(private o: { url: string; token: string; fetchImpl?: typeof fetch }) {}
   async put(key: string, file: string, contentType: string) {
-    const url = `https://${this.o.accountId}.r2.cloudflarestorage.com/${this.o.bucket}/${key.split("/").map(encodeURIComponent).join("/")}`;
     const body = await readFile(file);
-    const signed = (init: RequestInit) => this.client.sign(url, init).then((req) => (this.o.fetchImpl ?? fetch)(req));
-    const put = await signed({ method: "PUT", body, headers: { "content-type": contentType } });
-    if (!put.ok) throw new Error(`R2 upload of ${key} failed: HTTP ${put.status} ${(await put.text()).slice(0, 200)}`);
-    const head = await signed({ method: "HEAD" });
-    if (!head.ok || Number(head.headers.get("content-length")) !== body.length) throw new Error(`R2 has no complete copy of ${key} after upload`);
+    const res = await (this.o.fetchImpl ?? fetch)(`${this.o.url}?key=${encodeURIComponent(key)}`, {
+      method: "PUT", headers: { authorization: `Bearer ${this.o.token}`, "content-type": contentType }, body, signal: AbortSignal.timeout(120_000),
+    });
+    if (!res.ok) throw new Error(`R2 upload of ${key} failed: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
+    if ((await res.json() as { size?: number }).size !== body.length) throw new Error(`R2 has no complete copy of ${key} after upload`);
     return r2Ref(key);
   }
 }
@@ -60,9 +55,7 @@ export class WranglerLocalMedia implements MediaStore {
 
 export function mediaFromEnv(env: NodeJS.ProcessEnv = process.env): MediaStore | null {
   const bucket = env.R2_BUCKET ?? "resurface-media";
-  if (env.R2_ACCOUNT_ID && env.R2_ACCESS_KEY_ID && env.R2_SECRET_ACCESS_KEY) {
-    return new R2Media({ accountId: env.R2_ACCOUNT_ID, accessKeyId: env.R2_ACCESS_KEY_ID, secretAccessKey: env.R2_SECRET_ACCESS_KEY, bucket });
-  }
   if (env.MEDIA_LOCAL_WEB_DIR) return new WranglerLocalMedia({ webDir: env.MEDIA_LOCAL_WEB_DIR, bucket, persistTo: env.MEDIA_LOCAL_PERSIST_TO });
+  if (env.D1_URL && env.D1_TOKEN) return new WorkerMedia({ url: new URL("/internal/media", env.D1_URL).href, token: env.D1_TOKEN });
   return null;
 }
