@@ -4,6 +4,7 @@ import { processUnits, sweepOnce } from "../../src/ingest/processor.js";
 import { createIngestApp } from "../../src/ingest/api.js";
 import { MemoryStore } from "../../src/ingest/store.js";
 import { mockFetch, pendingUnit } from "./helpers.js";
+import { DEFAULT_CATEGORIZATION_REQUEST, promptRevisionText } from "../../src/ingest/digest/prompt.js";
 
 const base = (store: MemoryStore, fetchImpl: typeof fetch) =>
   ({ geminiKey: "k", openaiKey: "o", store, fetchImpl, retries: 0, pollMs: 1, waitTimeoutMs: 500 });
@@ -46,10 +47,30 @@ test("a unit the digest excluded is not sent to the model again", async () => {
   await store.saveUnit(unit);
   const { impl, calls } = mockFetch();
   await processUnits([unit.id], { ...base(store, impl), openaiKey: undefined });
-  store.exclusions.push({ unit_id: unit.id, reason: "Off topic.", promptId: null });
+  const promptId = await store.registerPrompt(promptRevisionText(DEFAULT_CATEGORIZATION_REQUEST), []);
+  await store.saveArtifacts([], [{ unit_id: unit.id, reason: "Nothing to explain." }], promptId);
   const s = await processUnits([unit.id], base(store, impl));
   assert.match(s.skipped ?? "", /nothing new/);
   assert.equal(calls.openai, 0);
+});
+
+test("requests and sweeps reconsider exclusions from an older prompt without re-extracting", async () => {
+  for (const sweep of [false, true]) {
+    const store = new MemoryStore();
+    const unit = pendingUnit("VQy50fuxI34");
+    await store.saveUnit(unit);
+    store.imported.add(unit.id);
+    const { impl, calls } = mockFetch();
+    await processUnits([unit.id], { ...base(store, impl), openaiKey: undefined });
+    const oldPrompt = await store.registerPrompt("Engineering only", []);
+    await store.saveArtifacts([], [{ unit_id: unit.id, reason: "Off topic." }], oldPrompt);
+    if (sweep) assert.equal(await sweepOnce(base(store, impl)), 1);
+    else assert.equal((await processUnits([unit.id], base(store, impl))).digested, 1);
+    assert.equal(calls.gemini, 1);
+    assert.equal(calls.openai, 1);
+    assert.deepEqual(store.artifacts[0].source_ids, [unit.id]);
+    assert.equal(await sweepOnce(base(store, impl)), 0);
+  }
 });
 
 test("duplicate concurrent requests extract and digest once", async () => {

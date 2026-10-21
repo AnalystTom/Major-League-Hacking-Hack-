@@ -4,7 +4,8 @@ import { randomUUID } from "node:crypto";
 import { processUnits } from "../../src/ingest/processor.js";
 import { MemoryStore } from "../../src/ingest/store.js";
 import { mockFetch } from "./helpers.js";
-import { DEFAULT_CATEGORIZATION_REQUEST, SYSTEM_PROMPT } from "../../src/ingest/digest/prompt.js";
+import { DEFAULT_CATEGORIZATION_REQUEST } from "../../src/ingest/digest/prompt.js";
+import { runDigestion } from "../../src/ingest/digest/run.js";
 import type { IngestedUnit } from "../../src/ingest/types.js";
 
 process.env.TWITTERAPI_MIN_INTERVAL_MS = "0"; // no pacing in tests
@@ -159,15 +160,18 @@ test("an X Article read through the embed route keeps its title and preview", as
   assert.equal(saved.transcript?.evidence_items[0].observed_spoken_content, "Article: 0 to 5,000 followers\n\nWhat I did and what failed.");
 });
 
-test("twitterapi.io failing falls back to the embed route, but a post it says is gone stays gone", async () => {
-  for (const [primary, status, embeds] of [[() => new Response("down", { status: 503 }), "ready", 1], [() => Response.json({ status: "success", tweets: [] }), "failed", 0]] as const) {
+test("twitterapi.io failures and empty results both allow the public route to read the post", async () => {
+  for (const primary of [() => new Response("down", { status: 503 }), () => Response.json({ status: "success", tweets: [] })]) {
     const store = new MemoryStore();
     const unit = xUnit();
     await store.saveUnit(unit);
     const { fetchImpl, x } = withX(primary, () => embedPost());
     await processUnits([unit.id], opts(store, fetchImpl, "tok"));
-    assert.equal((await store.getUnits([unit.id]))[0].status, status);
-    assert.equal(x.embed, embeds);
+    const saved = (await store.getUnits([unit.id]))[0];
+    assert.equal(saved.status, "ready");
+    assert.equal(saved.extractionMethod, "x-embed:tweet-result");
+    assert.equal(saved.transcript?.evidence_items[0].observed_spoken_content, "Everyone's selling guides on how to grow on X. Here's mine, for free.");
+    assert.equal(x.embed, 1);
   }
 });
 
@@ -183,8 +187,27 @@ test("a link that isn't a YouTube video is never sent to Gemini as a file", asyn
   assert.equal(calls.gemini, 0);
 });
 
-test("the digest keeps any source with substance and excludes only empty ones, whatever the topic", () => {
-  assert.match(SYSTEM_PROMPT, /Any source with substantive content[^\n]*whatever its topic/);
-  assert.match(SYSTEM_PROMPT, /Exclude a source only when it has nothing to explain/);
-  assert.doesNotMatch(`${SYSTEM_PROMPT}\n${DEFAULT_CATEGORIZATION_REQUEST}`, /AI engineer|engineering problem/i);
+test("runDigestion sends topic-neutral instructions and non-engineering X evidence to the model", async () => {
+  const unit: IngestedUnit = { ...xUnit(), status: "ready", transcript: { window: [0, 0], evidence_items: [
+    { start_seconds: 0, end_seconds: 0, observed_spoken_content: "My sourdough starter finally doubled overnight." },
+  ] } };
+  const { impl, calls } = mockFetch();
+  let sent: { messages: { role: string; content: string }[] } | undefined;
+  const fetchImpl: typeof fetch = async (url, init) => {
+    assert.equal(String(url), "https://api.openai.com/v1/chat/completions");
+    assert.equal(init?.method, "POST");
+    sent = JSON.parse(String(init?.body));
+    return impl(url, init);
+  };
+  const result = await runDigestion({ apiKey: "k", units: [unit], request: DEFAULT_CATEGORIZATION_REQUEST, fetchImpl });
+  assert.equal(calls.openai, 1);
+  assert.ok(sent);
+  assert.deepEqual(sent.messages.map((m) => m.role), ["system", "user"]);
+  assert.match(sent.messages[0].content, /Any source with substantive content[^\n]*whatever its topic/);
+  assert.match(sent.messages[0].content, /Exclude a source only when it has nothing to explain/);
+  const user = JSON.parse(sent.messages[1].content);
+  assert.match(user.categorization_request, /on any topic/);
+  assert.doesNotMatch(`${sent.messages[0].content}\n${user.categorization_request}`, /AI engineer|engineering problem/i);
+  assert.deepEqual(user.units, [{ ref: "u1", source_url: unit.sourceUrl, title: null, content_type: "x_post", evidence_items: unit.transcript?.evidence_items }]);
+  assert.deepEqual(result.artifacts[0].source_ids, [unit.id]);
 });

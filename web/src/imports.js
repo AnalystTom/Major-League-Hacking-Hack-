@@ -138,8 +138,8 @@ export const willRetry = (r) => r?.status === "failed" && Number.isInteger(r.att
 // Provider and tool failures (an HTTP status, a JSON body, a key name, an ffmpeg exit) are for the logs, not for people.
 const TECHNICAL = /HTTP \d{3}|[{}]|_KEY\b|\bAPI\b|JSON|token|Gemini|OpenAI|twitterapi|Nimble|ffmpeg|chromium|exit(?:ed)? \d|\bgpt-|Digestion/i;
 const PLAIN_FAILURE = {
-  failed: "Resurface couldn't turn this into a short. Paste the link again to try once more.",
-  render_failed: "The short couldn't be finished. Paste the link again to try once more.",
+  failed: "Resurface couldn't turn this into a short.",
+  render_failed: "The short couldn't be finished.",
   render_retrying: "The short hit a snag and is being tried again.",
 };
 

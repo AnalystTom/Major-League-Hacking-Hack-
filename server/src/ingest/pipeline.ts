@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { isXUrl, parseSourceUrl, parseXPostUrl, parseYouTubeUrl } from "./urls.js";
 import { extractWithNimble } from "./extract/nimble.js";
-import { extractXPost, extractXPostPublic, UNAVAILABLE, X_POST_METHOD, X_PUBLIC_METHOD } from "./extract/xpost.js";
+import { extractXPost, extractXPostPublic, X_POST_METHOD, X_PUBLIC_METHOD } from "./extract/xpost.js";
 import { extractWithGemini, windowFor, GEMINI_MODEL } from "./extract/gemini.js";
 import { applyValidation, validateExtraction } from "./extract/validate.js";
 import { fetchTitle } from "./extract/title.js";
@@ -61,8 +61,6 @@ async function extractXPostUnit(unit: IngestedUnit, o: IngestOptions): Promise<I
       if (!o.twitterApiKey) throw new Error("TWITTERAPI_IO_KEY is not configured");
       read = await extractXPost({ apiKey: o.twitterApiKey, postId, fetchImpl: o.fetchImpl });
     } catch (e) {
-      // A post twitterapi.io says is gone is gone; anything else (no key, rate limit, outage) is worth a second route.
-      if ((e as Error).message === UNAVAILABLE) throw e;
       try {
         read = await extractXPostPublic({ postId, fetchImpl: o.fetchImpl });
         out.extractionMethod = X_PUBLIC_METHOD;

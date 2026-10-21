@@ -77,9 +77,11 @@ async function processNow(unitIds: string[], o: ProcessorOptions): Promise<Proce
 
   if (!o.openaiKey) { summary.skipped = "OPENAI_API_KEY not configured"; return summary; }
 
+  const request = o.categorizationRequest ?? DEFAULT_CATEGORIZATION_REQUEST;
+  const promptId = await o.store.registerPrompt(promptRevisionText(request), []);
   const readyIds = units.filter((u) => u.status === "ready").map((u) => u.id);
   // Taken as in flight in the same tick as the check, before any await, so a concurrent request can't digest them too.
-  const candidates = (await o.store.unitsNeedingDigest(readyIds)).filter((id) => !inFlight.has(id));
+  const candidates = (await o.store.unitsNeedingDigest(readyIds, promptId)).filter((id) => !inFlight.has(id));
   candidates.forEach((id) => inFlight.add(id));
   let needing: string[] = [];
   try {
@@ -92,7 +94,6 @@ async function processNow(unitIds: string[], o: ProcessorOptions): Promise<Proce
     needing = reserved.allowed;
     if (needing.length === 0) { summary.skipped = reserved.deferred.length ? "processing limit reached" : "nothing new to digest"; return summary; }
 
-    const request = o.categorizationRequest ?? DEFAULT_CATEGORIZATION_REQUEST;
     const toDigest = units.filter((u) => needing.includes(u.id));
     try {
       const d = await digestAndStore({ apiKey: o.openaiKey, model: o.openaiModel, maxOutputTokens: o.openaiMaxOutputTokens, units: toDigest, request, fetchImpl: o.fetchImpl, store: o.store });
@@ -107,7 +108,6 @@ async function processNow(unitIds: string[], o: ProcessorOptions): Promise<Proce
       const ready = (d.stored ?? []).filter((a) => a.ingestion_status === "ready");
       if (ready.length && o.onArtifacts) o.onArtifacts(ready).catch((e: Error) => o.log?.(`outputs failed: ${e.message}`));
     } catch (e) {
-      const promptId = await o.store.registerPrompt(promptRevisionText(request), []).catch(() => null);
       await o.store.saveFailedArtifacts(needing, (e as Error).message, promptId);
       recordError("digest failed", e);
       o.log?.(`digest failed for ${needing.length} unit(s): ${(e as Error).message}`);
@@ -130,7 +130,10 @@ export async function sweepOnce(o: ProcessorOptions, limit = 20): Promise<number
   const pending = await o.store.listPendingUnitIds(limit);
   const owners = await o.store.newestImporters(pending);
   for (const id of pending) add(owners.get(id), id);
-  if (o.openaiKey) for (const { unitId, userId } of await o.store.listUnitsNeedingDigest(limit)) add(userId, unitId);
+  if (o.openaiKey) {
+    const promptId = await o.store.registerPrompt(promptRevisionText(o.categorizationRequest ?? DEFAULT_CATEGORIZATION_REQUEST), []);
+    for (const { unitId, userId } of await o.store.listUnitsNeedingDigest(limit, promptId)) add(userId, unitId);
+  }
   let n = 0;
   for (const ids of groups.values()) {
     n += ids.size;

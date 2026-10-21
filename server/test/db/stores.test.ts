@@ -5,9 +5,10 @@ import { testDatabase } from './helpers.js';
 import { D1Store } from '../../src/ingest/store.js';
 import { D1OutputStore } from '../../src/outputs/store.js';
 import { D1HandoffStore } from '../../src/outputs/handoff-store.js';
-import { processUnits } from '../../src/ingest/processor.js';
+import { processUnits, sweepOnce } from '../../src/ingest/processor.js';
 import { mockFetch } from '../ingest/helpers.js';
 import { UNLIMITED } from '../../src/ingest/limits.js';
+import { DEFAULT_CATEGORIZATION_REQUEST, promptRevisionText } from '../../src/ingest/digest/prompt.js';
 
 async function setup() {
   const { db,sqlite }=testDatabase();
@@ -40,7 +41,7 @@ test('D1 stores preserve extraction, prompt revisions, artifacts and failed dige
     assert.equal((await s.store.getUnits([id]))[0].status,'ready');
     assert.equal((await s.store.getUnits([id]))[0].title,'Real Title');
     assert.equal((await s.store.getUnits([id]))[0].transcript?.evidence_items.length,1);
-    assert.equal((await s.store.unitsNeedingDigest([id])).length,0);
+    assert.equal((await s.store.unitsNeedingDigest([id],s.prompt)).length,0);
     const a=(await s.db.query('SELECT * FROM artifacts')).rows[0];
     assert.deepEqual(a.source_ids,[id]);
     await assert.rejects(s.db.query("UPDATE artifacts SET processed_text='changed' WHERE id=?1",[a.id]),/immutable/);
@@ -48,9 +49,35 @@ test('D1 stores preserve extraction, prompt revisions, artifacts and failed dige
     await s.db.query('INSERT INTO artifacts(id,version,name,source_url,source_ids,processed_text,ingestion_status) SELECT id,2,name,source_url,source_ids,\'revised\',\'ready\' FROM artifacts WHERE id=?1',[a.id]);
     const retry=await s.unit('ready');
     for(let i=0;i<3;i++) await s.store.saveFailedArtifacts([retry],'actual error',s.prompt);
-    assert.equal((await s.store.listUnitsNeedingDigest(50)).some((r)=>r.unitId===retry),false);
+    assert.equal((await s.store.listUnitsNeedingDigest(50,s.prompt)).some((r)=>r.unitId===retry),false);
     assert.ok((await s.db.query('SELECT error FROM artifacts WHERE ingestion_status=\'failed\'')).rows.every((r)=>r.error==='actual error'));
     await assert.rejects(s.db.query("INSERT INTO ingested_units(submitted_url,source_url,transcript) VALUES('x','x','invalid json')"),/CHECK/);
+  } finally { s.sqlite.close(); }
+});
+
+test('D1 requests and sweeps reconsider old exclusions while preserving current exclusions',async()=>{
+  const s=await setup();
+  try {
+    const direct=await s.unit('ready'),scheduled=await s.unit('ready'),excluded=await s.unit('ready');
+    const ids=[direct,scheduled,excluded];
+    const transcript={window:[0,0],evidence_items:[{start_seconds:0,end_seconds:0,observed_spoken_content:'How to grow a sourdough starter.'}]};
+    await s.db.query('UPDATE ingested_units SET transcript=?1',[JSON.stringify(transcript)]);
+    await s.store.saveArtifacts([],ids.map((unit_id)=>({unit_id,reason:'Not engineering.'})),s.prompt);
+    assert.deepEqual(await s.store.unitsNeedingDigest(ids,s.prompt),[]);
+    assert.deepEqual(await s.store.listUnitsNeedingDigest(50,s.prompt),[]);
+    const current=await s.store.registerPrompt(promptRevisionText(DEFAULT_CATEGORIZATION_REQUEST),[]);
+    await s.store.saveArtifacts([],[{unit_id:excluded,reason:'Nothing to explain.'}],current);
+    assert.deepEqual((await s.store.unitsNeedingDigest(ids,current)).sort(),[direct,scheduled].sort());
+    assert.deepEqual((await s.store.listUnitsNeedingDigest(50,current)).map((r)=>r.unitId).sort(),[direct,scheduled].sort());
+    const { impl,calls }=mockFetch();
+    const options={store:s.store,geminiKey:'k',openaiKey:'o',fetchImpl:impl};
+    assert.equal((await processUnits([direct],options)).digested,1);
+    assert.equal(await sweepOnce(options),1);
+    assert.equal(calls.openai,2);
+    assert.equal(calls.gemini,0);
+    assert.deepEqual(await s.store.unitsNeedingDigest(ids,current),[]);
+    assert.deepEqual(await s.store.listUnitsNeedingDigest(50,current),[]);
+    assert.equal((await s.db.query('SELECT count(*) AS n FROM artifact_exclusions')).rows[0].n,4);
   } finally { s.sqlite.close(); }
 });
 
@@ -128,8 +155,8 @@ test('D1 shared digests stay private and handoff claims survive migration',async
     const a=await s.artifact([shared,privateId]);
     const other=(await s.db.query("INSERT INTO users(email,password_hash) VALUES('other@example.com','x') RETURNING id")).rows[0].id;
     await s.db.query('INSERT INTO user_imports(user_id,unit_id) VALUES(?1,?2)',[other,shared]);
-    assert.deepEqual(await s.store.unitsNeedingDigest([shared,privateId]),[shared]);
-    assert.equal((await s.store.listUnitsNeedingDigest(50))[0].userId,other);
+    assert.deepEqual(await s.store.unitsNeedingDigest([shared,privateId],s.prompt),[shared]);
+    assert.equal((await s.store.listUnitsNeedingDigest(50,s.prompt))[0].userId,other);
     const skill=(await s.db.query("INSERT INTO skill_results(artifact_id,artifact_version,status,skill_markdown) VALUES(?1,1,'ready','---\nname: test\n---\nbody') RETURNING id",[a.id])).rows[0].id;
     const brief=(await s.db.query("INSERT INTO agent_briefs(user_id,skill_result_ids,input_key) VALUES(?1,?2,'k') RETURNING id",[s.user,JSON.stringify([skill])])).rows[0].id;
     const claim=(await s.handoffs.claim(brief))!;
