@@ -104,7 +104,7 @@ Node, in `server/src`. `POST /api/ingest/process` takes `{ "unit_ids": [...] }` 
    that speech. ffmpeg composes one title card per scene over the narration, 1080×1920 H.264 + AAC with
    `+faststart`. There's no music in v0.
 5. **Checks before `ready`.** The rendered file must probe as 1080×1920 H.264 with an AAC track, and its duration
-   must match the timeline within a second. Each upload is read back and its size compared. `video_results` then
+   must match the timeline within a second. Each upload's stored size is checked before `video_results`
    records the script, the models used, `media_ref`, `caption_ref`, `narration_ref` and the measured duration.
 
 R2 keys (resolved by the Worker as `r2:<key>`):
@@ -118,8 +118,15 @@ worker whose claim was taken over can't write its result.
 
 **Configuration**: see the [ingestion README](../server/src/ingest/README.md) for provider credentials, models,
 output caps and sweep settings, and [`server/.env.example`](../server/.env.example) for local settings.
-Media goes to R2 through its S3 API (`R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`),
-or to local wrangler dev with `MEDIA_LOCAL_WEB_DIR`. Optional render settings: `GEMINI_TTS_MODEL`,
+Media goes to R2 through the processor Worker's `MEDIA` binding, which must point at the same bucket as the
+web Worker's `MEDIA` binding. With `D1_URL` and `D1_TOKEN` set, the renderer sends files to
+`PUT /internal/media?key=<key>` on the `D1_URL` origin, authenticated with `D1_TOKEN`. The Worker checks the
+stored object's size before the renderer saves its `r2:<key>` reference; the web Worker resolves that reference
+to `/media/<key>`. No R2 S3 credentials are used.
+
+`MEDIA_LOCAL_WEB_DIR` takes precedence over the bridge and writes to local wrangler dev instead; see
+[`server/.env.example`](../server/.env.example) for local storage settings. Without either configuration,
+media storage is unavailable. Optional render settings: `GEMINI_TTS_MODEL`,
 `GEMINI_TTS_VOICE`, `RENDER_FONT`. Renders need `ffmpeg` and `ffprobe` on the host.
 
 **Hosting** is PR #5: a Cloudflare Container behind a `resurface-processor` Worker that sleeps when idle, to stay
@@ -130,7 +137,6 @@ around $5–10 a month. It isn't deployed. It needs Workers Paid and a Workers B
 - Same platform as the page: a Worker binding, no keys in the browser, same-origin URLs.
 - No egress fees, which matters for video. Storage is about $0.015/GB-month; a 40 s 1080×1920 short at
   ~4 Mbps is ~20 MB, so 1,000 shorts is ~20 GB, about $0.30 a month.
-- S3-compatible, so a Node/Python renderer uploads with any S3 client.
 - D1 keeps only references and metadata (D1 is the wrong place for video bytes).
 
 Move to Cloudflare Stream only if adaptive bitrate (HLS) becomes necessary. It bills per minute stored
@@ -143,8 +149,8 @@ Apply `web/migrations/` to the D1 binding with `npm run db:migrate:local --prefi
 See [D1 migration and cutover](applying-migration.md) for preserving existing TigerData records.
 
 The web Worker needs its D1 `DB` binding, R2 `MEDIA` binding, `PROCESSOR_URL` and `PROCESSOR_TOKEN`.
-The processor Worker holds a binding to the same D1 database and forwards it to the Node container
-through its authenticated `/internal/d1` route. The container receives `D1_URL` and `D1_TOKEN` at startup.
+For the processor's D1 connection, see [Processor connection](applying-migration.md#processor-connection).
+Its R2 binding and media configuration are described [above](#the-processor).
 
 For local development, run `npm run dev --prefix web` after applying local migrations. A standalone
 Node processor uses the same D1 bridge; configure both variables and provider keys in `server/.env`
