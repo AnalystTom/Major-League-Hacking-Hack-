@@ -5,12 +5,12 @@ import { groundsFor, motionSpec } from "../../src/outputs/render/motion-skill.js
 import { artifact } from "./helpers.js";
 
 const narration = (n: number) => Array.from({ length: n }, (_, i) => `word${i}`).join(" ");
-const reply = (scenes: Record<string, unknown>[]) => ({
-  scenes: scenes.map((s) => ({ narration_text: narration(16), on_screen_text: "Failing check first", source_ids: [], ...s })),
+const reply = (a: ReturnType<typeof artifact>, scenes: Record<string, unknown>[]) => ({
+  scenes: scenes.map((s) => ({ narration_text: narration(16), on_screen_text: "Failing check first", source_ids: a.source_ids, ...s })),
 });
 
-test("script-v2 directs the picture in the reel's terms and keeps the source's own strength", () => {
-  assert.equal(SCRIPT_PROMPT_REVISION, "script-v2");
+test("script-v3 directs the picture in the reel's terms and keeps the source's own strength", () => {
+  assert.equal(SCRIPT_PROMPT_REVISION, "script-v3-cited-scenes");
   for (const rule of ['"strike"', '"roll"', '"stamp"', '"count"', '"cobalt"', 'Don\'t open with "The problem is"', 'no "all", "always"', "Never pad"]) {
     assert.ok(SCRIPT_SYSTEM_PROMPT.includes(rule), `prompt says ${rule}`);
   }
@@ -18,7 +18,7 @@ test("script-v2 directs the picture in the reel's terms and keeps the source's o
 
 test("each scene keeps its move only when the template can draw it honestly", () => {
   const a = artifact({ processed_text: "Teams that added 3 checks per task caught regressions sooner." });
-  const scenes = validateScript(reply([
+  const scenes = validateScript(reply(a, [
     { move: "strike", swap: "proof." },
     { move: "strike", swap: "" },
     { move: "roll", on_screen_text: "Vibes", swap: "Evals" },
@@ -43,7 +43,7 @@ test("each scene keeps its move only when the template can draw it honestly", ()
 
 test("a count needs the number itself in the source, not a longer one that contains it", () => {
   const a = artifact({ processed_text: "Runs took 30 minutes; 3.5x faster after caching; 1,165 saved items." });
-  const move = (on_screen_text: string) => validateScript(reply([{ move: "count", on_screen_text }, {}]), a)[0].move;
+  const move = (on_screen_text: string) => validateScript(reply(a, [{ move: "count", on_screen_text }, {}]), a)[0].move;
   assert.equal(move("3 checks"), "slam");
   assert.equal(move("30 minutes"), "count");
   assert.equal(move("1,165 saves"), "count");
@@ -55,7 +55,8 @@ test("a count needs the number itself in the source, not a longer one that conta
 });
 
 test("an aside longer than a glance is dropped, and grounds pass through", () => {
-  const [s] = validateScript(reply([{ aside: narration(14), ground: "cobalt" }, {}]), artifact());
+  const a = artifact();
+  const [s] = validateScript(reply(a, [{ aside: narration(14), ground: "cobalt" }, {}]), a);
   assert.equal(s.aside, "");
   assert.equal(s.ground, "cobalt");
   assert.equal(s.visual_instruction, "slam on cobalt");
@@ -82,4 +83,15 @@ test("the template gets each scene's move, swap and own aside", () => {
     ["cobalt", "roll", "Evals", ""], // an empty aside stays empty: no narration repeated on screen
     ["paper", "slam", "", ""], // the end card draws the skill, not a move
   ]);
+});
+
+test("opening and closing scenes require known source IDs", () => {
+  const a = artifact();
+  assert.deepEqual(validateScript(reply(a, [{}, {}]), a).map(s => s.source_ids), [a.source_ids, a.source_ids]);
+  for (const index of [0, 1]) {
+    const raw = reply(a, [{}, {}]);
+    raw.scenes[index].source_ids = [];
+    assert.throws(() => validateScript(raw, a), /source_ids/);
+  }
+  assert.throws(() => validateScript(reply(a, [{ source_ids: ["unknown-source"] }, {}]), a), /isn't a source/);
 });

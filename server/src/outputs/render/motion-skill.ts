@@ -22,7 +22,7 @@ const SKILL_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../../ass
 const RECORD_TIMEOUT_MS = 40 * 60_000;
 
 /** The ready skill an end card can name; null while it's still being written or if it failed. */
-export interface SkillCard { name: string; tasks: number }
+export interface SkillCard { name: string; description: string }
 
 export interface MotionScene { d: number; code: string; theme: string; text: string; sub: string; label: string; move: string; swap: string }
 export interface MotionSpec {
@@ -30,7 +30,7 @@ export interface MotionSpec {
   category: string;
   source: { kind: "x" | "youtube" | "other"; platform: string; title: string; byline: string; tag: string };
   scenes: MotionScene[];
-  skill: { name: string; path: string; tasks: string } | null;
+  skill: SkillCard | null;
 }
 
 /** Grounds for scenes the script left open, in the reel's order of cuts. Scene 1 is always night, the end card paper. */
@@ -94,10 +94,7 @@ export function motionSpec(a: ReadyArtifact, scenes: SpecScene[], slots: Slot[],
         move, swap: move === "slam" || move === "count" ? "" : clip(oneLine(s.swap ?? ""), 24),
       };
     }),
-    skill: skill && {
-      name: skill.name, path: `.agents/skills/${skill.name}/SKILL.md`,
-      tasks: "",
-    },
+    skill: skill && { name: oneLine(skill.name), description: clip(oneLine(skill.description), 160) },
   };
 }
 

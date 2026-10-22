@@ -11,12 +11,13 @@ The reel was made from three reference posts, each a short motion-graphics piece
 
 ## The rules, and where they live
 
-**Script.** `server/src/outputs/render/script.ts` sets the rules in `SCRIPT_SYSTEM_PROMPT` (`script-v2`).
+**Script.** `server/src/outputs/render/script.ts` sets the rules in `SCRIPT_SYSTEM_PROMPT` (`script-v3-cited-scenes`).
 - One idea per scene.
 - The headline is at most 5 words, and the aside is at most 8 words in a second voice.
 - Each scene gets one move and one ground.
 - Length follows the source, with no padding.
 - Nothing stronger than the source says.
+- Every scene cites at least one known source ID, including the opening and closing scenes.
 
 `validateScript` falls back to `slam` for any move the template can't draw honestly. That covers a strike or roll with nothing to swap to, and a count of a number the source never states.
 
@@ -40,4 +41,4 @@ Scene 1 is always night and the end card is always paper. `groundsFor` in `motio
 
 **Frame.** The HUD has corner marks, `RESURFACE`, the scene code, the timecode and the source tag. The italic serif aside carries the second voice.
 
-**Honesty.** The copy comes only from the artifact. The end card names a skill only when that skill is ready; otherwise it shows the next step.
+**Honesty.** The copy comes only from the artifact. The end card shows only a ready skill’s actual name and one-line description; otherwise it shows the next step. It never invents an installation path. The same skill metadata is supplied to the judge as evidence for the end card.

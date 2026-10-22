@@ -1,0 +1,116 @@
+[
+  {
+    "artifact": {
+      "id": "34448656-1865-4e64-a332-9753d06a71e2",
+      "name": "Generate launch assets from a project or website",
+      "category": "Agent-driven launch asset generation",
+      "processed_text": "The /brag skill turns a website link or project into a short launch video with music, motion, and copy. It illustrates an agent workflow for generating marketing assets from an existing product rather than preparing each asset separately. The demonstration shows plugin installation and motion-design examples; production quality and time savings are unknown.",
+      "selection_reason": "Provides a reusable example of connecting project inputs to an agent-powered marketing asset workflow.",
+      "source_ids": [
+        "96a98a12-2446-43a4-9dec-b0e6bb9a4270"
+      ],
+      "sources": [
+        {
+          "url": "https://www.youtube.com/watch?v=rkK8ZyzYyEA",
+          "title": "8 GitHub Repos To Go Viral and Make Money",
+          "content_type": "youtube_video",
+          "retrieved_at": "2026-10-11T20:00:46.223Z"
+        }
+      ],
+      "evidence": [
+        {
+          "passage": "The speaker discusses the /brag skill which generates a short launch video, music, motion, and copy from a website link or project.",
+          "source_id": "96a98a12-2446-43a4-9dec-b0e6bb9a4270",
+          "end_seconds": 450,
+          "start_seconds": 125
+        }
+      ],
+      "version": 1
+    },
+    "skill": {
+      "name": "launch-assets",
+      "description": "Turn a project or website into a short launch video with music, motion, and copy; use when preparing marketing assets for a product launch."
+    }
+  },
+  {
+    "artifact": {
+      "id": "5bd982f4-93cf-42dd-8c11-9a8e235ce7c0",
+      "name": "Build agentic development workflows around code checks, isolation, and human review",
+      "category": "Reliable orchestration of AI coding workflows",
+      "processed_text": "Treat AI-assisted development as a workflow-design problem: decide which steps belong to engineers, agents, and executable code rather than delegating everything to agents. In “FORGET Loop Engineering. Agentic Engineering is about THIS,” the speaker recommends starting with the simplest workflow and performing the work manually before encoding it into an agent pipeline.\n\nA reusable starting pattern is engineer prompt → build agent → deterministic validation → engineer review. Route failed lint checks back to the build agent, and retain code-based checks rather than substituting agent judgment for executable validation. As the workflow grows, add planning and a dedicated testing stage; the demonstrated sequence is planner agent → build agent → test agent → engineer review → ship.\n\nFor parallel execution, isolate agents in separate worktrees or sandboxes. These are presented as alternative isolation arrangements, not as evidence of measured performance gains. At a larger scale, ticket queues and routing can dispatch work to specialized bug, feature, or maintenance workflows. An incident-response example routes a support ticket through scout and hot-fix agents while retaining human approval or rejection.\n\nThe transferable lesson is to scale a workflow you already understand: combine agent reasoning with deterministic checks, make review boundaries explicit, and introduce isolation and specialization as orchestration grows. The supplied evidence contains workflow diagrams and recommendations, but no measured reliability, throughput, or cost results.",
+      "selection_reason": "The unit supplies concrete, reusable patterns for the same engineering problem: structuring and scaling AI coding workflows while retaining executable validation, isolation, and human review. The synthesis prioritizes these patterns over terminology disputes and course promotion.",
+      "source_ids": [
+        "5aa1a45f-62d8-499b-9c1c-e07cb852261c"
+      ],
+      "sources": [
+        {
+          "url": "https://www.youtube.com/watch?v=VQy50fuxI34",
+          "title": "FORGET Loop Engineering. Agentic Engineering is about THIS",
+          "content_type": "youtube_video",
+          "retrieved_at": "2026-10-11T19:32:40.824Z"
+        }
+      ],
+      "evidence": [
+        {
+          "passage": "There are now three actors of value creation for engineering work: the engineers like you and I, there are the agents, and there's the code. Knowing when and where to place each of these is the name of the game of agentic engineering.",
+          "source_id": "5aa1a45f-62d8-499b-9c1c-e07cb852261c",
+          "end_seconds": 450,
+          "start_seconds": 338
+        },
+        {
+          "passage": "Now we have code agents and engineers all involved in the process... We have code, in this case we're just running a linter. We have a condition: if the linter fails, the results go back into our build agent. If they're successful, it passes.",
+          "source_id": "5aa1a45f-62d8-499b-9c1c-e07cb852261c",
+          "end_seconds": 740,
+          "start_seconds": 551
+        },
+        {
+          "passage": "We can scale all of our testing, all of our validation, all of our linting, all of our type checking into a single test agent... Let's add planning to the workflow... Planner agent -> Build agent -> Test agent -> Engineer review -> Ship.",
+          "source_id": "5aa1a45f-62d8-499b-9c1c-e07cb852261c",
+          "end_seconds": 907,
+          "start_seconds": 741
+        },
+        {
+          "passage": "A very popular pattern is to push each one of your agents into their own work tree. This creates isolation, this creates parallelism... Instead of spinning up work trees, we're now giving every single agent their own computer, their own agent sandbox.",
+          "source_id": "5aa1a45f-62d8-499b-9c1c-e07cb852261c",
+          "end_seconds": 1200,
+          "start_seconds": 908
+        },
+        {
+          "passage": "A very common thing to do as you continue to progress is to set up a Kanban board, some type of ticket system... This idea of the agentic layer: the agents, the prompts, the skills, the system prompts that wrap your application.",
+          "source_id": "5aa1a45f-62d8-499b-9c1c-e07cb852261c",
+          "end_seconds": 1515,
+          "start_seconds": 1203
+        },
+        {
+          "passage": "Imagine you have a support crisis, production is down... Support files a ticket... Your cracked engineer prompts a scout agent that routes right into a hot fix agent... You put in human effort to approve or reject... then you build up a bunch of sandboxes to run the solution in parallel.",
+          "source_id": "5aa1a45f-62d8-499b-9c1c-e07cb852261c",
+          "end_seconds": 1795,
+          "start_seconds": 1525
+        },
+        {
+          "passage": "This is what really starts turning into a software factory... You'll see here we have many different types of specialized agent sandbox workflows... Any specialized ADW you need can be built and routed to thanks to your routing system.",
+          "source_id": "5aa1a45f-62d8-499b-9c1c-e07cb852261c",
+          "end_seconds": 2490,
+          "start_seconds": 1796
+        },
+        {
+          "passage": "Keep it simple... When you start building these out, start with the simplest workflow you can think of... Use agents and code... Make sure you're not just using agents, use agents and code... Balance it out with actual code execution.",
+          "source_id": "5aa1a45f-62d8-499b-9c1c-e07cb852261c",
+          "end_seconds": 3010,
+          "start_seconds": 2698
+        },
+        {
+          "passage": "Design your ADWs by doing the work yourself first... Walk through it all yourself...",
+          "source_id": "5aa1a45f-62d8-499b-9c1c-e07cb852261c",
+          "end_seconds": 3600,
+          "start_seconds": 3011
+        }
+      ],
+      "version": 1
+    },
+    "skill": {
+      "name": "agentic-coding-workflows",
+      "description": "Structure coding-agent workflows around executable checks, isolation, and human review; use when designing or scaling agent workflows for code changes, parallel work, or ticket-routed issues."
+    }
+  }
+]

@@ -49,7 +49,7 @@ function maskRise(s, x, y, lt, t0, o, dur = .6){
   T(s, x, y + (1 - e) * z * 1.15, { ...o, fit: o.fit ?? HW }); ctx.restore();
 }
 
-// the outline badge that slams in at a slight angle (the reel's "AT LAUNCH", the end card's "SEND TO YOUR AGENT")
+// the outline badge that slams in at a slight angle
 function stampBadge(text, cx, cy, lt, t1, th, z = 50){
   const sp = inv(t1, t1 + .18, lt); if (sp <= 0) return;
   const sc = lerp(1.6, 1, eBack(sp)), bw = mw(text, FD, 800, z) + 64;
@@ -195,24 +195,8 @@ S.say = {
 S.skill = {
   draw(lt, d, t){
     const th = THEMES.paper, sk = DATA.skill;
-    // SKILL.md chip; without a ready skill the card is just the next step
-    const chip = sk ? 'SKILL.md' : 'NEXT STEP', cp = spring(lt - .1, ...SPRING.snappy), cw = mw(chip, FM, 600, 26, 2) + 56;
-    ctx.save(); ctx.globalAlpha = clamp(cp * 1.5); ctx.strokeStyle = th.ink; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.roundRect(90, 300 - 44 + (1 - cp) * 20, cw, 62, 31); ctx.stroke(); ctx.restore();
-    T(chip, 90 + 28, 300 + (1 - cp) * 20, { f: FM, w: 600, z: 26, c: th.ink, ls: 2, a: clamp(cp * 1.5) });
-    // the skill's name, as it lands in .agents/skills/<name>/
-    // without a ready skill (it's still being written) the card names the lesson instead: no invented path or count
-    const h = headline(sk ? sk.name.replace(/-/g, ' ') : dataOf(t).text, 90, 470, lt, .35, th, W - 180, 112, 1);
-    if (sk){
-      rise(sk.path, 90, h.bottom + 70, lt, h.tEnd + .1, { f: FM, w: 400, z: 24, c: th.dim, fit: W - 180 });
-      rise(dataOf(t).text, 90, h.bottom + 170, lt, h.tEnd + .3, { f: FS, w: 'italic 400', z: 64, c: th.ink, fit: W - 180 });
-    }
-    // the stamp: rotated outline badge, slams in
-    const t1 = Math.min(d * .5, h.tEnd + .9);
-    if (sk){
-      stampBadge('SEND TO YOUR AGENT', W - 100, 1150, lt, t1, th);
-      if (sk.tasks) rise(sk.tasks, W - 100, 1290, lt, t1 + .35, { f: FM, w: 600, z: 24, c: th.ink, ls: 3, al: 'right' });
-    }
+    const h = headline(sk ? sk.name.replace(/-/g, ' ') : dataOf(t).text, 90, 400, lt, .35, th, W - 180, 88, 1);
+    if (sk) aside(sk.description, 90, h.bottom + 85, lt, h.tEnd + .1, th);
   },
-  cues: d => [[.1, 'blip', 990, .06], [Math.min(d * .5, 2.2), 'stamp', .6], [d - .9, 'correct']]
+  cues: d => [[.1, 'blip', 990, .06], [d - .9, 'correct']]
 };

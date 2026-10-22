@@ -59,10 +59,11 @@ export async function renderArtifact(a: ReadyArtifact, o: RenderOptions): Promis
     const cues = captionCues(draft.map((s) => s.narration_text), slots, 32);
     await writeFile(vtt, toVtt(cues));
     const motion = renderStyle() === "motion-skill";
+    const skill = motion ? await readySkill(a, o) : null;
     let out: { mp4: string; narration: string; duration: number };
     if (motion) {
       const track = await narrationTrack(dir, wavs, slots);
-      const film = await renderMotion(dir, motionSpec(a, draft, slots, await readySkill(a, o)), track.wav);
+      const film = await renderMotion(dir, motionSpec(a, draft, slots, skill), track.wav);
       out = { mp4: film.mp4, narration: track.m4a, duration: film.duration };
     } else {
       out = await composeShort({ dir, narration: wavs, onScreen: draft.map((s) => s.on_screen_text), slots, category: a.category });
@@ -73,7 +74,7 @@ export async function renderArtifact(a: ReadyArtifact, o: RenderOptions): Promis
       narration_text: s.narration_text, on_screen_text: s.on_screen_text, visual_instruction: s.visual_instruction, source_ids: s.source_ids,
     }));
     out.mp4 = await burnSubtitles(dir, out.mp4, cues);
-    const judgment = await judgeShort(a, scenes, out.mp4, dir, { apiKey: o.openaiKey, model: o.openaiModel, fetchImpl: o.fetchImpl });
+    const judgment = await judgeShort(a, scenes, out.mp4, dir, { apiKey: o.openaiKey, model: o.openaiModel, fetchImpl: o.fetchImpl }, skill);
 
     const base = `${a.id}/${a.version}`;
     const media_ref = await o.media.put(`videos/${base}/short.mp4`, out.mp4, "video/mp4");

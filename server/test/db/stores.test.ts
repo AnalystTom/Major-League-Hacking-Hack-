@@ -126,7 +126,7 @@ test('D1 outputs retain claim ownership, bounded retries and skills-only writes 
     await assert.rejects(s.outputs.finishSkill(second,{...skill,action_items:[]}),/taken over/);
     assert.equal((await s.db.query('SELECT count(*) AS n FROM action_items')).rows[0].n,1,'lost claim cannot delete tasks');
     assert.deepEqual((await s.handoffs.loadSkills([second.id]))[0].action_items[0].steps,['Inspect']);
-    assert.deepEqual(await s.outputs.skillCard(art),{status:'ready',card:{name:'check-first',tasks:1}});
+    assert.deepEqual(await s.outputs.skillCard(art),{status:'ready',card:{name:'check-first',description:'Check'}});
     const v=(await s.outputs.claim('video',art))!;
     await assert.rejects(s.db.query("UPDATE video_results SET status='ready' WHERE id=?1",[v.id]),/CHECK|positive duration/);
     await s.db.query("UPDATE video_results SET updated_at='2000-01-01T00:00:00Z' WHERE id=?1",[v.id]);
@@ -204,9 +204,9 @@ test('legacy skills regenerate once without exposing old text or retrying a fail
     const claim=claims.find(Boolean)!;
     await s.db.query("UPDATE skill_results SET updated_at='2000-01-01T00:00:00Z' WHERE id=?1",[claim.id]);
     assert.equal(await s.outputs.claim('skill',a),null);
-    await s.outputs.finishSkill(claim,{skill_markdown:'---\nname: concise-skill\n---\nInspect the source.',supporting_refs:[],action_items:[]});
+    await s.outputs.finishSkill(claim,{skill_markdown:'---\nname: concise-skill\ndescription: Inspect the source.\n---\nInspect the source.',supporting_refs:[],action_items:[]});
     assert.equal(await s.outputs.claim('skill',a),null);
-    assert.deepEqual(await s.outputs.skillCard(a),{status:'ready',card:{name:'concise-skill',tasks:0}});
+    assert.deepEqual(await s.outputs.skillCard(a),{status:'ready',card:{name:'concise-skill',description:'Inspect the source.'}});
     assert.equal((await s.handoffs.loadSkills(ids)).length,1);
     assert.deepEqual(JSON.parse((await s.db.query('SELECT review_feedback FROM skill_results WHERE id=?1',[claim.id])).rows[0].review_feedback),{prompt_revision:SKILL_PROMPT_REVISION});
     const failed=(await s.outputs.claim('skill',b))!;

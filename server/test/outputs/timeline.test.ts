@@ -44,7 +44,7 @@ test("a script citing an unknown source or far off length is rejected", () => {
   const bad = scriptReply(a);
   bad.scenes[1].source_ids = [randomUUID()];
   assert.throws(() => validateScript(bad, a), /isn't a source/);
-  assert.throws(() => validateScript({ scenes: [{ narration_text: "too short", on_screen_text: "x" }, { narration_text: "yes", on_screen_text: "y" }] }, a), /words/);
+  assert.throws(() => validateScript({ scenes: [{ narration_text: "too short", on_screen_text: "x", source_ids: a.source_ids }, { narration_text: "yes", on_screen_text: "y", source_ids: a.source_ids }] }, a), /words/);
 });
 
 test("the frame header puts a long category on its own clipped line", () => {

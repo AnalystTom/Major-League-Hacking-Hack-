@@ -9,7 +9,8 @@ import { probe } from "../../src/outputs/render/ffmpeg.js";
 import type { MediaStore } from "../../src/outputs/render/media.js";
 import { renderArtifact } from "../../src/outputs/render/render.js";
 import { fillTemplate, motionSpec, recordEnv } from "../../src/outputs/render/motion-skill.js";
-import { MemoryOutputStore, skillNameOf } from "../../src/outputs/store.js";
+import { MemoryOutputStore, skillCardOf } from "../../src/outputs/store.js";
+import { JUDGE_SYSTEM_PROMPT } from "../../src/outputs/render/judge.js";
 import { artifact, outputsFetch } from "./helpers.js";
 
 const slots = [{ start: 0, speechEnd: 5.4, end: 5.75 }, { start: 5.75, speechEnd: 13, end: 13.35 }, { start: 13.35, speechEnd: 20, end: 20.35 }];
@@ -20,18 +21,17 @@ const scenes = [
 ];
 
 test("the spec times each scene to its narration slot and ends on the ready skill", () => {
-  const spec = motionSpec(artifact(), scenes, slots, { name: "write-the-check-first", tasks: 2 });
+  const spec = motionSpec(artifact(), scenes, slots, { name: "write-the-check-first", description: "Write a failing check before starting an agent task." });
   assert.deepEqual(spec.scenes.map((s) => [s.code, s.d]), [["SAVED", 5.75], ["LESSON", 7.6], ["SKILL", 7]]);
   assert.equal(spec.scenes[0].sub, "Your coding agent says it's done.");
   assert.equal(spec.scenes[2].sub, "", "the skill card shows the skill, not an aside");
   assert.equal(spec.scenes[2].theme, "paper");
-  assert.deepEqual(spec.skill, { name: "write-the-check-first", path: ".agents/skills/write-the-check-first/SKILL.md", tasks: "" });
+  assert.deepEqual(spec.skill, { name: "write-the-check-first", description: "Write a failing check before starting an agent task." });
   assert.deepEqual(spec.source, { kind: "youtube", platform: "YouTube", title: "Evals for coding agents", byline: "", tag: "YOUTUBE" });
 });
 
-test("without a ready skill the end card has no name, path or task count to show", () => {
+test("without a ready skill the end card has no skill metadata to show", () => {
   assert.equal(motionSpec(artifact(), scenes, slots, null).skill, null);
-  assert.equal(motionSpec(artifact(), scenes, slots, { name: "x-y", tasks: 0 }).skill?.tasks, "");
 });
 
 test("an X post's handle becomes the byline, and several sources are counted in the tag", () => {
@@ -53,16 +53,19 @@ test("source text can't close the template's script tag", async () => {
   assert.throws(() => fillTemplate("<script>const DATA = 1;</script>", motionSpec(a, scenes, slots, null)), /no DATA placeholder/);
 });
 
-test("the end card reads the skill's name from its SKILL.md and counts its tasks", async () => {
-  assert.equal(skillNameOf('---\nname: write-the-check-first\ndescription: "x"\n---\n\nbody'), "write-the-check-first");
-  assert.equal(skillNameOf("no frontmatter"), null);
+test("the end card reads only the real name and description from SKILL.md", async () => {
+  const card = { name: "write-the-check-first", description: 'Write a "failing" check.' };
+  assert.deepEqual(skillCardOf('---\nname: write-the-check-first\ndescription: "Write a \\"failing\\" check."\n---\n\nbody'), card);
+  assert.equal(skillCardOf("no frontmatter"), null);
+  assert.equal(skillCardOf('---\nname: write-the-check-first\n---\n'), null);
+  assert.equal(skillCardOf('---\nname: write-the-check-first\ndescription: "broken\n---\n'), null);
   const store = new MemoryOutputStore(0), a = artifact();
   store.artifacts.push(a);
   assert.deepEqual(await store.skillCard(a), { status: "none", card: null });
   const c = (await store.claim("skill", a))!;
   assert.deepEqual(await store.skillCard(a), { status: "running", card: null });
-  await store.finishSkill(c, { skill_markdown: "---\nname: write-the-check-first\n---\n", supporting_refs: [], action_items: [{ task: "t", applicability_evidence: [], prerequisites: [], steps: ["s"], source_refs: [], completion_check: "c" }] });
-  assert.deepEqual(await store.skillCard(a), { status: "ready", card: { name: "write-the-check-first", tasks: 1 } });
+  await store.finishSkill(c, { skill_markdown: '---\nname: write-the-check-first\ndescription: "Write a \\"failing\\" check."\n---\n', supporting_refs: [], action_items: [] });
+  assert.deepEqual(await store.skillCard(a), { status: "ready", card });
 });
 
 test("text that's too long is cut at a word, and an X post cut at ingest says so", () => {
@@ -84,8 +87,22 @@ test("renders a motion short with the narration over the engine's music", { skip
     const a = artifact();
     const keys: string[] = [];
     const media: MediaStore = { put: async (key, file) => { keys.push(key); await copyFile(file, join(out, key.replace(/\//g, "_"))); return `r2:${key}`; } };
-    const v = await renderArtifact(a, { openaiKey: "o", geminiKey: "g", media, fetchImpl: outputsFetch(a).impl,
-      skillCard: async () => ({ status: "ready", card: { name: "write-the-check-first", tasks: 1 } }) });
+    const card = { name: "write-the-check-first", description: "Write a failing check before starting an agent task." };
+    const { impl } = outputsFetch(a);
+    let judged = false;
+    const fetchImpl: typeof fetch = async (url, init) => {
+      const request = JSON.parse(String(init?.body));
+      if (request.messages?.[0]?.content === JUDGE_SYSTEM_PROMPT) {
+        const evidence = JSON.parse(request.messages[1].content[0].text);
+        assert.deepEqual(evidence.generated_skill, card);
+        assert.ok(evidence.scenes.every((s: { source_ids: string[] }) => s.source_ids.length > 0));
+        judged = true;
+      }
+      return impl(url, init);
+    };
+    const v = await renderArtifact(a, { openaiKey: "o", geminiKey: "g", media, fetchImpl,
+      skillCard: async () => ({ status: "ready", card }) });
+    assert.ok(judged, "the rendered skill is supplied as judge evidence");
     assert.match(v.prompt_revision, /; visuals:motion-graphic-skill$/);
     assert.match(v.music_provenance ?? "", /Web Audio/);
     assert.deepEqual(keys, [`videos/${a.id}/1/short.mp4`, `captions/${a.id}/1/short.vtt`, `audio/${a.id}/1/narration.m4a`]);

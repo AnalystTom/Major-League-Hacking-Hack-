@@ -43,14 +43,23 @@ export interface OutputStore {
   /** Save the result; throw LostClaim if the claim was taken over. */
   finishSkill(c: Claim, s: GeneratedSkill): Promise<void>;
   finishVideo(c: Claim, v: RenderedVideo): Promise<void>;
-  /** This revision's skill as a short's end card names it: its state, and once ready its name and task count. */
+  /** This revision's skill as a short's end card names it: its state, and once ready its name and description. */
   skillCard?(a: ReadyArtifact): Promise<SkillState>;
 }
 
 export type SkillState = { status: "none" | "pending" | "running" | "ready" | "failed"; card: SkillCard | null };
 
-/** The `name:` line of a SKILL.md's frontmatter. */
-export const skillNameOf = (markdown: string) => markdown.match(/^---\n(?:.*\n)*?name:\s*([a-z0-9-]+)\s*\n/)?.[1] ?? null;
+/** Only actual skill frontmatter can supply an end card. */
+export function skillCardOf(markdown: string): SkillCard | null {
+  const frontmatter = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1];
+  const name = frontmatter?.match(/^name:[ \t]*([a-z0-9-]+)[ \t]*\r?$/m)?.[1];
+  let description: unknown = frontmatter?.match(/^description:[ \t]*(.+)$/m)?.[1]?.trim();
+  if (typeof description === "string" && description.startsWith('"')) {
+    try { description = JSON.parse(description); } catch { return null; }
+  }
+  if (!name || typeof description !== "string" || !description.trim()) return null;
+  return { name, description: description.replace(/\s+/g, " ").trim() };
+}
 
 const TABLE: Record<Kind, string> = { skill: "skill_results", video: "video_results" };
 
@@ -107,14 +116,12 @@ export class D1OutputStore implements OutputStore {
   async skillCard(a: ReadyArtifact): Promise<SkillState> {
     const { rows } = await this.db.query(
       `SELECT s.status, s.skill_markdown,
-        json_extract(iif(json_valid(s.review_feedback),s.review_feedback,'{}'),'$.prompt_revision') AS prompt_revision,
-        (SELECT count(*) FROM action_items i WHERE i.skill_result_id = s.id) AS tasks
+        json_extract(iif(json_valid(s.review_feedback),s.review_feedback,'{}'),'$.prompt_revision') AS prompt_revision
        FROM skill_results s WHERE s.artifact_id = ?1 AND s.artifact_version = ?2`, [a.id, a.version]);
     const r = rows[0];
     if (!r) return { status: "none", card: null };
     const status = r.status === "ready" && r.prompt_revision !== SKILL_PROMPT_REVISION ? "pending" : r.status;
-    const name = status === "ready" ? skillNameOf(r.skill_markdown ?? "") : null;
-    return { status, card: name ? { name, tasks: r.tasks } : null };
+    return { status, card: status === "ready" ? skillCardOf(r.skill_markdown ?? "") : null };
   }
 }
 
@@ -168,7 +175,7 @@ export class MemoryOutputStore implements OutputStore {
     const row = this.rows.skill.get(this.key(a));
     if (!row) return { status: "none", card: null };
     const status = row.status === "ready" && row.promptRevision !== SKILL_PROMPT_REVISION ? "pending" : row.status;
-    const s = row.value as GeneratedSkill | undefined, name = status === "ready" && s ? skillNameOf(s.skill_markdown) : null;
-    return { status, card: name ? { name, tasks: s!.action_items.length } : null };
+    const s = row.value as GeneratedSkill | undefined;
+    return { status, card: status === "ready" && s ? skillCardOf(s.skill_markdown) : null };
   }
 }
