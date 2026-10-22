@@ -36,14 +36,13 @@ for (const { artifact, skill } of cases) {
 
 const hasFfmpeg = (() => { try { execFileSync("ffmpeg", ["-version"]); return true; } catch { return false; } })();
 
-test("both rejected cases supply their generated skill and scene citations as judge evidence", { skip: !hasFfmpeg && "ffmpeg not installed" }, async () => {
+test("both rejected cases supply skill evidence, narration samples and a late end-card sample", { skip: !hasFfmpeg && "ffmpeg not installed" }, async () => {
   const dir = await mkdtemp(join(tmpdir(), "resurface-judge-evidence-")), mp4 = join(dir, "frames.mp4");
   try {
-    // Include a trailing frame for seeks between the final scene’s 1 fps frames.
-    execFileSync("ffmpeg", ["-y", "-v", "error", "-f", "lavfi", "-i", "color=c=black:s=1080x1920:r=1:d=4", "-c:v", "libx264", "-pix_fmt", "yuv420p", mp4]);
+    execFileSync("ffmpeg", ["-y", "-v", "error", "-f", "lavfi", "-i", "color=c=black:s=1080x1920:r=1:d=7", "-vf", "drawbox=color=white:t=fill:enable=gte(t\\,4)", "-c:v", "libx264", "-pix_fmt", "yuv420p", mp4]);
     for (const { artifact, skill } of cases) {
       const scenes = scriptFor(artifact).map((scene, i) => ({
-        start_seconds: i, end_seconds: i + 1, narration_text: scene.narration_text,
+        start_seconds: i, end_seconds: i === slots.length - 1 ? 6 : i + 1, narration_text: scene.narration_text,
         on_screen_text: scene.on_screen_text, visual_instruction: scene.visual_instruction, source_ids: scene.source_ids,
       }));
       let calls = 0;
@@ -54,7 +53,11 @@ test("both rejected cases supply their generated skill and scene citations as ju
         assert.deepEqual(supplied.artifact, artifact);
         assert.deepEqual(supplied.scenes, scenes);
         assert.deepEqual(supplied.generated_skill, skill);
-        assert.equal(content.filter((c: { type: string }) => c.type === "image_url").length, scenes.length);
+        const images = content.filter((c: { type: string }) => c.type === "image_url");
+        assert.equal(images.length, scenes.length + 1);
+        const pixel = (image: { image_url: { url: string } }) => execFileSync("ffmpeg", ["-v", "error", "-i", "pipe:0", "-vf", "scale=1:1", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"], { input: Buffer.from(image.image_url.url.split(",")[1], "base64") });
+        assert.ok(pixel(images[scenes.length - 1]).every(value => value < 15), "the narration sample precedes the delayed content");
+        assert.ok(pixel(images.at(-1)).every(value => value > 240), "the additional sample includes the delayed content");
         return Response.json({ choices: [{ message: { content: JSON.stringify({ scores: { grounding: 4, clarity: 4, usefulness: 4, visuals: 4, subtitles: 4 }, reasons: [] }) } }] });
       };
       assert.ok((await judgeShort(artifact, scenes, mp4, dir, { apiKey: "test", fetchImpl }, skill)).passed);

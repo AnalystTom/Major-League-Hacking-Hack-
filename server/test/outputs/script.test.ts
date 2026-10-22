@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { SCRIPT_PROMPT_REVISION, SCRIPT_SYSTEM_PROMPT, validateScript } from "../../src/outputs/render/script.js";
+import { SCRIPT_SYSTEM_PROMPT, validateScript, writeScript } from "../../src/outputs/render/script.js";
 import { groundsFor, motionSpec } from "../../src/outputs/render/motion-skill.js";
 import { artifact } from "./helpers.js";
 
@@ -9,11 +9,25 @@ const reply = (a: ReturnType<typeof artifact>, scenes: Record<string, unknown>[]
   scenes: scenes.map((s) => ({ narration_text: narration(16), on_screen_text: "Failing check first", source_ids: a.source_ids, ...s })),
 });
 
-test("script-v3 directs the picture in the reel's terms and keeps the source's own strength", () => {
-  assert.equal(SCRIPT_PROMPT_REVISION, "script-v3-cited-scenes");
-  for (const rule of ['"strike"', '"roll"', '"stamp"', '"count"', '"cobalt"', 'Don\'t open with "The problem is"', 'no "all", "always"', "Never pad"]) {
-    assert.ok(SCRIPT_SYSTEM_PROMPT.includes(rule), `prompt says ${rule}`);
-  }
+test("writeScript delivers its instructions and artifact evidence to the model", async () => {
+  const a = artifact(), raw = reply(a, [{}, {}]);
+  let calls = 0;
+  const fetchImpl: typeof fetch = async (url, init) => {
+    calls++;
+    assert.equal(String(url), "https://api.openai.com/v1/chat/completions");
+    const request = JSON.parse(String(init?.body));
+    assert.deepEqual(request.messages, [
+      { role: "system", content: SCRIPT_SYSTEM_PROMPT },
+      { role: "user", content: JSON.stringify({ artifact: {
+        name: a.name, category: a.category, processed_text: a.processed_text,
+        source_ids: a.source_ids, evidence: a.evidence,
+      } }) },
+    ]);
+    return Response.json({ choices: [{ message: { content: JSON.stringify(raw) } }] });
+  };
+  const scenes = await writeScript(a, { apiKey: "test", fetchImpl });
+  assert.equal(calls, 1);
+  assert.deepEqual(scenes.map(s => [s.narration_text, s.source_ids]), raw.scenes.map(s => [s.narration_text, s.source_ids]));
 });
 
 test("each scene keeps its move only when the template can draw it honestly", () => {

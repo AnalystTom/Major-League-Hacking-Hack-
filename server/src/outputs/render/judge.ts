@@ -26,9 +26,12 @@ const Judgment = z.object({
 
 export async function judgeShort(a: ReadyArtifact, scenes: ScriptScene[], mp4: string, dir: string, o: OpenAIOptions, skill: SkillCard | null): Promise<ShortJudgment> {
   const images: string[] = [];
-  for (const [i, scene] of scenes.entries()) {
+  const timestamps = scenes.map(scene => scene.start_seconds + Math.min(1, (scene.end_seconds - scene.start_seconds) / 2));
+  const last = scenes.at(-1)!;
+  timestamps.push(last.end_seconds - Math.min(0.1, (last.end_seconds - last.start_seconds) / 2));
+  for (const [i, timestamp] of timestamps.entries()) {
     const frame = join(dir, `judge-${i}.jpg`);
-    await run("ffmpeg", ["-y", "-v", "error", "-ss", String(scene.start_seconds + Math.min(1, (scene.end_seconds - scene.start_seconds) / 2)), "-i", mp4, "-frames:v", "1", "-vf", "scale=390:694", "-pix_fmt", "yuvj420p", frame]);
+    await run("ffmpeg", ["-y", "-v", "error", "-ss", String(timestamp), "-i", mp4, "-frames:v", "1", "-vf", "scale=390:694", "-pix_fmt", "yuvj420p", frame]);
     images.push(`data:image/jpeg;base64,${(await readFile(frame)).toString("base64")}`);
   }
   const result = Judgment.parse(await chatJson({ ...o, step: "judge", ref: a.id, system: JUDGE_SYSTEM_PROMPT,

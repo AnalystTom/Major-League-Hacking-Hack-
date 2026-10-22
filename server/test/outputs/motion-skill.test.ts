@@ -90,12 +90,15 @@ test("renders a motion short with the narration over the engine's music", { skip
     const card = { name: "write-the-check-first", description: "Write a failing check before starting an agent task." };
     const { impl } = outputsFetch(a);
     let judged = false;
+    let endCardFrame: Buffer | undefined;
     const fetchImpl: typeof fetch = async (url, init) => {
       const request = JSON.parse(String(init?.body));
       if (request.messages?.[0]?.content === JUDGE_SYSTEM_PROMPT) {
         const evidence = JSON.parse(request.messages[1].content[0].text);
         assert.deepEqual(evidence.generated_skill, card);
         assert.ok(evidence.scenes.every((s: { source_ids: string[] }) => s.source_ids.length > 0));
+        const images = request.messages[1].content.filter((c: { type: string }) => c.type === "image_url");
+        endCardFrame = Buffer.from(images.at(-1).image_url.url.split(",")[1], "base64");
         judged = true;
       }
       return impl(url, init);
@@ -110,6 +113,13 @@ test("renders a motion short with the narration over the engine's music", { skip
     assert.deepEqual(p.video, { codec: "h264", width: 1080, height: 1920 });
     assert.equal(p.audio?.codec, "aac");
     assert.ok(Math.abs(p.duration - v.script.scenes.at(-1)!.end_seconds) < 0.5, "the film is as long as the narrated timeline");
+    const last = v.script.scenes.at(-1)!;
+    const frameAt = (time: number) => execFileSync("ffmpeg", ["-v", "error", "-ss", String(time), "-i", join(out, `videos_${a.id}_1_short.mp4`), "-frames:v", "1", "-vf", "scale=390:694", "-pix_fmt", "yuvj420p", "-f", "image2pipe", "-c:v", "mjpeg", "pipe:1"]);
+    const cardPixels = (jpeg: Buffer) => execFileSync("ffmpeg", ["-v", "error", "-i", "pipe:0", "-vf", "crop=320:208:32:128", "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1"], { input: jpeg });
+    const settled = cardPixels(frameAt(last.end_seconds - 0.2));
+    assert.notDeepEqual(cardPixels(frameAt(last.start_seconds + 1)), settled, "one second misses the delayed skill description");
+    assert.ok(endCardFrame);
+    assert.deepEqual(cardPixels(endCardFrame), settled, "the judge sees the settled actual skill name and description");
   } finally {
     await rm(out, { recursive: true, force: true });
   }
