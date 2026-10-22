@@ -160,11 +160,11 @@ test("sweep processes imported pending units and leaves unimported ones", async 
   assert.equal(store.artifacts.length, 1);
 });
 
-test("POST /process requires the bearer token, validates the body, and returns 202", async (t) => {
+test("POST /process requires the bearer token, validates the body, and returns 202", async () => {
   const store = new MemoryStore();
   const unit = pendingUnit("VQy50fuxI34");
   await store.saveUnit(unit);
-  const { impl, calls } = mockFetch();
+  const { impl } = mockFetch();
   const app = createIngestApp({ ...base(store, impl), token: "secret" });
   const send = (headers: Record<string, string>, body: unknown) => app.request("/process", { method: "POST", headers, body: JSON.stringify(body) });
   const good = { unit_ids: [unit.id] };
@@ -173,31 +173,13 @@ test("POST /process requires the bearer token, validates the body, and returns 2
   assert.equal((await send({ authorization: "Bearer wrong" }, good)).status, 401);
   assert.equal((await app.request("/imports/x")).status, 401, "every ingest route is protected");
   const auth = { authorization: "Bearer secret" };
-  assert.equal((await app.request("/prompt")).status, 401);
-  assert.deepEqual(await (await app.request("/prompt", { headers: auth })).json(), { id: null });
-  assert.equal(store.prompts.length, 0);
   assert.equal((await send(auth, { unit_ids: ["nope"] })).status, 400);
   assert.equal((await send(auth, { unit_ids: [] })).status, 400);
 
   // An older caller that still sends `project` is accepted; the key is ignored.
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => { release = resolve; });
-  const claim = store.claimWithinLimits.bind(store);
-  t.mock.method(store, "claimWithinLimits", async (...args: Parameters<typeof claim>) => {
-    await gate;
-    return claim(...args);
-  });
-  try {
-    const res = await send(auth, { ...good, project: null });
-    assert.equal(res.status, 202);
-    assert.deepEqual(await res.json(), { accepted: 1 });
-    assert.equal(store.prompts.length, 1);
-    assert.equal(calls.openai, 0);
-    const active = store.prompts[0].id;
-    await store.registerPrompt(promptRevisionText("Custom CLI request B"), []);
-    assert.deepEqual(await (await app.request("/prompt", { headers: auth })).json(), { id: active });
-    assert.equal(store.prompts.length, 2);
-  } finally { release(); }
+  const res = await send(auth, { ...good, project: null });
+  assert.equal(res.status, 202);
+  assert.deepEqual(await res.json(), { accepted: 1 });
   for (let i = 0; i < 100 && store.artifacts.length === 0; i++) await new Promise((r) => setTimeout(r, 10));
   assert.equal(store.artifacts[0].project_context_id, null);
 });

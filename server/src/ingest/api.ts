@@ -6,7 +6,6 @@ import { z } from "zod";
 import { MAX_WINDOW_SECONDS, MIN_WINDOW_SECONDS } from "./extract/gemini.js";
 import { digestAndStore, ingestLink } from "./pipeline.js";
 import { processUnits, type ProcessorOptions } from "./processor.js";
-import { DEFAULT_CATEGORIZATION_REQUEST, promptRevisionText } from "./digest/prompt.js";
 import type { DigestOutput, IngestedUnit, StoredArtifact } from "./types.js";
 
 interface ImportJob {
@@ -83,10 +82,6 @@ export function createIngestApp(o: ApiOptions): Hono {
   const app = new Hono();
   app.use("*", bearerAuth({ token: o.token }));
 
-  app.get("/prompt", async (c) => c.json({
-    id: await o.store.findPrompt(promptRevisionText(o.categorizationRequest ?? DEFAULT_CATEGORIZATION_REQUEST), []),
-  }));
-
   // The processor contract: reply 202 quickly and work in the background. Duplicate requests are safe
   // because pending units are claimed atomically and digested units are skipped.
   app.post("/process", async (c) => {
@@ -97,7 +92,6 @@ export function createIngestApp(o: ApiOptions): Hono {
     const parsed = ProcessRequest.safeParse(json);
     if (!parsed.success) return c.json({ error: "expected { unit_ids: uuid[1-10] }" }, 400);
     const { unit_ids } = parsed.data;
-    if (o.openaiKey) await o.store.registerPrompt(promptRevisionText(o.categorizationRequest ?? DEFAULT_CATEGORIZATION_REQUEST), []);
     void processUnits(unit_ids, o)
       .then((s) => o.log?.(`processed ${unit_ids.length} unit(s): ${JSON.stringify(s)}`))
       .catch((e: Error) => { recordError("processing failed", e); o.log?.(`processing failed: ${e.message}`); });

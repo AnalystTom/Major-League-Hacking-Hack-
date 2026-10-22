@@ -16,7 +16,7 @@ const json = (data, status = 200, headers = {}) =>
     headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers },
   });
 
-const UNAVAILABLE = "Resurface can't load your data right now. Try again in a minute.";
+const UNAVAILABLE = "Resurface can't reach its database right now. Try again in a minute.";
 const SIGNED_OUT = { error: "Sign in to continue." };
 
 async function readJson(request) {
@@ -81,7 +81,7 @@ async function startImport(request, env, sql, user) {
   }
   const units = await createUnits(sql, parsed.value.links, { userId: user.id });
   const processor = await requestProcessing(env, units.filter((u) => u.linked).map((u) => u.id));
-  return json({ units: await readUnits(sql, units.map((u) => u.id), await userUnitIds(sql, user.id), env), processor }, 201);
+  return json({ units: await readUnits(sql, units.map((u) => u.id), await userUnitIds(sql, user.id)), processor }, 201);
 }
 
 async function api(request, env, url, sql) {
@@ -115,8 +115,7 @@ async function api(request, env, url, sql) {
   if (pathname === "/api/imports") {
     if (method === "POST") return startImport(request, env, sql, user);
     if (method === "GET") {
-      const ids = await userUnitIds(sql, user.id);
-      return json({ units: await readUnits(sql, ids, ids, env) });
+      return json({ units: await readUnits(sql, await userUnitIds(sql, user.id)) });
     }
   }
 

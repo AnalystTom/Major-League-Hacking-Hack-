@@ -5,7 +5,6 @@
 import { database } from "./database.js";
 import { media } from "./media.js";
 import { Container, getContainer } from "@cloudflare/containers";
-import { DEFAULT_CATEGORIZATION_REQUEST, promptLookupStatement, promptRegistrationStatements, promptRevisionText } from "../../../server/src/ingest/digest/contract.ts";
 
 // Worker secrets and vars the processor reads from process.env.
 const ENV_NAMES = [
@@ -131,13 +130,7 @@ const ANSWER_WITHIN_MS = 6000;
 // Allow processing, handoff, health and settings requests, plus the container's D1 and media bridges.
 // Anything else (such as the processor's dev import route, which skips the processing limits) never
 // reaches the container.
-const ROUTES = new Set(["GET /health", "GET /api/ingest/prompt", "POST /api/ingest/process", "POST /api/ingest/handoff", "GET /settings-status", "POST /internal/d1", "PUT /internal/media"]);
-
-async function registerDigestionPrompt(env) {
-  if (!env.OPENAI_API_KEY) return;
-  const text = promptRevisionText(env.DIGESTION_REQUEST ?? DEFAULT_CATEGORIZATION_REQUEST);
-  await env.DB.batch(promptRegistrationStatements(text, []).map(({ sql, params }) => env.DB.prepare(sql).bind(...params)));
-}
+const ROUTES = new Set(["GET /health", "POST /api/ingest/process", "POST /api/ingest/handoff", "GET /settings-status", "POST /internal/d1", "PUT /internal/media"]);
 
 export default {
   async fetch(request, env, ctx) {
@@ -147,11 +140,6 @@ export default {
 
     if (pathname === "/internal/d1") return database(request, env);
     if (pathname === "/internal/media") return media(request, env);
-    if (pathname === "/api/ingest/prompt") {
-      const { sql, params } = promptLookupStatement(promptRevisionText(env.DIGESTION_REQUEST ?? DEFAULT_CATEGORIZATION_REQUEST), []);
-      const [result] = await env.DB.batch([env.DB.prepare(sql).bind(...params)]);
-      return Response.json({ id: result.results[0]?.id ?? null });
-    }
 
     // Read the body first: once the early 202 below has gone out, the incoming request can't be read any more,
     // and a slow container would get a request without its unit ids.
@@ -166,7 +154,6 @@ export default {
         return Response.json({ error: String(error?.message ?? error) }, { status: 500 });
       }
     }
-    await registerDigestionPrompt(env);
     const reply = processor.fetch(forward)
       .catch(() => new Response("The processor didn't start.", { status: 502 }));
     ctx.waitUntil(reply);
@@ -177,6 +164,6 @@ export default {
   // A health check starts the container if it's asleep; it then sleeps again once its sweeps find nothing to do.
   async scheduled(_event, env, ctx) {
     const processor = getContainer(env.PROCESSOR);
-    ctx.waitUntil(registerDigestionPrompt(env).then(() => applySettings(processor, env)).then(() => processor.fetch(new Request("http://processor/health"))));
+    ctx.waitUntil(applySettings(processor, env).then(() => processor.fetch(new Request("http://processor/health"))));
   },
 };
