@@ -25,6 +25,9 @@ Every route needs `Authorization: Bearer $INGEST_TOKEN`. The web Worker sends it
 | `D1_URL`, `D1_TOKEN` | Authenticated processor Worker D1 bridge. Enables the sweep; without both, ephemeral CLI runs use memory. |
 | `SWEEP_INTERVAL_MS` | Pending-unit sweep interval (default 60000). |
 
+Digest calls, including validation retries, request reproducible sampling with the fixed seed in
+[`digest/run.ts`](digest/run.ts). This leaves the reasoning-effort setting above unchanged.
+
 Behavior: pending units are claimed atomically (`UPDATE ... WHERE status = 'pending'`); a `ready` unit is never re-extracted;
 artifacts are written with
 `project_context_id` null; a failed digest is stored as a failed artifact with its error and retried by the next request.
