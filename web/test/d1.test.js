@@ -54,6 +54,39 @@ test('D1 account sessions, import reuse and isolation run against the full appli
   }finally{sqlite.close();}
 });
 
+test('cached X reads from an older extractor are replaced on submit, then the current read is reused',async()=>{
+  const {sqlite,env,sql}=database();
+  const post=JSON.parse(readFileSync(new URL('../../server/test/ingest/fixtures/xpost-2111437891322745223.json',import.meta.url),'utf8'));
+  const source=`https://x.com/i/status/${post.id_str}`;
+  const call=(path,body,cookie)=>app.fetch(new Request(`http://localhost${path}`,{method:'POST',headers:{'content-type':'application/json',...(cookie?{cookie}:{})},body:JSON.stringify(body)}),env,{});
+  try {
+    const signup=await call('/api/auth/signup',{email:'refresh@example.com',password:'correct horse battery'});
+    const cookie=signup.headers.get('set-cookie').split(';')[0];
+    const staleTranscript={window:[0,0],evidence_items:[{start_seconds:0,end_seconds:0,observed_spoken_content:post.text}]};
+    const [old]=await sql`INSERT INTO ingested_units(submitted_url,source_url,content_type,status,transcript,extraction_method)
+      VALUES(${source},${source},'x_post','ready',${JSON.stringify(staleTranscript)},'twitterapi.io:tweets') RETURNING id`;
+    const requests=[];
+    env.PROCESSOR_URL='https://processor/api/ingest/process';
+    env.PROCESSOR={async fetch(url,init){requests.push(JSON.parse(init.body).unit_ids);return Response.json({accepted:true});}};
+    const submit=async()=>{
+      const response=await call('/api/imports',{links:[`https://x.com/pfernan95dev/status/${post.id_str}`]},cookie);
+      assert.equal(response.status,201);
+      return response.json();
+    };
+    const first=await submit();
+    const fresh=first.units[0];
+    assert.notEqual(fresh.id,old.id);
+    assert.equal(fresh.stage,'queued');
+    assert.deepEqual(requests,[[fresh.id]]);
+    assert.equal((await submit()).units[0].id,fresh.id,'a pending fresh read must not be queued twice');
+    const transcript={...staleTranscript,evidence_items:[{...staleTranscript.evidence_items[0],observed_spoken_content:`${post.text}\n\nArticle: ${post.article.title}\n\n${post.article.preview_text}`} ]};
+    await sql`UPDATE ingested_units SET status='ready',transcript=${JSON.stringify(transcript)},extraction_method='x-embed:tweet-result:v2' WHERE id=${fresh.id}`;
+    assert.equal((await submit()).units[0].id,fresh.id,'a current completed extraction must be reused');
+    assert.deepEqual(requests,[[fresh.id]],'reusing the current unit must not request another paid run');
+    assert.equal((await sql`SELECT transcript FROM ingested_units WHERE id=${old.id}`)[0].transcript.evidence_items[0].observed_spoken_content,post.text,'the historical extraction is preserved');
+  }finally{sqlite.close();}
+});
+
 test('D1 JSON output reads preserve source order, real errors, private digests and handoff ownership',async()=>{
   const {sqlite,sql}=database();
   try {

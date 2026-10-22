@@ -1,8 +1,9 @@
 import { httpError } from "../../httpError.js";
 import type { EvidenceItem, IngestedUnit } from "../types.js";
 
-export const X_POST_METHOD = "twitterapi.io:tweets";
-export const X_PUBLIC_METHOD = "x-embed:tweet-result";
+// Keep these versioned methods in sync with web/src/imports.js's cache reuse check.
+export const X_POST_METHOD = "twitterapi.io:tweets:v2";
+export const X_PUBLIC_METHOD = "x-embed:tweet-result:v2";
 export const UNAVAILABLE = "X post unavailable: not found, deleted or protected";
 
 interface TwitterApiTweet {

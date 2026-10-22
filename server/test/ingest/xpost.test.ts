@@ -8,6 +8,7 @@ import { mockFetch } from "./helpers.js";
 import { DEFAULT_CATEGORIZATION_REQUEST } from "../../src/ingest/digest/prompt.js";
 import { runDigestion } from "../../src/ingest/digest/run.js";
 import { extractXPostPublic } from "../../src/ingest/extract/xpost.js";
+import { extractUnit } from "../../src/ingest/pipeline.js";
 import type { IngestedUnit } from "../../src/ingest/types.js";
 
 process.env.TWITTERAPI_MIN_INTERVAL_MS = "0"; // no pacing in tests
@@ -61,6 +62,7 @@ test("an X post is read from twitterapi.io, then digested like any other unit, w
 
   const saved = (await store.getUnits([unit.id]))[0];
   assert.equal(saved.status, "ready");
+  assert.equal(saved.extractionMethod, "twitterapi.io:tweets:v2");
   assert.equal(x.auth, "tok");
   assert.equal(calls.gemini, 0);
   assert.equal(saved.title, "@someone: Use evals before you ship an agent. Seriously.");
@@ -131,7 +133,7 @@ test("an X post link is read from X's public embed route when there is no twitte
   const saved = (await store.getUnits([unit.id]))[0];
   assert.equal(saved.status, "ready");
   assert.equal(saved.error, null);
-  assert.equal(saved.extractionMethod, "x-embed:tweet-result");
+  assert.equal(saved.extractionMethod, "x-embed:tweet-result:v2");
   assert.equal(saved.title, "@someone: Everyone's selling guides on how to grow on X. Here's mine, for free.");
   assert.match(saved.transcript?.overview ?? "", /Some One \(@someone\) on 2026-10-17/);
   assert.equal(x.calls + calls.gemini, 0); // no twitterapi.io call and nothing sent to Gemini
@@ -176,6 +178,11 @@ test("the captured pfernan95dev post retains its introduction and supplied artic
   assert.equal(read.transcript.evidence_items[0].observed_spoken_content,
     `${post.text}\n\nArticle: ${post.article.title}\n\n${post.article.preview_text}`);
   assert.deepEqual(read.transcript.window, [0, 0]);
+  const store = new MemoryStore();
+  const saved = await extractUnit({ ...xUnit(), sourceUrl: `https://x.com/i/status/${post.id_str}`, status: "running" }, { geminiKey: "", store, fetchImpl });
+  assert.equal(saved.status, "ready");
+  assert.equal(saved.extractionMethod, "x-embed:tweet-result:v2");
+  assert.deepEqual(saved.transcript, read.transcript);
 });
 
 test("twitterapi.io failures and empty results both allow the public route to read the post", async () => {
@@ -187,7 +194,7 @@ test("twitterapi.io failures and empty results both allow the public route to re
     await processUnits([unit.id], opts(store, fetchImpl, "tok"));
     const saved = (await store.getUnits([unit.id]))[0];
     assert.equal(saved.status, "ready");
-    assert.equal(saved.extractionMethod, "x-embed:tweet-result");
+    assert.equal(saved.extractionMethod, "x-embed:tweet-result:v2");
     assert.equal(saved.transcript?.evidence_items[0].observed_spoken_content, "Everyone's selling guides on how to grow on X. Here's mine, for free.");
     assert.equal(x.embed, 1);
   }

@@ -64,8 +64,8 @@ export function parseUnitIds(value) {
 }
 
 /**
- * Reuses the newest unit for the same video (or X post) and start time unless it failed, otherwise inserts a
- * pending one. Reuse means an already processed video shows its results instead of paying for a rerun.
+ * Reuses the newest unit for the same source and start time unless it failed or its X extractor is outdated,
+ * otherwise inserts a pending one. Pending/running X reads are shared until their extraction finishes.
  * Only ids and status come back: a reused unit's submitted_url is another visitor's original link,
  * which can carry their share or playlist parameters, so it never leaves the database.
  */
@@ -77,6 +77,8 @@ export async function createUnits(sql, links, { userId = null } = {}) {
       WHERE source_url = ${link.source_url}
         AND start_seconds IS ${link.start_seconds}
         AND status <> 'failed'
+        AND (${link.content_type ?? "youtube_video"} <> 'x_post' OR status IN ('pending','running')
+          OR extraction_method IN ('twitterapi.io:tweets:v2','x-embed:tweet-result:v2'))
       ORDER BY created_at DESC LIMIT 1`;
     const [unit] = existing
       ? [{ ...existing, reused: true }]
