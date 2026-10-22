@@ -1,21 +1,3 @@
-// Page wiring: the sample shorts feed, palette picker and Get started call to action.
-
-import { createFeed } from "./feed.js";
-
-const feed = createFeed(document.querySelector("[data-feed-root]"));
-feed.refresh();
-
-// Arrow keys drive the feed while it's on screen, without hijacking form fields.
-let feedInView = false;
-new IntersectionObserver(([e]) => (feedInView = e.isIntersecting), { threshold: 0.5 }).observe(feed.root);
-
-document.addEventListener("keydown", (e) => {
-  if (e.target.closest("input, textarea, select, [role='radiogroup'], [data-reel-track]")) return;
-  if (!feedInView && !feed.root.contains(document.activeElement)) return;
-  if (feed.key(e)) e.preventDefault();
-});
-
-
 // ---------- Colour palette picker (shown with ?pick) ----------
 
 const picker = document.querySelector("[data-palette-picker]");

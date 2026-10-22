@@ -455,7 +455,7 @@ button { font: inherit; color: inherit; }
   position: relative; height: 100%; scroll-snap-align: start; scroll-snap-stop: always;
   container-type: inline-size; color: var(--on-night); overflow: hidden;
 }
-.reel-item video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; }
+.reel-item video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
 .reel-caption {
   position: absolute; z-index: 2; top: 50%; left: 7%; right: 7%;
   text-align: center; white-space: pre-line; pointer-events: none;
@@ -476,7 +476,7 @@ button { font: inherit; color: inherit; }
 .reel-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .reel-chip { font-size: .75rem; font-weight: 700; padding: 4px 9px; border-radius: 999px; background: rgba(255, 255, 255, .16); }
 .reel-chip[data-ready] { background: var(--sh-signal); color: #0d1f16; }
-.reel-title { font-size: 1.375rem; font-weight: 800; letter-spacing: -.015em; line-height: 1.1; }
+.reel-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 1.375rem; font-weight: 800; letter-spacing: -.015em; line-height: 1.1; }
 .reel-reason { font-size: .875rem; line-height: 1.4; color: var(--on-night-soft); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .reel-sources { background: rgba(0, 0, 0, .55); border-radius: 12px; padding: 10px 12px; pointer-events: auto; }
 .reel-sources-head { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--on-night-soft); }
@@ -874,3 +874,11 @@ a.reel-btn { text-decoration: none; }
 .signup-hero .btn { height: 60px; }
 .signup-hero .form-status { grid-column: 1 / -1; }
 @media (max-width: 640px) { .signup-hero { grid-template-columns: minmax(0, 1fr); } }
+
+.public-catalogue { max-width: 960px; margin: 0 auto; padding: 32px 20px 48px; }
+.public-catalogue > section { margin-top: 32px; scroll-margin-top: calc(var(--bar, 64px) + 16px); }
+.public-catalogue .reel { margin: 20px auto; max-width: 100%; }
+.public-catalogue .section-head .btn { margin-top: 16px; }
+.app-bar a.topbar-pill { text-decoration: none; text-align: center; font-size: .75rem; max-width: 160px; }
+
+.public-catalogue .topbar-pill { color: var(--ink); }

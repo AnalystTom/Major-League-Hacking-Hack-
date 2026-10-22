@@ -12,8 +12,6 @@ import { MemoryStore, D1Store } from "./ingest/store.js";
 import { mediaFromEnv } from "./outputs/render/media.js";
 import { produceOutputs, startOutputSweep, toReadyArtifact } from "./outputs/run.js";
 import { MemoryOutputStore, D1OutputStore } from "./outputs/store.js";
-import { createHandoffApp } from "./outputs/handoff-api.js";
-import { D1HandoffStore } from "./outputs/handoff-store.js";
 
 const app = createApp({ webOrigins: parseOrigins(process.env.WEB_ORIGINS), healthToken: process.env.INGEST_TOKEN });
 setUsageSink((u) => console.log(`[usage] ${JSON.stringify(u)}`));
@@ -43,7 +41,7 @@ if (process.env.GEMINI_API_KEY) {
     store: db ? new D1Store(db) : new MemoryStore(),
     log: (m: string) => console.log(`[ingest] ${m}`),
   };
-  // Each ready artifact gets a skill with tasks and a rendered short (src/outputs). Renders need ffmpeg on
+  // Each ready artifact gets a concise skill and a rendered short (src/outputs). Renders need ffmpeg on
   // this host and media storage: R2_* for the bucket, or MEDIA_LOCAL_WEB_DIR for local wrangler dev.
   const outputs = {
     outputs: db ? new D1OutputStore(db) : new MemoryOutputStore(),
@@ -56,9 +54,8 @@ if (process.env.GEMINI_API_KEY) {
     log: (m: string) => console.log(`[outputs] ${m}`),
   };
   const processor = { ...options, onArtifacts: (a: StoredArtifact[]) => produceOutputs(a.map(toReadyArtifact), outputs) };
-  // The agent handoff merges a user's picked skills into one prompt (agent_briefs), so it needs D1_URL.
-  // Mounted before the ingest app so its own bearer check answers /api/ingest/handoff.
-  if (db) app.route("/api/ingest/handoff", createHandoffApp({ ...options, store: new D1HandoffStore(db) }));
+  // Task generation is paused; preserve stored briefs without accepting new jobs.
+  app.post("/api/ingest/handoff", (c) => c.json({ error: "Task generation is unavailable." }, 410));
   app.route("/api/ingest", createIngestApp(processor));
   const interval = Number(process.env.SWEEP_INTERVAL_MS ?? 60_000);
   if (db) {

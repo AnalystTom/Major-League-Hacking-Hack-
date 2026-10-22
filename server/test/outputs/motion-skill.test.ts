@@ -25,7 +25,7 @@ test("the spec times each scene to its narration slot and ends on the ready skil
   assert.equal(spec.scenes[0].sub, "Your coding agent says it's done.");
   assert.equal(spec.scenes[2].sub, "", "the skill card shows the skill, not an aside");
   assert.equal(spec.scenes[2].theme, "paper");
-  assert.deepEqual(spec.skill, { name: "write-the-check-first", path: ".agents/skills/write-the-check-first/SKILL.md", tasks: "2 TASKS READY" });
+  assert.deepEqual(spec.skill, { name: "write-the-check-first", path: ".agents/skills/write-the-check-first/SKILL.md", tasks: "" });
   assert.deepEqual(spec.source, { kind: "youtube", platform: "YouTube", title: "Evals for coding agents", byline: "", tag: "YOUTUBE" });
 });
 

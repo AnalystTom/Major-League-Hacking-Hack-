@@ -54,7 +54,7 @@ export async function serveMedia(request, env, key) {
   if (!headers.has("content-type")) headers.set("content-type", TYPES[key.split(".").pop()] ?? "application/octet-stream");
   headers.set("etag", object.httpEtag);
   headers.set("accept-ranges", "bytes");
-  headers.set("cache-control", "public, max-age=3600");
+  headers.set("cache-control", "private, no-store");
 
   if (request.method === "HEAD") {
     headers.set("content-length", String(object.size));

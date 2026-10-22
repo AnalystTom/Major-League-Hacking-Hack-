@@ -1,7 +1,7 @@
 // D1 keeps structured values as JSON text; API callers continue to receive objects and arrays.
 const JSON_COLUMNS = new Set(['facts', 'few_shot', 'transcript', 'source_ids', 'sources', 'evidence', 'script',
   'supporting_refs', 'applicability_evidence', 'prerequisites', 'steps', 'source_refs', 'payload', 'verification',
-  'skill_result_ids', 'brief', 'prompts', 'action_items', 'videos', 'artifacts', 'exclusions', 'unit_titles', 'unit_urls']);
+  'skill_result_ids', 'brief', 'prompts', 'action_items', 'videos', 'artifacts', 'exclusions', 'unit_titles', 'unit_urls', 'source_urls']);
 
 export function decodeRow(row) {
   return Object.fromEntries(Object.entries(row).map(([key, value]) =>

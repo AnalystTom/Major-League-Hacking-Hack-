@@ -1,10 +1,9 @@
 // The signed-in home is the reel, full screen. Until the first short is ready, the reel's frame holds the
 // paste box (new account) or what's happening to the links. Link stages otherwise live in the top-bar
-// status popover, more videos come in through the Add videos sheet, and Skills and Tasks open in a sheet.
+// status popover, more videos come in through the Add videos sheet, and Skills open in a sheet.
 
 import { api } from "./api.js";
 import { createReel } from "./reel.js";
-import { createHandoff } from "./handoff.js";
 import { createSkills } from "./skills.js";
 import { FAILED_STAGES, followImports, PROCESSOR, renderUnits } from "./units.js";
 
@@ -13,11 +12,10 @@ const reel = createReel($("[data-reel]"));
 const sheet = $("[data-add-sheet]");
 const skillsSheet = $("[data-skills-sheet]");
 const skills = createSkills({
-  skillsList: $("[data-skills]"), tasksList: $("[data-tasks]"), picker: $("[data-agent]"),
-  skillsStatus: $("[data-skills-status]"), tasksStatus: $("[data-tasks-status]"),
+  skillsList: $("[data-skills]"), picker: $("[data-agent]"),
+  skillsStatus: $("[data-skills-status]"),
 });
 const form = $("[data-add-template]").content.firstElementChild.cloneNode(true);
-const handoff = createHandoff($("[data-handoff-section]"), $("[data-agent]"));
 let follower = null;
 
 
@@ -81,21 +79,17 @@ function render(units, items) {
 let units = [];
 let items = [];
 
-// Skills and tasks: counts on the top-bar buttons, the lists in the sheet.
+// Skills: counts on the top-bar buttons, the lists in the sheet.
 function showSkills(list) {
   skills.update(list);
   const c = skills.counts;
-  for (const [key, n] of Object.entries({ skills: c.skills, tasks: c.tasks })) {
+  for (const [key, n] of Object.entries({ skills: c.skills })) {
     const b = $(`[data-count="${key}"]`);
     b.textContent = n ? String(n) : "";
     b.hidden = !n;
   }
   $('[data-open-skills="skills"]').hidden = list.length === 0;
-  $('[data-open-skills="tasks"]').hidden = c.tasks === 0;
   $("[data-skills-empty]").hidden = list.length > 0;
-  $("[data-tasks-empty]").hidden = c.tasks > 0;
-  $('[data-open-skills="agent"]').hidden = c.skills === 0;
-  handoff.update(list);
   openPendingSkill();
 }
 
@@ -104,10 +98,10 @@ function openSkills(target) {
   // location.replace (not replaceState) so .skill:target applies, without adding a history entry.
   if (target?.startsWith("skill-")) location.replace(`#${target}`);
   const el = target && document.getElementById(target);
-  (el ?? skillsSheet.querySelector(target === "tasks-title" || target === "agent-title" ? `#${target}` : "#skills-title"))?.scrollIntoView({ block: "start" });
+  (el ?? skillsSheet.querySelector("#skills-title"))?.scrollIntoView({ block: "start" });
 }
 
-// A short's "View skill & tasks" link (#skill-<id>-<version>) opens the sheet at that card; the hash makes
+// A short's "View skill" link (#skill-<id>-<version>) opens the sheet at that card; the hash makes
 // .skill:target highlight it. Coming back to /app with that hash does the same once the skills have loaded.
 function openPendingSkill() {
   const id = location.hash.slice(1);
@@ -120,7 +114,7 @@ document.addEventListener("click", (e) => {
   openSkills(a.getAttribute("href").slice(1));
 });
 document.querySelectorAll("[data-open-skills]").forEach((b) =>
-  b.addEventListener("click", () => openSkills({ tasks: "tasks-title", agent: "agent-title" }[b.dataset.openSkills] ?? null)));
+  b.addEventListener("click", () => openSkills(null)));
 $("[data-close-skills]").addEventListener("click", () => skillsSheet.close());
 skillsSheet.addEventListener("close", () => {
   if (location.hash.startsWith("#skill-")) history.replaceState(null, "", location.pathname);

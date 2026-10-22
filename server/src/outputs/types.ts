@@ -60,7 +60,16 @@ export interface ScriptScene {
   source_ids: string[];
 }
 
+export interface ShortJudgment {
+  judge: "short-judge-v1";
+  passed: boolean;
+  captions_burned: true;
+  scores: { grounding: number; clarity: number; usefulness: number; visuals: number; subtitles: number };
+  reasons: string[];
+}
+
 export interface RenderedVideo {
+  judgment: ShortJudgment;
   script: { scenes: ScriptScene[] };
   prompt_revision: string;
   media_ref: string;

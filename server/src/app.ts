@@ -3,7 +3,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { AGENTS, exportShort, isAgentId } from "./agents.js";
-import { SAMPLE_SHORTS, type Short } from "./shorts.js";
+import { type Short } from "./shorts.js";
 import { busyCount, lastErrorSeen } from "./activity.js";
 
 export type AppConfig = {
@@ -14,7 +14,7 @@ export type AppConfig = {
   healthToken?: string;
 };
 
-export function createApp({ webOrigins, shorts = SAMPLE_SHORTS, healthToken }: AppConfig) {
+export function createApp({ webOrigins, shorts = [], healthToken }: AppConfig) {
   const app = new Hono();
 
   app.use("/api/*", cors({ origin: webOrigins }));

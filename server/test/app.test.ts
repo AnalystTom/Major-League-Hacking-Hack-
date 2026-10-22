@@ -2,7 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createApp } from "../src/app.ts";
 
-const app = createApp({ webOrigins: ["https://site.example"] });
+import { SAMPLE_SHORTS } from "./sample-shorts.js";
+
+const app = createApp({ webOrigins: ["https://site.example"], shorts: SAMPLE_SHORTS });
 
 test("health check", async () => {
   const res = await app.request("/health");
@@ -50,4 +52,8 @@ test("allows the landing site origin and nothing else", async () => {
   assert.equal(ok.headers.get("access-control-allow-origin"), "https://site.example");
   const other = await app.request("/api/shorts", { headers: { Origin: "https://evil.example" } });
   assert.equal(other.headers.get("access-control-allow-origin"), null);
+});
+
+test("the processor exposes no sample content by default", async () => {
+  assert.deepEqual(await (await createApp({ webOrigins: [] }).request("/api/shorts")).json(), []);
 });

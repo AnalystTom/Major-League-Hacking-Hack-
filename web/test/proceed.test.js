@@ -92,7 +92,7 @@ test("describeUnit reports the furthest real stage", () => {
   for (const artifactReview of [undefined, "pending", "approved", "rejected"]) {
     for (const videoReview of [undefined, "pending", "approved", "rejected"]) {
       const result = describeUnit(unit({ artifacts: [art({
-        review_status: artifactReview, video: { status: "ready", review_status: videoReview },
+        review_status: artifactReview, video: { status: "ready", review_status: videoReview, review_feedback: JSON.stringify({judge:'short-judge-v1',passed:true,captions_burned:true}) },
       })] }));
       assert.equal(result.stage, "ready");
       assert.equal(result.settled, true);
@@ -104,7 +104,7 @@ test("describeUnit reports the furthest real stage", () => {
   assert.equal(describeUnit(unit({ artifacts: [art({ video: { status: "running" } })] })).stage, "rendering");
   const ready = describeUnit(unit({ artifacts: [
     art({ ingestion_status: "failed" }),
-    art({ video: { status: "ready" } }),
+    art({ video: { status: "ready", review_feedback: JSON.stringify({judge:"short-judge-v1",passed:true,captions_burned:true}) } }),
   ] }));
   assert.equal(ready.stage, "ready");
   assert.equal(ready.settled, true);

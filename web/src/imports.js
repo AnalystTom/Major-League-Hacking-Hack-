@@ -1,6 +1,7 @@
 // Proceed: pasted YouTube and X post links become ingested units in D1, and their progress is read back
 // from the units, artifacts and video results the processor writes. Nothing here invents progress.
 
+import { dedupeContent } from "./content.js";
 import { isSubstackHost, parseSubstackLink } from "./substack.js";
 import { isXLink, parseXLink } from "./xpost.js";
 import { parseYouTubeLink } from "./youtube.js";
@@ -43,10 +44,10 @@ export function parseImport(body) {
   }
   if (invalid.length) return { ok: false, status: 400, error: "Some links can't be imported.", invalid };
 
-  // The same video at the same start time (or the same post) is one unit.
+  // One source per submission, even when its URL appears with different start times.
   const seen = new Set();
   const unique = links.filter((l) => {
-    const key = `${l.source_url}@${l.start_seconds}`;
+    const key = l.source_url;
     return seen.has(key) ? false : (seen.add(key), true);
   });
   const count = (type) => unique.filter((l) => (l.content_type ?? "youtube_video") === type).length;
@@ -63,6 +64,15 @@ export function parseUnitIds(value) {
   return ids;
 }
 
+async function ownedUnit(sql, userId, link) {
+  if (!userId) return null;
+  return (await sql`SELECT u.id,u.status FROM user_imports ui JOIN ingested_units u ON u.id=ui.unit_id
+    WHERE ui.user_id=${userId} AND u.source_url=${link.source_url} AND u.status<>'failed'
+      AND (${link.content_type ?? "youtube_video"}<>'x_post' OR u.status IN ('pending','running')
+        OR u.extraction_method IN ('twitterapi.io:tweets:v2','x-embed:tweet-result:v2'))
+    ORDER BY ui.created_at DESC LIMIT 1`)[0] ?? null;
+}
+
 /**
  * Import reuse and X refresh rules: docs/project-actions-spec.md#http-api.
  * Only ids and status come back: a reused unit's submitted_url is another visitor's original link,
@@ -71,7 +81,8 @@ export function parseUnitIds(value) {
 export async function createUnits(sql, links, { userId = null } = {}) {
   const units = [];
   for (const link of links) {
-    const [existing] = await sql`
+    const owned = await ownedUnit(sql, userId, link);
+    const [existing] = owned ? [owned] : await sql`
       SELECT id, status FROM ingested_units
       WHERE source_url = ${link.source_url}
         AND start_seconds IS ${link.start_seconds}
@@ -83,26 +94,35 @@ export async function createUnits(sql, links, { userId = null } = {}) {
       ? [{ ...existing, reused: true }]
       : (await sql`
           INSERT INTO ingested_units (submitted_url, source_url, start_seconds, content_type)
-          VALUES (${link.submitted_url}, ${link.source_url}, ${link.start_seconds}, ${link.content_type ?? "youtube_video"})
+          SELECT ${link.submitted_url}, ${link.source_url}, ${link.start_seconds}, ${link.content_type ?? "youtube_video"}
+          WHERE NOT EXISTS (SELECT 1 FROM ingested_units WHERE source_url=${link.source_url} AND start_seconds IS ${link.start_seconds}
+            AND (status IN ('pending','running') OR (status='ready' AND (${link.content_type ?? "youtube_video"}<>'x_post'
+              OR extraction_method IN ('twitterapi.io:tweets:v2','x-embed:tweet-result:v2')))))
           RETURNING id, status`).map((u) => ({ ...u, reused: false }));
+    let resolved = unit ?? (await sql`SELECT id,status FROM ingested_units WHERE source_url=${link.source_url}
+      AND start_seconds IS ${link.start_seconds} AND status<>'failed' ORDER BY created_at DESC LIMIT 1`)[0];
     if (userId) {
       // `linked` is true the first time this user imports the unit, which is when the processor is asked.
       const linked = await sql`
         INSERT INTO user_imports (user_id, unit_id)
-        VALUES (${userId}, ${unit.id})
+        SELECT ${userId}, ${resolved.id}
+        WHERE NOT EXISTS (SELECT 1 FROM user_imports ui JOIN ingested_units u ON u.id=ui.unit_id
+          WHERE ui.user_id=${userId} AND u.source_url=${link.source_url} AND u.status<>'failed'
+            AND (${link.content_type ?? "youtube_video"}<>'x_post' OR u.status IN ('pending','running')
+              OR u.extraction_method IN ('twitterapi.io:tweets:v2','x-embed:tweet-result:v2')))
         ON CONFLICT (user_id, unit_id) DO NOTHING
         RETURNING unit_id`;
-      unit.linked = linked.length > 0;
+      resolved = linked.length ? { ...resolved, linked: true } : { ...(await ownedUnit(sql, userId, link)), reused: true, linked: false };
     }
-    units.push(unit);
+    units.push(resolved);
   }
   return units;
 }
 
 /** The ids of everything a user has imported, newest first. */
-export async function userUnitIds(sql, userId, limit = 50) {
+export async function userUnitIds(sql, userId) {
   const rows = await sql`
-    SELECT unit_id FROM user_imports WHERE user_id = ${userId} ORDER BY created_at DESC LIMIT ${limit}`;
+    SELECT unit_id FROM user_imports WHERE user_id = ${userId} ORDER BY created_at DESC`;
   return rows.map((r) => r.unit_id);
 }
 
@@ -120,7 +140,7 @@ export async function readUnits(sql, ids, visible = ids) {
       (SELECT json_group_array(json(item)) FROM (
         SELECT json_object('id', a.id, 'version', a.version, 'name', a.name,
           'ingestion_status', a.ingestion_status, 'error', a.error,
-          'video', json((SELECT json_object('status', v.status, 'error', v.error, 'attempts', v.attempts)
+          'video', json((SELECT json_object('status', v.status, 'error', v.error, 'attempts', v.attempts, 'review_feedback', v.review_feedback)
             FROM video_results v WHERE v.artifact_id = a.id AND v.artifact_version = a.version
             ORDER BY v.created_at DESC, v.id DESC LIMIT 1))) AS item
         FROM artifacts a
@@ -129,7 +149,7 @@ export async function readUnits(sql, ids, visible = ids) {
         ORDER BY a.created_at)) AS artifacts
     FROM ingested_units u JOIN json_each(${JSON.stringify(ids)}) selected ON selected.value = u.id
     ORDER BY CAST(selected.key AS INTEGER)`;
-  return rows.map((row) => describeUnit(row));
+  return dedupeContent(rows).map((row) => describeUnit(row));
 }
 
 /** The processor's MAX_OUTPUT_ATTEMPTS (server/src/outputs/store.ts): a failed skill or short with attempts left is retried. */
@@ -188,8 +208,11 @@ export function describeUnit(row, now = new Date()) {
     if (!v || v.status === "pending" || v.status === "running") return at("rendering", false);
     if (willRetry(v)) return at("render_retrying", false, v.error ?? null);
     if (v.status === "failed") return at("render_failed", true, v.error ?? null);
+    let judgment;
+    try { judgment = JSON.parse(v.review_feedback ?? "null"); } catch {}
+    if (judgment?.judge !== "short-judge-v1" || !judgment.passed || !judgment.captions_burned) return at("reviewing", false);
     return at("ready", true);
   });
-  const rank = ["failed", "render_failed", "digesting", "render_retrying", "rendering", "ready"];
+  const rank = ["failed", "render_failed", "digesting", "render_retrying", "rendering", "reviewing", "ready"];
   return stages.reduce((best, s) => (rank.indexOf(s.stage) > rank.indexOf(best.stage) ? s : best));
 }

@@ -24,7 +24,8 @@ test('D1 account sessions, import reuse and isolation run against the full appli
   try {
     assert.deepEqual(await (await call('/api/me')).json(),{user:null});
     assert.equal((await call('/api/imports')).status,401);
-    assert.deepEqual(await (await call('/api/feed')).json(),{items:[]});
+    assert.equal((await call('/api/feed')).status,401);
+    assert.deepEqual(await (await call('/api/feed?scope=public')).json(),{items:[]});
     const signup=await call('/api/auth/signup',{email:'first@example.com',password:'correct horse battery'});
     assert.equal(signup.status,201);
     const first=await signup.json(),cookie=signup.headers.get('set-cookie').split(';')[0];
@@ -103,11 +104,12 @@ test('D1 JSON output reads preserve source order, real errors, private digests a
       VALUES(${s.id},'Inspect','["Repo"]','["Read"]','Checked')`;
     await sql`INSERT INTO video_results(artifact_id,artifact_version,status,media_ref,caption_ref,narration_ref,duration_seconds,feed_order)
       VALUES(${a.id},1,'ready','r2:videos/a/1/short.mp4','r2:captions/a/1/short.vtt','r2:audio/a/1/narration.m4a',30.5,1)`;
+    await sql`UPDATE video_results SET review_status='approved',review_feedback=${JSON.stringify({judge:'short-judge-v1',passed:true,captions_burned:true})}`;
     assert.equal((await readFeed(sql))[0].video.duration_seconds,30.5);
     assert.equal((await readFeed(sql,[u1.id])).length,0);
     assert.equal((await readSkills(sql,[u1.id])).length,0);
     const skill=(await readSkills(sql,[u1.id,u2.id]))[0];
-    assert.deepEqual(skill.action_items[0].steps,['Read']);
+    assert.deepEqual(skill.action_items,[]);
     assert.deepEqual(skill.videos.map(v=>v.id),sources);
     const units=await readUnits(sql,[u2.id,u1.id]);
     assert.deepEqual(units.map(u=>u.id),sources);
@@ -145,6 +147,7 @@ test('processor outages do not block saved progress, ready shorts or new imports
       VALUES('Growing an audience',${url},${JSON.stringify([unit.id])},'Source-grounded narration','ready') RETURNING id`;
     await sql`INSERT INTO video_results(artifact_id,artifact_version,status,media_ref,caption_ref,narration_ref,duration_seconds)
       VALUES(${artifact.id},1,'ready','r2:videos/outage/1/short.mp4','r2:captions/outage/1/short.vtt','r2:audio/outage/1/narration.m4a',30)`;
+    await sql`UPDATE video_results SET review_status='approved',review_feedback=${JSON.stringify({judge:'short-judge-v1',passed:true,captions_burned:true})}`;
     env.PROCESSOR_URL='https://processor/api/ingest/process';
     env.PROCESSOR_TOKEN='test-token';
     const videos=['VQy50fuxI34','V-EDrhIhHzQ','dQw4w9WgXcQ'];
@@ -173,4 +176,56 @@ test('processor outages do not block saved progress, ready shorts or new imports
       assert.equal((await sql`SELECT count(*) AS n FROM user_imports WHERE unit_id=${queued.units[0].id}`)[0].n,1);
     }
   }finally{sqlite.close();}
+});
+
+test('public catalogue, private media, legacy duplicates and failed judges obey the same access boundary',async()=>{
+  const {sqlite,env,sql}=database();
+  const call=(path,body,cookie)=>app.fetch(new Request(`http://localhost${path}`,{method:body?'POST':'GET',headers:{'content-type':'application/json',...(cookie?{cookie}:{})},...(body?{body:JSON.stringify(body)}:{})}),env,{});
+  const receipt=JSON.stringify({judge:'short-judge-v1',passed:true,captions_burned:true});
+  try {
+    const signup=await call('/api/auth/signup',{email:'owner@example.com',password:'correct horse battery'});
+    const cookie=signup.headers.get('set-cookie').split(';')[0];
+    const second=await call('/api/auth/signup',{email:'other@example.com',password:'correct horse battery'});
+    const otherCookie=second.headers.get('set-cookie').split(';')[0];
+    const imported=await (await call('/api/imports',{links:['https://youtu.be/VQy50fuxI34','https://www.youtube.com/watch?v=VQy50fuxI34&t=30']},cookie)).json();
+    assert.equal(imported.units.length,1,'one source, despite different link/time shapes');
+    assert.equal((await (await call('/api/imports',{links:['https://youtu.be/VQy50fuxI34?t=60']},cookie)).json()).units[0].id,imported.units[0].id);
+    const u=imported.units[0];
+    const concurrent=await Promise.all([30,60].map(t=>call('/api/imports',{links:[`https://youtu.be/V-EDrhIhHzQ?t=${t}`]},cookie)));
+    const concurrentIds=await Promise.all(concurrent.map(async r=>(await r.json()).units[0].id));
+    assert.equal(new Set(concurrentIds).size,1,'parallel submissions of the same source at different times link once');
+    assert.equal((await sql`SELECT count(*) AS n FROM user_imports`)[0].n,2);
+    for (const n of [1,2]) {
+      const [a]=await sql`INSERT INTO artifacts(name,source_url,source_ids,sources,processed_text,ingestion_status)
+        VALUES('Source-backed lesson',${u.source_url},${JSON.stringify([u.id])},${JSON.stringify([{url:u.source_url,title:'Source'}])},'Content','ready') RETURNING id`;
+      await sql`INSERT INTO video_results(artifact_id,artifact_version,status,media_ref,caption_ref,narration_ref,duration_seconds,review_status,review_feedback)
+        VALUES(${a.id},1,'ready',${`r2:videos/${n}/1/short.mp4`},${`r2:captions/${n}/1/short.vtt`},'audio',30,'approved',${receipt})`;
+      await sql`INSERT INTO skill_results(artifact_id,artifact_version,status,skill_markdown) VALUES(${a.id},1,'ready','---\nname: check\ndescription: "Check when changing code"\n---\nInspect the source.')`;
+    }
+    assert.equal((await (await call('/api/feed',null,cookie)).json()).items.length,1,'historical duplicate shorts hidden');
+    assert.equal((await (await call('/api/skills',null,cookie)).json()).skills.length,1,'historical duplicate skills hidden');
+    assert.deepEqual(await (await call('/api/feed',null,otherCookie)).json(),{items:[]});
+    assert.deepEqual(await (await call('/api/feed?scope=public')).json(),{items:[]});
+    assert.deepEqual(await (await call('/api/skills?scope=public')).json(),{skills:[]});
+    env.MEDIA={async head(){return {size:4,httpEtag:'test',writeHttpMetadata(h){h.set('content-type','video/mp4')}}},async get(){return {body:'clip',size:4,httpEtag:'test',writeHttpMetadata(h){h.set('content-type','video/mp4')}}}};
+    assert.equal((await call('/media/videos/1/1/short.mp4')).status,404);
+    assert.equal((await call('/media/videos/1/1/short.mp4',null,otherCookie)).status,404);
+    const owned=await call('/media/videos/1/1/short.mp4',null,cookie);
+    assert.equal(owned.status,200);
+    assert.equal(owned.headers.get('cache-control'),'private, no-store');
+    await sql`UPDATE video_results SET feed_order=1 WHERE media_ref='r2:videos/1/1/short.mp4'`;
+    assert.equal((await (await call('/api/feed?scope=public')).json()).items.length,1);
+    const publicSkills=(await (await call('/api/skills?scope=public')).json()).skills;
+    assert.equal(publicSkills.length,1);
+    assert.deepEqual(publicSkills[0].action_items,[]);
+    assert.doesNotMatch(JSON.stringify(publicSkills),/owner@example|password|user_id/);
+    assert.equal((await call('/media/videos/1/1/short.mp4')).status,200);
+    await sql`UPDATE video_results SET review_feedback='human legacy approval'`;
+    assert.deepEqual(await (await call('/api/feed?scope=public')).json(),{items:[]});
+    assert.equal((await call('/media/videos/1/1/short.mp4')).status,404);
+    await sql`UPDATE video_results SET review_feedback=${JSON.stringify({judge:'short-judge-v1',passed:false,captions_burned:true})}`;
+    assert.deepEqual(await (await call('/api/feed',null,cookie)).json(),{items:[]});
+    assert.equal((await call('/api/handoffs',{skill_ids:['unused']},cookie)).status,410);
+    assert.equal((await sql`SELECT count(*) AS n FROM artifacts`)[0].n,2,'no production-style rows deleted');
+  } finally {sqlite.close();}
 });

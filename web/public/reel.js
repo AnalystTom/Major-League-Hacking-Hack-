@@ -62,10 +62,11 @@ export function createReel(root) {
       crossorigin: item.video.captions_url && /^https?:/.test(item.video.url) ? "anonymous" : null,
     });
     video.muted = true;
+    // Legacy caption tracks only: new judged shorts already contain visible burned subtitles.
     // The browser times the WebVTT cues; the reel draws them itself, above the title and buttons and
     // wrapped to the frame, which native cue rendering won't reliably do in a 9:16 crop.
     const caption = el("p", { class: "reel-caption", "aria-hidden": "true" });
-    if (item.video.captions_url) {
+    if (item.video.captions_url && !item.video.subtitles_burned) {
       const track = el("track", { kind: "captions", srclang: "en", label: "English", src: item.video.captions_url, default: true });
       video.append(track);
       track.track.mode = "hidden";
@@ -89,6 +90,7 @@ export function createReel(root) {
       .filter((s) => s.url);
     const sheet = el("div", { class: "reel-sources", hidden: true },
       el("p", { class: "reel-sources-head", text: "Sources" }),
+      item.selection_reason ? el("p", { class: "reel-reason", text: item.selection_reason }) : null,
       el("ul", {}, ...sources.map((s) =>
         el("li", {}, el("a", { href: s.url, target: "_blank", rel: "noopener noreferrer", text: s.title || hostOf(s.url) }))
       ))
@@ -106,15 +108,14 @@ export function createReel(root) {
           skillChip(item.skill)
         ),
         el("h3", { class: "reel-title", text: item.name }),
-        item.selection_reason ? el("p", { class: "reel-reason", text: item.selection_reason }) : null,
         sheet,
         el("div", { class: "reel-actions" },
           soundBtn,
           el("button", { type: "button", class: "reel-btn", "aria-expanded": "false", text: "View sources",
             onclick: (e) => { sheet.hidden = !sheet.hidden; e.currentTarget.setAttribute("aria-expanded", String(!sheet.hidden)); } }),
-          // The skill and its tasks open in a sheet over the reel; only a ready skill gets a way there.
+          // The skill opens in a sheet over the reel; only a ready skill gets a way there.
           item.skill?.status === "ready"
-            ? el("a", { class: "reel-btn", href: `#${skillAnchor(item.id, item.version)}`, text: "View skill & tasks" })
+            ? el("a", { class: "reel-btn", href: `#${skillAnchor(item.id, item.version)}`, text: "View skill" })
             : null,
           el("button", { type: "button", class: "reel-btn", text: "Skip", onclick: () => go(1) })
         )
@@ -172,20 +173,29 @@ export function createReel(root) {
 
   return {
     root,
-    /** Appends clips that weren't shown yet, keeping the one playing in place. */
+    /** Reconcile revisions as well as additions, so polling cannot retain a hidden duplicate. */
     render(next) {
-      for (const item of next) {
-        const key = `${item.id}:${item.version}`;
-        if (shown.has(key)) continue;
-        const slide = slideFor(item, items.length);
-        items.push(item);
-        shown.set(key, slide);
-        track.append(slide);
-        observer.observe(slide);
-      }
+      const keyOf = (item) => `${item.id}:${item.version}`;
+      if (next.map(keyOf).join(",") === items.map(keyOf).join(",")) return;
+      const current = items[active] && keyOf(items[active]);
+      observer.disconnect();
+      for (const slide of shown.values()) slide.querySelector("video")?.pause();
+      shown.clear();
+      items = next;
+      const slides = items.map((item, index) => {
+        const slide = slideFor(item, index);
+        shown.set(keyOf(item), slide);
+        return slide;
+      });
+      track.replaceChildren(...slides);
+      slides.forEach((slide) => observer.observe(slide));
       root.hidden = items.length === 0;
-      if (active === -1 && items.length) activate(0);
-      else counter.textContent = items.length ? `${active + 1} of ${items.length}` : "";
+      active = -1;
+      if (items.length) {
+        const index = Math.max(0, items.findIndex((item) => keyOf(item) === current));
+        activate(index);
+        track.scrollTop = index * track.clientHeight;
+      } else counter.textContent = "";
     },
     get count() {
       return items.length;

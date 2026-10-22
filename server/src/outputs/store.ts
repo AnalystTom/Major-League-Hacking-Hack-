@@ -1,8 +1,9 @@
 // Reads ready artifacts and writes the processor's outputs: video_results (workflow 2), skill_results and
 // action_items (workflow 3). Needs db/migrations/005_outputs.sql for the one-result-per-revision keys.
 
+import { assertJudged } from "./render/judge.js";
 import { randomUUID } from "node:crypto";
-import type { Database, Statement } from "../db.js";
+import type { Database } from "../db.js";
 import { NOW } from "../ingest/ledger.js";
 import { STALE_CLAIM_MINUTES } from "../claims.js";
 import { sourceRefs, type GeneratedSkill, type ReadyArtifact, type RenderedVideo } from "./types.js";
@@ -16,7 +17,8 @@ export const MAX_OUTPUT_ATTEMPTS = 3;
 export const RETRY_AFTER_MINUTES = 5;
 
 /** A result row a worker may take: never started, abandoned by a crashed worker, or failed with attempts left. */
-const CLAIMABLE = (r: string) => `(${r}.status = 'pending'
+const CLAIMABLE = (r: string, kind: Kind) => `(${r}.status = 'pending'
+  ${kind === 'video' ? `OR (${r}.status='ready' AND coalesce(json_extract(iif(json_valid(${r}.review_feedback),${r}.review_feedback,'{}'),'$.judge'),'') <> 'short-judge-v1')` : ''}
   OR (${r}.status = 'running' AND julianday(${r}.updated_at) < julianday('now', '-${STALE_CLAIM_MINUTES} minutes'))
   OR (${r}.status = 'failed' AND ${r}.attempts < ${MAX_OUTPUT_ATTEMPTS}
       AND julianday(${r}.updated_at) < julianday('now', '-' || (${RETRY_AFTER_MINUTES} * ${r}.attempts) || ' minutes')))`;
@@ -65,7 +67,7 @@ export class D1OutputStore implements OutputStore {
       WHERE a.ingestion_status='ready' AND a.digestion_prompt_id IS NOT NULL
       AND EXISTS(SELECT 1 FROM user_imports ui WHERE ui.unit_id IN (SELECT value FROM json_each(a.source_ids)))
       AND NOT EXISTS(SELECT 1 FROM ${TABLE[kind]} r WHERE r.artifact_id=a.id AND r.artifact_version=a.version
-        AND NOT ${CLAIMABLE('r')}) ORDER BY a.created_at LIMIT ?1`, [limit]);
+        AND NOT ${CLAIMABLE('r',kind)}) ORDER BY a.created_at LIMIT ?1`, [limit]);
     return rows.map(rowToArtifact);
   }
   async claim(kind: Kind, a: ReadyArtifact) {
@@ -74,33 +76,26 @@ export class D1OutputStore implements OutputStore {
       VALUES(?1,?2,'running',${NOW},?3,1)
       ON CONFLICT(artifact_id,artifact_version) DO UPDATE SET status='running',error=NULL,updated_at=${NOW},
         claim_token=excluded.claim_token,attempts=${t}.attempts+1
-      WHERE ${CLAIMABLE(t)} RETURNING id,claim_token`,[a.id,a.version,randomUUID()]);
+      WHERE ${CLAIMABLE(t,kind)} RETURNING id,claim_token`,[a.id,a.version,randomUUID()]);
     return rows[0] ? { id: rows[0].id as string,token: rows[0].claim_token as string } : null;
   }
   async fail(kind: Kind, c: Claim, error: string) {
-    const { rowCount } = await this.db.query(`UPDATE ${TABLE[kind]} SET status='failed',error=?3,updated_at=${NOW}
+    const { rowCount } = await this.db.query(`UPDATE ${TABLE[kind]} SET status='failed',error=?3,attempts=CASE WHEN ?3 LIKE 'Quality judge rejected:%' THEN 3 ELSE attempts END,updated_at=${NOW}
       WHERE id=?1 AND claim_token=?2 AND status='running'`,[c.id,c.token,error.slice(0,2000)]);
     return rowCount===1;
   }
   async finishSkill(c: Claim, s: GeneratedSkill) {
-    const held = `EXISTS(SELECT 1 FROM skill_results WHERE id=?1 AND claim_token=?2 AND status='running')`;
-    const statements: Statement[] = [{ sql: `DELETE FROM action_items WHERE skill_result_id=?1 AND ${held}`,params:[c.id,c.token] }];
-    for (const [position,item] of s.action_items.entries()) statements.push({
-      sql: `INSERT INTO action_items(skill_result_id,task,applicability_evidence,prerequisites,steps,source_refs,completion_check,position)
-        SELECT ?1,?3,?4,?5,?6,?7,?8,?9 WHERE ${held}`,
-      params: [c.id,c.token,item.task,JSON.stringify(item.applicability_evidence),JSON.stringify(item.prerequisites),JSON.stringify(item.steps),
-        JSON.stringify(item.source_refs),item.completion_check,position],
-    });
-    statements.push({ sql: `UPDATE skill_results SET status='ready',skill_markdown=?3,supporting_refs=?4,error=NULL,updated_at=${NOW}
-      WHERE id=?1 AND claim_token=?2 AND status='running'`,params: [c.id,c.token,s.skill_markdown,JSON.stringify(s.supporting_refs)] });
-    const results = await this.db.batch(statements);
-    if (results.at(-1)!.rowCount!==1) throw new LostClaim('skill');
+    const { rowCount } = await this.db.query(`UPDATE skill_results SET status='ready',skill_markdown=?3,supporting_refs=?4,error=NULL,updated_at=${NOW}
+      WHERE id=?1 AND claim_token=?2 AND status='running'`, [c.id,c.token,s.skill_markdown,JSON.stringify(s.supporting_refs)]);
+    if (rowCount!==1) throw new LostClaim('skill');
   }
+
   async finishVideo(c: Claim, v: RenderedVideo) {
+    assertJudged(v.judgment);
     const { rowCount } = await this.db.query(`UPDATE video_results SET status='ready',script=?3,opus_prompt_revision=?4,
-      media_ref=?5,caption_ref=?6,narration_ref=?7,duration_seconds=?8,music_provenance=?9,error=NULL,updated_at=${NOW}
+      media_ref=?5,caption_ref=?6,narration_ref=?7,duration_seconds=?8,music_provenance=?9,review_status='approved',review_feedback=?10,error=NULL,updated_at=${NOW}
       WHERE id=?1 AND claim_token=?2 AND status='running'`,
-      [c.id,c.token,JSON.stringify(v.script),v.prompt_revision,v.media_ref,v.caption_ref,v.narration_ref,v.duration_seconds,v.music_provenance ?? null]);
+      [c.id,c.token,JSON.stringify(v.script),v.prompt_revision,v.media_ref,v.caption_ref,v.narration_ref,v.duration_seconds,v.music_provenance ?? null,JSON.stringify(v.judgment)]);
     if (rowCount!==1) throw new LostClaim('video');
   }
 
@@ -145,7 +140,7 @@ export class MemoryOutputStore implements OutputStore {
   }
   async fail(kind: Kind, c: Claim, error: string) {
     const row = this.held(kind, c);
-    if (row) Object.assign(row, { status: "failed", error, failedAt: Date.now() });
+    if (row) Object.assign(row, { status: "failed", error, failedAt: Date.now(), ...(error.startsWith("Quality judge rejected:") ? { attempts: MAX_OUTPUT_ATTEMPTS } : {}) });
     return !!row;
   }
   async finishSkill(c: Claim, s: GeneratedSkill) {
@@ -156,6 +151,7 @@ export class MemoryOutputStore implements OutputStore {
   async finishVideo(c: Claim, v: RenderedVideo) {
     const row = this.held("video", c);
     if (!row) throw new LostClaim("video");
+    assertJudged(v.judgment);
     Object.assign(row, { status: "ready", value: v });
   }
   async skillCard(a: ReadyArtifact): Promise<SkillState> {

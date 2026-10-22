@@ -102,7 +102,7 @@ test('atomic D1 extraction and digest reservations never exceed the last daily/m
   } finally { s.sqlite.close(); }
 });
 
-test('D1 outputs retain claim ownership, bounded retries and transactional task writes',async()=>{
+test('D1 outputs retain claim ownership, bounded retries and skills-only writes without deleting stored tasks',async()=>{
   const s=await setup();
   try {
     const id=await s.unit('ready'),a=await s.artifact([id]);
@@ -120,6 +120,7 @@ test('D1 outputs retain claim ownership, bounded retries and transactional task 
     const skill={skill_markdown:'---\nname: check-first\ndescription: "Check"\n---\nbody',supporting_refs:art.sources,
       action_items:[{task:'Check',applicability_evidence:[],prerequisites:[],steps:['Inspect'],source_refs:[id],completion_check:'Verified'}]};
     await assert.rejects(s.outputs.finishSkill(c,skill),/taken over/);
+    await s.db.query("INSERT INTO action_items(skill_result_id,task,steps,completion_check) VALUES(?1,'Historical task','[\"Inspect\"]','Checked')",[second.id]);
     await s.outputs.finishSkill(second,skill);
     await assert.rejects(s.outputs.finishSkill(second,{...skill,action_items:[]}),/taken over/);
     assert.equal((await s.db.query('SELECT count(*) AS n FROM action_items')).rows[0].n,1,'lost claim cannot delete tasks');
@@ -129,13 +130,13 @@ test('D1 outputs retain claim ownership, bounded retries and transactional task 
     await assert.rejects(s.db.query("UPDATE video_results SET status='ready' WHERE id=?1",[v.id]),/CHECK|positive duration/);
     await s.db.query("UPDATE video_results SET updated_at='2000-01-01T00:00:00Z' WHERE id=?1",[v.id]);
     const v2=(await s.outputs.claim('video',art))!;
-    const rendered={script:{scenes:[]},prompt_revision:'script-v1',media_ref:`r2:videos/${a.id}/1/short.mp4`,caption_ref:`r2:captions/${a.id}/1/short.vtt`,narration_ref:`r2:audio/${a.id}/1/narration.m4a`,duration_seconds:34.5,music_provenance:'Licensed test provenance'};
+    const rendered={judgment:{judge:'short-judge-v1' as const,passed:true,captions_burned:true as const,scores:{grounding:4,clarity:4,usefulness:4,visuals:4,subtitles:4},reasons:[]},script:{scenes:[]},prompt_revision:'script-v1',media_ref:`r2:videos/${a.id}/1/short.mp4`,caption_ref:`r2:captions/${a.id}/1/short.vtt`,narration_ref:`r2:audio/${a.id}/1/narration.m4a`,duration_seconds:34.5,music_provenance:'Licensed test provenance'};
     await assert.rejects(s.outputs.finishVideo(v,rendered),/taken over/);
     assert.equal(await s.outputs.fail('video',v,'late'),false);
     await s.outputs.finishVideo(v2,rendered);
     assert.equal((await s.db.query('SELECT music_provenance FROM video_results WHERE id=?1',[v2.id])).rows[0].music_provenance,rendered.music_provenance);
     assert.equal(await s.outputs.claim('video',art),null);
-    const b=await s.artifact([id]),retry={...art,id:b.id};
+    const b=await s.artifact([await s.unit('ready')]),retry={...art,id:b.id};
     const failed=(await s.outputs.claim('skill',retry))!;
     await s.outputs.fail('skill',failed,'failed');
     for(let i=0;i<2;i++) {
@@ -166,4 +167,21 @@ test('D1 shared digests stay private and handoff claims survive migration',async
     assert.equal(await s.handoffs.fail(claim,'actual error'),true);
     assert.equal((await s.db.query('SELECT error FROM agent_briefs WHERE id=?1',[brief])).rows[0].error,'actual error');
   } finally { s.sqlite.close(); }
+});
+
+
+test('artifact creation reuses an identical source set and a quality rejection cannot be retried into publication',async()=>{
+  const s=await setup();
+  try {
+    const id=await s.unit('ready');
+    const [a,b]=await Promise.all([s.artifact([id]),s.artifact([id])]);
+    assert.equal(a.id,b.id);
+    assert.equal((await s.db.query('SELECT count(*) AS n FROM artifacts')).rows[0].n,1);
+    const claim=(await s.outputs.claim('video',a))!;
+    await s.outputs.fail('video',claim,'Quality judge rejected: unsupported claim');
+    await s.db.query("UPDATE video_results SET updated_at='2000-01-01T00:00:00Z'");
+    assert.equal(await s.outputs.claim('video',a),null);
+    assert.deepEqual(await s.outputs.artifactsNeeding('video',10),[]);
+    assert.match((await s.db.query('SELECT error FROM video_results')).rows[0].error,/unsupported claim/);
+  } finally {s.sqlite.close();}
 });
