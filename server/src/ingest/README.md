@@ -18,9 +18,11 @@ Every route needs `Authorization: Bearer $INGEST_TOKEN`. The web Worker sends it
 | `NIMBLE_API_KEY` | [Nimble](https://docs.nimbleway.com) key, used to read public Substack posts (`ingested_units.content_type = 'substack_post'`). Without it Substack units fail with "NIMBLE_API_KEY is not configured". |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | Extraction. Model defaults to `gemini-3.5-flash-lite`. |
 | `WINDOW_SECONDS` | Seconds extracted from each unit's start time (30-3600, default 3600, i.e. 1 hour). |
-| `OPENAI_API_KEY`, `OPENAI_MODEL` | Digests, skills, scripts and the short-quality judge use the OpenAI API at `https://api.openai.com/v1`. Without a key units are extracted but not digested. The default model is defined in [`digest/run.ts`](digest/run.ts) as `DEFAULT_DIGEST_MODEL`. |
+| `OPENAI_API_KEY`, `OPENAI_MODEL` | Digests, skills, scripts and the short-quality judge use the OpenAI API at `https://api.openai.com/v1`. Without a key units are extracted but not digested. `OPENAI_MODEL` overrides the model for all of them. When unset, digests and skills use `DEFAULT_DIGEST_MODEL` in [`digest/run.ts`](digest/run.ts); scripts and the judge use `gpt-6.1-sol` via [`shortModel`](../outputs/render/script.ts). Deployment configuration lives in [`deploy/processor/wrangler.jsonc`](../../../deploy/processor/wrangler.jsonc). |
 | `OPENAI_MAX_OUTPUT_TOKENS` | Digest and generated-output cap including reasoning tokens; its fallback is `DEFAULT_MAX_OUTPUT_TOKENS` in [`digest/run.ts`](digest/run.ts). Raise it if digests report hitting the cap. |
-| `OPENAI_REASONING_EFFORT` | Optional reasoning effort for digests, skills, scripts and the short-quality judge. Unset uses the model's default; accepted values are defined in [`openaiEffort.ts`](../openaiEffort.ts). |
+| `OPENAI_REASONING_EFFORT` | Optional reasoning effort for digests, skills and handoffs. Unset uses the model's default; accepted values are defined in [`openaiEffort.ts`](../openaiEffort.ts). Shorts use the separate settings below. |
+| `SCRIPT_REASONING_EFFORT` | Script generation and its bounded revision; defaults to `medium`. Overrides the shared effort for these calls; accepted values are the same as above. |
+| `JUDGE_REASONING_EFFORT` | Each independent short-quality review; defaults to `high`. Overrides the shared effort for these calls; accepted values are the same as above. |
 | `DIGESTION_REQUEST` | Categorization request stored with each Digestion Prompt revision. |
 | `D1_URL`, `D1_TOKEN` | Authenticated processor Worker D1 bridge. Enables the sweep; without both, ephemeral CLI runs use memory. |
 | `SWEEP_INTERVAL_MS` | Pending-unit sweep interval (default 60000). |

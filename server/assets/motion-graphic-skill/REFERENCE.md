@@ -11,12 +11,14 @@ The reel was made from three reference posts, each a short motion-graphics piece
 
 ## The rules, and where they live
 
-**Script.** `server/src/outputs/render/script.ts` sets the rules in `SCRIPT_SYSTEM_PROMPT` (`script-v2`).
+**Script.** `server/src/outputs/render/script.ts` sets the rules in `SCRIPT_SYSTEM_PROMPT`.
 - One idea per scene.
 - The headline is at most 5 words, and the aside is at most 8 words in a second voice.
 - Each scene gets one move and one ground.
 - Length follows the source, with no padding.
 - Nothing stronger than the source says.
+
+Source citations follow the [timed-script contract](../../../docs/project-actions-spec.md#generation-and-timed-script-contract).
 
 `validateScript` falls back to `slam` for any move the template can't draw honestly. That covers a strike or roll with nothing to swap to, and a count of a number the source never states.
 
@@ -40,4 +42,4 @@ Scene 1 is always night and the end card is always paper. `groundsFor` in `motio
 
 **Frame.** The HUD has corner marks, `RESURFACE`, the scene code, the timecode and the source tag. The italic serif aside carries the second voice.
 
-**Honesty.** The copy comes only from the artifact. The end card names a skill only when that skill is ready; otherwise it shows the next step.
+**Honesty.** Lesson claims come only from the artifact. The end card shows only a ready skill’s actual name and description; the description is cut at a word boundary to at most 80 characters. Without a ready skill, it shows the next step. The closing scene lasts at least 2.5 seconds without changing narration or caption timing. It never invents an installation path. End-card evidence follows the [processor quality checks](../../../docs/proceed-and-media.md#the-processor).

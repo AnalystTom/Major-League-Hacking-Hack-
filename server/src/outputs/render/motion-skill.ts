@@ -3,6 +3,7 @@
 // The skill's record.js paints every frame of the template in headless Chromium with the engine's own soundtrack;
 // ffmpeg then lays the narration over it, ducking the music under the voice.
 
+import { runInNewContext } from "node:vm";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
@@ -11,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { probe, run } from "./ffmpeg.js";
 import type { Slot } from "./timeline.js";
 import type { ReadyArtifact } from "../types.js";
+import { CAPTION_BAND, CONTENT_BOTTOM } from "./layout.js";
 
 export const MOTION_SKILL_REVISION = "visuals:motion-graphic-skill";
 export const MOTION_MUSIC_PROVENANCE =
@@ -22,15 +24,16 @@ const SKILL_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../../ass
 const RECORD_TIMEOUT_MS = 40 * 60_000;
 
 /** The ready skill an end card can name; null while it's still being written or if it failed. */
-export interface SkillCard { name: string; tasks: number }
+export interface SkillCard { name: string; description: string }
 
 export interface MotionScene { d: number; code: string; theme: string; text: string; sub: string; label: string; move: string; swap: string }
 export interface MotionSpec {
+  layout: { caption_band: typeof CAPTION_BAND; content_bottom: number };
   id: string;
   category: string;
   source: { kind: "x" | "youtube" | "other"; platform: string; title: string; byline: string; tag: string };
   scenes: MotionScene[];
-  skill: { name: string; path: string; tasks: string } | null;
+  skill: SkillCard | null;
 }
 
 /** Grounds for scenes the script left open, in the reel's order of cuts. Scene 1 is always night, the end card paper. */
@@ -59,7 +62,7 @@ function sourceOf(a: ReadyArtifact): MotionSpec["source"] {
   return { kind, platform, title: clip(text, 110), byline: m ? m[1] : "", tag: `${platform.toUpperCase()}${more}` };
 }
 
-/** What the template needs from a script scene; aside, move, swap and ground come from script-v2. */
+/** Optional visual direction preserves compatibility with older scripts. */
 export interface SpecScene { on_screen_text: string; narration_text: string; aside?: string; move?: string; swap?: string; ground?: string }
 
 /** One ground per scene: night first, paper last, the script's choice between, and never the same twice in a row. */
@@ -77,12 +80,15 @@ export function groundsFor(scenes: SpecScene[]): string[] {
 /** The template's data: one entry per narrated scene, timed to its measured narration slot. */
 export function motionSpec(a: ReadyArtifact, scenes: SpecScene[], slots: Slot[], skill: SkillCard | null): MotionSpec {
   const last = scenes.length - 1, grounds = groundsFor(scenes);
+  const description = skill ? oneLine(skill.description).match(/^.{1,80}(?=\s|$)/u)?.[0] : undefined;
+  if (skill && !description) throw new Error("Skill description has no complete word within 80 characters");
   return {
+    layout: { caption_band: CAPTION_BAND, content_bottom: CONTENT_BOTTOM },
     id: a.id.slice(0, 8),
     category: oneLine(a.category ?? a.name),
     source: sourceOf(a),
     scenes: scenes.map((s, i) => {
-      // script-v2 writes its own aside; an older script's aside was the narration's first sentence.
+      // Older scripts without an aside use the narration's first sentence.
       const text = clip(oneLine(s.on_screen_text), 90);
       const sub = s.aside !== undefined ? clip(oneLine(s.aside), 90) : clip(firstSentence(s.narration_text), 140);
       const move = i === last ? "slam" : s.move ?? "slam";
@@ -94,10 +100,7 @@ export function motionSpec(a: ReadyArtifact, scenes: SpecScene[], slots: Slot[],
         move, swap: move === "slam" || move === "count" ? "" : clip(oneLine(s.swap ?? ""), 24),
       };
     }),
-    skill: skill && {
-      name: skill.name, path: `.agents/skills/${skill.name}/SKILL.md`,
-      tasks: "",
-    },
+    skill: skill && { name: oneLine(skill.name), description: description! },
   };
 }
 
@@ -126,9 +129,19 @@ export function recordEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessE
  * Records the template with this spec to film.mp4 (picture + the engine's music), then mixes narration.wav over it
  * into short.mp4: the music is ducked under the voice and the whole mix is normalised to -14 LUFS.
  */
-export async function renderMotion(dir: string, spec: MotionSpec, narrationWav: string): Promise<{ mp4: string; duration: number }> {
+export async function renderMotion(dir: string, spec: MotionSpec, narrationWav: string): Promise<{ mp4: string; duration: number; verification: unknown }> {
   const html = join(dir, "short.html"), film = join(dir, "film.mp4"), mp4 = join(dir, "short.mp4");
   await writeFile(html, fillTemplate(await readFile(join(SKILL_DIR, "resurface-short.html"), "utf8"), spec));
+  try {
+    await runWithEnv(process.execPath, [join(SKILL_DIR, "scripts", "check.js"), html, "--out", join(dir, "motion-check")], recordEnv(), "check.js", /ALL CHECKS PASSED/);
+  } catch (error) {
+    // The renderer removes scratch files; retain the actual defects in the stored generation failure.
+    const report = await readFile(join(dir, "motion-check", "report.json"), "utf8").then(JSON.parse).catch(() => null);
+    if (report?.failures?.length) throw new Error(`motion-graphic-skill check.js rejected: ${report.failures.join("; ").slice(0, 800)}`);
+    throw error;
+  }
+  const { failures, langs } = JSON.parse(await readFile(join(dir, "motion-check", "report.json"), "utf8"));
+  if (!Array.isArray(failures) || failures.length) throw new Error("motion-graphic-skill check.js reported failures");
   await runWithEnv(process.execPath, [join(SKILL_DIR, "scripts", "record.js"), html, "--out", film, "--crf", "20"], recordEnv());
   await run("ffmpeg", [
     "-y", "-hide_banner", "-loglevel", "error", "-i", film, "-i", narrationWav, "-filter_complex",
@@ -139,7 +152,7 @@ export async function renderMotion(dir: string, spec: MotionSpec, narrationWav: 
   const p = await probe(mp4);
   if (p.video?.codec !== "h264" || p.video.width !== 1080 || p.video.height !== 1920) throw new Error(`motion short is not 1080x1920 H.264 (${JSON.stringify(p.video)})`);
   if (p.audio?.codec !== "aac") throw new Error("motion short has no AAC audio track");
-  return { mp4, duration: Math.round(p.duration * 100) / 100 };
+  return { mp4, duration: Math.round(p.duration * 100) / 100, verification: { failures, langs } };
 }
 
 /** One narration track on the scene timeline: each clip, then silence to its slot's end. Writes WAV and M4A. */
@@ -154,7 +167,7 @@ export async function narrationTrack(dir: string, wavs: string[], slots: Slot[])
   return { wav, m4a };
 }
 
-function runWithEnv(cmd: string, args: string[], env: NodeJS.ProcessEnv): Promise<void> {
+function runWithEnv(cmd: string, args: string[], env: NodeJS.ProcessEnv, script = "record.js", success = /verified:/): Promise<void> {
   return new Promise((done, reject) => {
     const child = spawn(cmd, args, { env, stdio: ["ignore", "pipe", "pipe"] });
     let tail = "";
@@ -164,17 +177,41 @@ function runWithEnv(cmd: string, args: string[], env: NodeJS.ProcessEnv): Promis
     // SIGTERM first: puppeteer's handler closes the Chromium it launched (its own process group) before exiting.
     let kill: NodeJS.Timeout | undefined;
     const timer = setTimeout(() => {
-      tail += `\nrecord.js timed out after ${RECORD_TIMEOUT_MS / 60_000} minutes`;
+      tail += `\n${script} timed out after ${RECORD_TIMEOUT_MS / 60_000} minutes`;
       child.kill("SIGTERM");
       kill = setTimeout(() => child.kill("SIGKILL"), 15_000);
     }, RECORD_TIMEOUT_MS);
-    child.on("error", (e) => { clearTimeout(timer); reject(new Error(`record.js could not start: ${e.message}`)); });
+    child.on("error", (e) => { clearTimeout(timer); reject(new Error(`${script} could not start: ${e.message}`)); });
     child.on("close", (code) => {
       clearTimeout(timer);
       clearTimeout(kill);
       // record.js prints "verified: …" last only when the MP4 is playable and as long as the film.
-      if (code === 0 && /verified:/.test(tail)) done();
-      else reject(new Error(`motion-graphic-skill record.js failed (exit ${code}): ${tail.trim().split("\n").slice(-3).join(" ").slice(0, 400)}`));
+      if (code === 0 && success.test(tail)) done();
+      else reject(new Error(`motion-graphic-skill ${script} failed (exit ${code}): ${tail.trim().split("\n").slice(-3).join(" ").slice(0, 400)}`));
     });
   });
+}
+
+export async function cueCheck(spec: MotionSpec, round: number): Promise<string> {
+  const source = await readFile(join(SKILL_DIR, "resurface", "scenes.js"), "utf8");
+  const rows: { cues: [number, string, ...unknown[]][]; moments: number[] }[] = JSON.parse(runInNewContext(`${source}
+    JSON.stringify(DATA.scenes.map((s, i, all) => {
+      const id = i === 0 ? 'open' : i === all.length - 1 ? 'skill' : 'say';
+      const t0 = i === 0 ? .12 : .25;
+      return { cues: S[id].cues(s.d, { i }), moments: id === 'skill' ? [.35] :
+        [...(i === 0 ? [0, .05] : [.25]), ...Object.values(moveTimes(s, t0, s.d))] };
+    }))`, { DATA: spec, W: 1080, S: {} }, { timeout: 1000 }));
+  let start = 0, impacts = 0;
+  const lines = [`Round ${round}`, "B = 0.5s (120 BPM); beat multiples include the measured scene start."];
+  rows.forEach((row, i) => {
+    for (const [at, name] of row.cues) {
+      if (name === "impact") impacts++;
+      const motion = row.moments.find(time => Math.abs(time - at) < .0001);
+      const passed = motion !== undefined && at >= 0 && at < spec.scenes[i].d;
+      lines.push(`Scene ${i}: ${name} cue ${(start + at) / .5}B; motion ${motion === undefined ? "missing" : (start + motion) / .5}B: ${passed ? "PASS" : "FAIL"}`);
+    }
+    start += spec.scenes[i].d;
+  });
+  lines.push(`impact cues: ${impacts} ${impacts <= 2 ? "PASS" : "FAIL"}`);
+  return lines.join("\n");
 }

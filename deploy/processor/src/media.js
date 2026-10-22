@@ -1,5 +1,5 @@
 // Kept outside the container: only this Worker has the R2 binding. The container PUTs each rendered file here with its bearer token.
-const KEY = /^(videos|captions|audio)\/[\w-]+\/\d+\/[\w.-]+$/;
+const KEY = /^(videos|captions|audio)\/[\w-]+\/\d+\/(?:[\w-]+\/)?[\w.-]+$/;
 const MAX_BYTES = 50_000_000;
 
 export async function media(request, env) {

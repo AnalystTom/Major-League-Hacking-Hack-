@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { pcmToWav } from "../../src/outputs/render/tts.js";
-import { JUDGE_SYSTEM_PROMPT } from "../../src/outputs/render/judge.js";
+import { JUDGE_SYSTEM_PROMPT, publicationJudgment } from "../../src/outputs/render/judge.js";
 import { SCRIPT_SYSTEM_PROMPT } from "../../src/outputs/render/script.js";
-import type { ReadyArtifact } from "../../src/outputs/types.js";
+import { CRITIQUE_AXES, type ShortReview, type ReadyArtifact } from "../../src/outputs/types.js";
 import type { Kind, MemoryOutputStore } from "../../src/outputs/store.js";
 
 export function artifact(over: Partial<ReadyArtifact> = {}): ReadyArtifact {
@@ -35,17 +35,27 @@ export const skillReply = (a: ReadyArtifact, over: Record<string, unknown> = {})
   ...over,
 });
 
+export function reviewReply(): ShortReview {
+  return {
+    scores: { grounding: 4, clarity: 4, usefulness: 4, visuals: 4, subtitles: 4, caption_overlap: 4 }, reasons: [],
+    defects: Array.from({ length: 11 }, (_, i) => ({ id: `D${i + 1}`, result: "PASS" as const, evidence: "finished-phone.jpg @ 1s; legible source-grounded content, clean cuts" })),
+    axes: Object.fromEntries(CRITIQUE_AXES.map(axis => [axis, { score: 8, evidence: "finished-phone.jpg @ 1s; no defects" }])) as ShortReview["axes"],
+    sound_verified: true, worst_three: [],
+  };
+}
+export const approvedJudgment = () => publicationJudgment([reviewReply(), reviewReply()], [], [1, 2].map(n => `Round ${n}\nScene 0: no cues PASS\nimpact cues: 0 PASS`));
+
 export const scriptReply = (a: ReadyArtifact) => ({
   scenes: [
-    { narration_text: "Your coding agent says it's done. Is it, though? Most of the time nobody actually checked the change it made.", on_screen_text: "Done? Prove it.", visual_instruction: "title", source_ids: [] },
+    { narration_text: "Your coding agent says it's done. Is it, though? Most of the time nobody actually checked the change it made.", on_screen_text: "Done? Prove it.", visual_instruction: "title", source_ids: a.source_ids },
     { narration_text: "The talk's fix is simple. Write a failing check before the agent starts, so success means a red test turning green.", on_screen_text: "Failing check first", visual_instruction: "test", source_ids: [a.source_ids[0]] },
     { narration_text: "Then the agent can't declare victory by itself. It has to run the check and show you the result.", on_screen_text: "Run it. Show it.", visual_instruction: "terminal", source_ids: [a.source_ids[0]] },
-    { narration_text: "Next time you hand off a task, write the check first and make it part of the request.", on_screen_text: "Check first, every time", visual_instruction: "cta", source_ids: [] },
+    { narration_text: "Next time you hand off a task, write the check first and make it part of the request.", on_screen_text: "Check first, every time", visual_instruction: "cta", source_ids: a.source_ids },
   ],
 });
 
 /** Routes OpenAI (skill or script, told apart by the system prompt) and Gemini TTS to canned replies. */
-export function outputsFetch(a: ReadyArtifact, opts: { skill?: unknown; ttsStatus?: number; openaiStatus?: number; judge?: unknown } = {}) {
+export function outputsFetch(a: ReadyArtifact, opts: { skill?: unknown; ttsStatus?: number; openaiStatus?: number; judge?: unknown; revisedScript?: unknown } = {}) {
   const calls = { skill: 0, script: 0, tts: 0, judge: 0 };
   const impl = (async (url: string, init?: { body?: string }) => {
     const u = String(url);
@@ -54,11 +64,11 @@ export function outputsFetch(a: ReadyArtifact, opts: { skill?: unknown; ttsStatu
       const system: string = JSON.parse(init!.body!).messages[0].content;
       if (system === JUDGE_SYSTEM_PROMPT) {
         calls.judge++;
-        return Response.json({ choices: [{ message: { content: JSON.stringify(opts.judge ?? {scores:{grounding:4,clarity:4,usefulness:4,visuals:4,subtitles:4},reasons:[]}) } }] });
+        return Response.json({ choices: [{ message: { content: JSON.stringify(Array.isArray(opts.judge) ? opts.judge[calls.judge - 1] : opts.judge ?? reviewReply()) } }] });
       }
       const isScript = system === SCRIPT_SYSTEM_PROMPT;
       calls[isScript ? "script" : "skill"]++;
-      const content = isScript ? scriptReply(a) : (opts.skill ?? skillReply(a));
+      const content = isScript ? { ...scriptReply(a), ...(JSON.parse(init!.body!).messages[1].content.includes("previous_scenes") ? { fixes: [], ...(opts.revisedScript ?? {}) } : {}) } : (opts.skill ?? skillReply(a));
       return Response.json({ choices: [{ message: { content: JSON.stringify(content) } }] });
     }
     if (u.includes("interactions")) {

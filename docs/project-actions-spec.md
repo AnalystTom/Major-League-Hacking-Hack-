@@ -18,10 +18,9 @@ Combine related saves into source-grounded shorts and reusable coding-agent skil
 - Match ideas to the project's goal, stack, current work, and available resources.
 - Core v0 journey: sign in → import links → see processing/results → browse personal shorts and copy or download skills. Anonymous visitors can browse the explicitly public catalogue.
 - The LLM uses a named **Digestion Prompt** to choose useful material, group it, and produce the shared schema. Categories are dynamic and guided by the user's prompt.
-- Shorts are roughly 30–45 seconds, with captions, voice, and music. The team reviews and selects real clips for a stable demo order.
-- Opus 5.5 writes animation code; a renderer produces the videos.
+- Short generation, duration targets and publication checks follow the [processor flow](proceed-and-media.md#the-processor). The team selects real clips for a stable public demo order.
 - Workflow 1 ingests raw artifacts into a shared TigerData schema.
-- Workflow 2 turns processed text into Opus scripts/videos and serves a TikTok-style feed with CTAs on the existing Cloudflare page.
+- Workflow 2 turns processed text into judged shorts and serves a TikTok-style feed with CTAs on the existing Cloudflare page.
 - Workflow 3 independently turns ingested material into concise skills for coding agents; task generation is paused.
 
 V1 adds Codex-led source acquisition (give Codex a prompt and have it fetch material) and retrieval of additional supporting sources. That acquisition route is distinct from workflow 3's downstream skill export/handoff.
@@ -78,7 +77,7 @@ Do not invent relevance scores, revenue, traffic uplift, effort estimates, repos
 
 **Digestion Prompt output:** an `artifacts` list containing schema-valid final artifacts with `name`, contributing `source_ids`/URLs, dynamic `category`, source-grounded `processed_text`, evidence references, and a `selection_reason`; plus an `exclusions` list of usable-but-unselected source IDs and reasons, tied to the same prompt revision. Return no artifact when the evidence is insufficient. Failed retrievals retain their extraction errors outside the LLM. Validate both the shape and referenced source IDs before storing; a user's prompt cannot change the output contract or override grounding rules.
 
-The prompt guides recommendation selection as well as grouping. Workflow 1 produces the synthesis/draft narration; workflow 2 uses the team's Opus generation prompt to write a timed script and animation code. Workflow 3 separately produces a skill.
+The prompt guides recommendation selection as well as grouping. Workflow 1 produces the synthesis/draft narration; workflow 2 follows the [processor flow](proceed-and-media.md#the-processor) to produce the short. Workflow 3 separately produces a skill.
 
 **Prompt refinement tasks:** build real input → reviewed output few-shot examples from the selected videos; include a useful single source, a justified multi-source combination if the collection supports it, and a rejected source. Check unavailable-source handling separately. Record reviewer approval/rejection and the reason, revise the prompt, and rerun the same collection. Do not combine the two selected videos merely to demonstrate multi-source support.
 
@@ -87,7 +86,7 @@ The prompt guides recommendation selection as well as grouping. Workflow 1 produ
 | Workflow | Owns | Input | Output | Independent completion check |
 | --- | --- | --- | --- | --- |
 | 1. Ingestion | Import UI/API, Gemini extraction and source review, Digestion Prompt, grouping/categories, TigerData schema and contracts | Individual YouTube links, prompt, and authorized project context | Per-source units/errors and reviewed final artifacts | A real video yields usable extracted content and a traceable artifact; unread sources retain actual errors. |
-| 2. Video and feed | Opus timed scripts and animation, narration/music/captions, isolated rendering, video results, Cloudflare feed/player and CTAs | Versioned ingestion artifacts with ready processing | Actual media, video records, and the feed response defined below | A generated clip plays with voice/music/captions on the deployed page using backend data; CTAs reflect actual skill readiness. |
+| 2. Video and feed | Storyboards, narration/audio/captions, isolated rendering and review, video results, Cloudflare feed/player and CTAs | Versioned ingestion artifacts with ready processing | Actual media, video records, and the feed response defined below | A generated clip plays with narration and captions on the deployed page using backend data; CTAs reflect actual skill readiness. |
 | 3. Skills | Skill generation and review/export | Ready ingestion records | Concise source-grounded skills | A real artifact produces an exportable skill without any video being generated. |
 
 Workflow 1 owns schema migrations, ingestion writes, and the import screen/module. Workflow 2 owns the feed/player, media pipeline, and deployment wiring; it mounts the import module through an agreed route without rewriting it. Workflow 3 owns skill generation and delivery code and does not edit either screen. Agree exact file ownership before parallel work. Each workflow updates only its own output records, avoiding replacement of another workflow's work.
@@ -98,7 +97,7 @@ Freeze the contract, not the category names or prompt wording. Use real retrieve
 
 Store **ingested units** separately from **final artifacts**. A unit represents one submitted YouTube video: `id`, original submitted URL, canonical `source_url`, selected start time if supplied, actual retrieved title, `raw_artifact_ref`, extraction method/time, and processing status/error. Keep transcript timestamps when available. Strip Watch Later/list/index parameters from the retrieval URL, while retaining the original submission and selected start time.
 
-The final artifact represents one processed topic, potentially assembled from several units. `processed_text` is the source-grounded content supplied to Opus, which creates the timed video script. `processed_skill` is a separate workflow 3 result; a video script is not a Codex skill.
+The final artifact represents one processed topic, potentially assembled from several units. `processed_text` is the source-grounded content supplied to video script generation. `processed_skill` is a separate workflow 3 result; a video script is not a Codex skill.
 
 | Field | Purpose | Writer |
 | --- | --- | --- |
@@ -108,7 +107,7 @@ The final artifact represents one processed topic, potentially assembled from se
 | `source_ids` | IDs of all contributing ingested units | Workflow 1 |
 | `sources` | Every contributing source, with URL, retrieved title, content type, and retrieval time | Workflow 1 |
 | `raw_artifact_ref` | Reference to stored raw text/transcript or the original file; preserve evidence | Workflow 1 |
-| `processed_text` | Reviewed synthesis/draft narration ready for Opus, with useful lessons and source references | Workflow 1 |
+| `processed_text` | Reviewed synthesis/draft narration for video generation, with useful lessons and source references | Workflow 1 |
 | `category` | Dynamic topic label generated from the collection and user prompt | Workflow 1 |
 | `selection_reason` | Source-grounded reason this artifact was selected; keep exclusions separately | Workflow 1 |
 | `evidence` | Source passages or video timestamps supporting the synthesis; preserve conflicts | Workflow 1 |
@@ -143,7 +142,7 @@ Read one immutable artifact revision from TigerData. Only consume `ingestion_sta
 | --- | --- |
 | `id`, `version` | Source of `artifact_id` and `artifact_version`; assigned by the backend |
 | `name`, `category`, `selection_reason` | Grounded title, feed category, and explanation |
-| `processed_text` | Reviewed synthesis supplied to Opus; must be nonempty |
+| `processed_text` | Reviewed synthesis supplied to video script generation; must be nonempty |
 | `source_ids`, `sources`, `evidence` | Contributing units, source URLs, and supporting passages/timestamps; must reference actual stored evidence |
 | `project_context_id`, `project_context_version` | Exact project context used, if project-specific |
 | `digestion_prompt_id` | Provenance of the synthesis; kept on the artifact |
@@ -152,17 +151,15 @@ The backend resolves references and verifies readiness before generation. Model 
 
 ### Generation and timed-script contract
 
-1. Create a `pending` video record for the selected artifact revision, then mark it `running` when processing starts.
-2. Opus turns `processed_text` into a timed script and animation code using a stored prompt revision. Target a 30–45 second vertical video.
-3. Generate narration from the script and choose an actual licensed music track. Measure the audio and revise scene timing and captions to match it.
-4. Render in an isolated environment; store the actual animation code, video, captions, narration, and music files.
-5. Follow the [processor checks](proceed-and-media.md#the-processor), including burned subtitles and a passing automated quality judgment, before upload and processing `ready`. Eligible clips reach the reel automatically.
+Generation, measured narration, isolated rendering and publication follow the [processor flow](proceed-and-media.md#the-processor).
+That reference owns the motion-skill workflow, duration target, captions, review rounds, receipts and retry policy.
+Eligible approved clips reach the reel automatically.
 
-`script` is JSON with a nonempty `scenes` array. Each scene contains `start_seconds`, `end_seconds`, `narration_text`, `on_screen_text`, `visual_instruction`, and `source_ids`. Speech or screen text may be empty when the scene does not use it; factual claims still require traceable source evidence. Scene times must be finite, nonnegative, ordered, and nonoverlapping, with `end_seconds > start_seconds`. Every `source_id` must belong to the input artifact. Final scene timing and caption cues must fit the measured render duration. Unsupported claims, unknown source IDs, or invalid timing cause a failure rather than publication.
+`script` is JSON with a nonempty `scenes` array. Each scene contains `start_seconds`, `end_seconds`, `narration_text`, `on_screen_text`, `visual_instruction`, and `source_ids`. Narration and screen text must be nonempty; factual claims require traceable source evidence. Scene times must be finite, nonnegative, ordered, and nonoverlapping, with `end_seconds > start_seconds`. Every scene, including the opening and closing scenes, must cite at least one supporting `source_id` belonging to the input artifact. Final scene timing and caption cues must fit the measured render duration. Unsupported claims, missing or unknown source IDs, or invalid timing cause a failure rather than publication.
 
 ### Output: `video_results`
 
-One video result per `(artifact_id, artifact_version)` in v0. Retry updates that record; a new ready artifact revision gets a separate record. Rerendering resets processing to `pending` until the changed media is validated again.
+One video result per `(artifact_id, artifact_version)` in v0. Retry updates that record; a new ready artifact revision gets a separate record. Rerender eligibility and preservation of approved media follow the [legacy-output policy](proceed-and-media.md#the-processor).
 
 | Columns | Type / requirement |
 | --- | --- |
@@ -172,9 +169,10 @@ One video result per `(artifact_id, artifact_version)` in v0. Retry updates that
 | `script` | JSONB; validated timed scenes |
 | `opus_prompt_revision` | Text; revision actually used for generation |
 | `animation_code_ref` | Text; stored generated code, required before processing is ready; **proposed addition** |
-| `media_ref` | Text; actual playable final video with narration and music mixed in |
-| `caption_ref`, `narration_ref`, `music_ref` | Text; actual stored assets |
-| `music_provenance` | Text; track identity/source and permission or license evidence |
+| `media_ref` | Text; actual playable final video with narrated audio |
+| `caption_ref`, `narration_ref` | Text; actual stored assets |
+| `music_ref` | Text or null; optional standalone music asset reference |
+| `music_provenance` | Text; soundtrack source and permission or license evidence when present |
 | `duration_seconds` | Numeric; measured positive duration, never the target duration |
 | `status` | `pending`, `running`, `ready`, or `failed` |
 | `review_status` | Must be `approved` for feed and media consumption |
@@ -183,15 +181,9 @@ One video result per `(artifact_id, artifact_version)` in v0. Retry updates that
 | `error` | Text or null; actual safe failure details |
 | `created_at`, `updated_at` | Timestamps maintained by the backend on actual writes |
 
-Processing `ready` requires valid script, prompt revision, nonempty code/media/asset references, music provenance, and positive measured duration. A storage reference alone is insufficient: the pipeline must verify the files exist and the final video plays with narration, music, and usable captions. Processing validates grounding, readability, pacing, audio balance, and duration. A failed step records `failed` and its actual error; it does not manufacture missing assets.
+Processing `ready` requires a valid script, prompt revision, actual video/caption/narration references and positive measured duration. Motion renders also store soundtrack provenance; generated code remains proposed. A storage reference alone is insufficient: the processor checks above gate publication. Failures retain their actual errors under the processor's retry and legacy-output policy; they do not manufacture missing assets.
 
-**Implementation (v0):** migration 005 enforces one result per artifact revision, adds claim tokens, and rejects a `ready` video with empty references or a non-positive duration. Migration 004 keys artifacts on immutable `(id, version)` revisions. The basic renderer differs from the contract above in these ways:
-- Script generation follows the [processor flow](proceed-and-media.md#the-processor).
-- The renderer uses the vendored motion template by default, with basic ffmpeg cards as a fallback; see the processor flow above. There is no generated `animation_code_ref` column.
-- Length is bounded by the script's word count (40–160 words, roughly 15–65 s), not held to 30–45 s.
-- Scenes may carry no `source_ids`.
-- The result row is created `running`, not `pending`.
-- "Verified playable" is checked on the rendered file before upload; after upload, the size is compared.
+**Implementation (v0):** migration 005 enforces one result per artifact revision, adds claim tokens, and rejects a `ready` video with empty references or a non-positive duration. Migration 004 keys artifacts on immutable `(id, version)` revisions. There is no generated `animation_code_ref` column. Rendering, measured duration, claim states and media checks follow the processor flow above.
 
 
 ### Feed read contract
@@ -209,9 +201,7 @@ Resolve storage references to authorized playable URLs at the backend boundary; 
 
 Show one active video at a time. Use muted autoplay, tap for sound, scroll/next, pause/play, captions, sources, dynamic categories, and reduced-motion support. Keep loading, empty, safe error/retry, playback failure, and end-of-feed states explicit.
 
-Narration and music are required. Gemini TTS or Kokoro are proposed narration options; the team chooses after an audio test. Mix a licensed track with FFmpeg, lower it under speech, and align animation/captions to measured audio. Derive visual style prompts only after inspecting the supplied motion references.
-
-**Implementation (v0):** narration, timing, render styles and media checks follow the [processor flow](proceed-and-media.md#the-processor).
+Narration, soundtrack, timing, render styles and media checks follow the [processor flow](proceed-and-media.md#the-processor).
 
 The implemented player and skill export journey is documented in [The journey](proceed-and-media.md#the-journey).
 `web/public/reel.js` uses muted autoplay, sound control, keyboard/swipe navigation, reduced-motion scrolling,

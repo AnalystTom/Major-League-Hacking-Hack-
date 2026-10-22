@@ -1,5 +1,5 @@
 // Scenes read DATA (written per short by server/src/outputs/render/motion-skill.ts): the source, one entry per narration scene, and the skill it became.
-// Each narrated scene lands its headline with one of the reel's moves (script-v2 picks it; REFERENCE.md describes them).
+// Each narrated scene lands its headline with one of the reel's moves (the script picks it; REFERENCE.md describes them).
 const dataOf = t => DATA.scenes[sceneAt(t).i];
 const HX = 90, HY = 470, HW = W - 2 * HX;
 
@@ -13,7 +13,7 @@ const headTiming = (text, t0, span = 1.4) => { const n = Math.max(1, text.split(
 // mode 'land' springs each word up; 'slam' hits it in from the right with a skew and motion blur, as in the reel.
 function headline(text, x, y, lt, t0, th, width = W - 2 * x, z = 132, span = 1.4, o = {}){
   const { mode = 'land', ul = true } = o;
-  const { lines, z: size } = wrapLines(text, FD, 800, z, width, 5), lh = size * 1.02;
+  const { lines, z: size } = wrapLines(text, FD, 800, z, width, 3), lh = size * 1.02;
   const words = lines.flatMap((l, li) => l.split(' ').map((w, wi, arr) => ({ w, li, pre: arr.slice(0, wi).join(' ') + (wi ? ' ' : '') })));
   const { step, tEnd } = headTiming(text, t0, span);
   words.forEach((wd, k) => { const t1 = t0 + k * step; if (lt < t1) return;
@@ -49,7 +49,7 @@ function maskRise(s, x, y, lt, t0, o, dur = .6){
   T(s, x, y + (1 - e) * z * 1.15, { ...o, fit: o.fit ?? HW }); ctx.restore();
 }
 
-// the outline badge that slams in at a slight angle (the reel's "AT LAUNCH", the end card's "SEND TO YOUR AGENT")
+// the outline badge that slams in at a slight angle
 function stampBadge(text, cx, cy, lt, t1, th, z = 50){
   const sp = inv(t1, t1 + .18, lt); if (sp <= 0) return;
   const sc = lerp(1.6, 1, eBack(sp)), bw = mw(text, FD, 800, z) + 64;
@@ -92,7 +92,7 @@ const MOVE = {
   },
   // the headline rolls letter by letter into the swap
   roll: (s, th, lt, t0, d) => {
-    const a = s.text, b = s.swap, y = 820; let z = 230;
+    const a = s.text, b = s.swap, y = 700; let z = 230;
     while ((mw(a, FD, 800, z) > HW || mw(b, FD, 800, z) > HW) && z > 90) z *= .94;
     const tOut = Math.max(t0 + .9, Math.min(d * .35, t0 + 1.5)), tIn = tOut + .12;
     ctx.save(); ctx.beginPath(); ctx.rect(0, y - z * 1.0, W, z * 1.3); ctx.clip();
@@ -110,7 +110,7 @@ const MOVE = {
   count: (s, th, lt, t0) => {
     // a signed number can't count up from zero, so it slams like any headline (validateScript already avoids this)
     const m = s.text.match(NUM); if (!m || /([-−–+]\s*[$€£]?|[$€£]\s+)\s*$/.test(s.text.slice(0, m.index))) return MOVE.slam(s, th, lt, t0);
-    const rest = s.text.replace(m[0], ' ').replace(/\s+/g, ' ').trim(), y = 760;
+    const rest = s.text.replace(m[0], ' ').replace(/\s+/g, ' ').trim(), y = 650;
     const shown = `${m[1]}${countText(m[2], inv(t0 + .05, t0 + 1.15, lt))}${m[3]}`, full = `${m[1]}${m[2]}${m[3]}`;
     let z = 330; while (mw(full, FD, 800, z) > HW && z > 120) z *= .94;
     rise(shown, HX, y, lt, t0, { f: FD, w: 800, z, c: th.ink }, .35, 60);
@@ -134,8 +134,10 @@ function lesson(s, th, lt, t0, d){
   const mv = MOVE[s.move] ? s.move : 'slam', at = moveTimes({ ...s, move: mv }, t0, d);
   if (mv === 'stamp') shake(lt, at.hit);
   const h = MOVE[mv](s, th, lt, t0, d);
-  const end = s.sub ? aside(s.sub, HX, h.bottom + 90, lt, h.tEnd + .25, th) : h.bottom;
-  if (mv === 'stamp' && s.swap) stampBadge(s.swap.toUpperCase(), W - HX - 10, Math.min(1500, end + 170), lt, at.hit - .18, th);
+  const end = s.sub ? aside(s.sub, HX, h.bottom + 90, lt, Math.max(h.tEnd + .25, Math.min(2.2, d * .35)), th) : h.bottom;
+  if (mv === 'stamp' && s.swap) stampBadge(s.swap.toUpperCase(), W - HX - 10, Math.min(1190, end + 170), lt, at.hit - .18, th);
+  // A paced progress reveal keeps longer spoken scenes alive after headline and aside land.
+  if (d > 4 && lt > 2.4){ ctx.fillStyle = th.acc; ctx.fillRect(HX, DATA.layout.content_bottom - 30, HW * inv(2.4, d - .2, lt), 8); }
 }
 const moveCues = (s, t0, d) => {
   const mv = s && s.move, at = s ? moveTimes(s, t0, d) : { hit: t0 };
@@ -143,7 +145,7 @@ const moveCues = (s, t0, d) => {
   if (mv === 'roll') return [[at.hit, 'roll', .5, 10], [at.after, 'whoosh', .2, .1]];
   if (mv === 'stamp') return [[at.hit, 'stamp', .7]];
   if (mv === 'count') return [[at.hit, 'roll', 1.1, 16], [at.after, 'hit', .5]];
-  return [[t0 + .02, 'slam', .35]];
+  return [[t0, 'slam', .35]];
 };
 
 // the platform tile from the demo film: a cream rounded square with the source's mark
@@ -157,35 +159,26 @@ function tile(cx, cy, s, kind, a){
   ctx.restore();
 }
 
-const openCut = d => Math.min(2.6, d * .45);
 S.open = {
   draw(lt, d, t){
-    const th = THEMES.night, src = DATA.source, cut = openCut(d);
-    // 1) the saved source: tile, platform, title, author
-    const out = eIO(inv(cut - .35, cut, lt)), up = out * 160;
-    if (out < 1){
-      const tp = spring(lt - .05, ...SPRING.playful);
-      tile(W / 2, 560 - up, 240 * tp, src.kind, 1 - out);
-      T(src.platform.toUpperCase(), W / 2, 740 - up, { f: FM, w: 600, z: 22, c: th.dim, ls: 4, al: 'center', a: inv(.3, .5, lt) * (1 - out) });
-      const { lines, z } = wrapLines(src.title, FK, 700, 54, 860, 3);
-      lines.forEach((l, i) => rise(l, W / 2, 850 + i * 66 - up, lt, .45 + i * .08, { f: FK, w: 700, z, c: th.ink, al: 'center', a: 1 - out }));
-      rise(src.byline, W / 2, 850 + lines.length * 66 + 30 - up, lt, .8, { f: FS, w: 'italic 400', z: 48, c: th.acc, al: 'center', a: 1 - out });
-      kicker('SAVED FOR LATER', W / 2, 400 - up, lt, .1, th.dim, 'center');
-    }
-    // 2) what it says, landing with the scene's move
-    if (lt > cut - .1){
-      label(DATA.category.toUpperCase(), 90, 330, lt, cut, th.acc);
-      lesson(dataOf(t), th, lt, cut + .05, d);
-    }
+    const th = THEMES.night, src = DATA.source;
+    // Source context supports the hook instead of delaying it behind a title-card preamble.
+    tile(130, 240, 80, src.kind, inv(0, .25, lt));
+    label(src.platform.toUpperCase(), 210, 215, lt, .05, th.dim);
+    const { lines, z } = wrapLines(src.title, FK, 700, 28, W - 300, 2);
+    lines.forEach((l, i) => rise(l, 210, 260 + i * z * 1.15, lt, .1, { f: FK, w: 700, z, c: th.dim }));
+    label(DATA.category.toUpperCase(), 90, 330, lt, .05, th.acc);
+    lesson(dataOf(t), th, lt, .12, d);
   },
-  cues: d => [[0, 'whoosh', .3, .12], [.05, 'blip', 880, .05], [openCut(d), 'whoosh', .25, .1], ...moveCues(DATA.scenes[0], openCut(d) + .05, d)]
+  // The engine's groove starts with scene 2; a quiet chord sustains the opening beneath its narration.
+  cues: d => [[0, 'pad', [220, 261.63, 329.63], d, .1], [0, 'whoosh', .3, .12], [.05, 'blip', 880, .05], ...moveCues(DATA.scenes[0], .12, d)]
 };
 
 S.say = {
   draw(lt, d, t){
     const sc = sceneAt(t), th = themeOf(sc), s = dataOf(t);
-    // a big ghost step number sits behind the copy, low, so captions over the middle stay clear
-    T(String(sc.i).padStart(2, '0'), W - 90, 1560, { f: FD, w: 800, z: 520, c: rgba(th.ink, .07), al: 'right', a: inv(.1, .5, lt) });
+    // Decorative step number also stays above the reserved caption band.
+    T(String(sc.i).padStart(2, '0'), W - 90, 1300, { f: FD, w: 800, z: 320, c: rgba(th.ink, .07), al: 'right', a: inv(.1, .5, lt) });
     label(`LESSON ${String(sc.i).padStart(2, '0')}${s.label ? ` · ${s.label.toUpperCase()}` : ''}`, 90, 330, lt, .15, th.acc === th.ink ? th.ink : th.acc);
     lesson(s, th, lt, .25, d);
   },
@@ -195,24 +188,8 @@ S.say = {
 S.skill = {
   draw(lt, d, t){
     const th = THEMES.paper, sk = DATA.skill;
-    // SKILL.md chip; without a ready skill the card is just the next step
-    const chip = sk ? 'SKILL.md' : 'NEXT STEP', cp = spring(lt - .1, ...SPRING.snappy), cw = mw(chip, FM, 600, 26, 2) + 56;
-    ctx.save(); ctx.globalAlpha = clamp(cp * 1.5); ctx.strokeStyle = th.ink; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.roundRect(90, 300 - 44 + (1 - cp) * 20, cw, 62, 31); ctx.stroke(); ctx.restore();
-    T(chip, 90 + 28, 300 + (1 - cp) * 20, { f: FM, w: 600, z: 26, c: th.ink, ls: 2, a: clamp(cp * 1.5) });
-    // the skill's name, as it lands in .agents/skills/<name>/
-    // without a ready skill (it's still being written) the card names the lesson instead: no invented path or count
-    const h = headline(sk ? sk.name.replace(/-/g, ' ') : dataOf(t).text, 90, 470, lt, .35, th, W - 180, 112, 1);
-    if (sk){
-      rise(sk.path, 90, h.bottom + 70, lt, h.tEnd + .1, { f: FM, w: 400, z: 24, c: th.dim, fit: W - 180 });
-      rise(dataOf(t).text, 90, h.bottom + 170, lt, h.tEnd + .3, { f: FS, w: 'italic 400', z: 64, c: th.ink, fit: W - 180 });
-    }
-    // the stamp: rotated outline badge, slams in
-    const t1 = Math.min(d * .5, h.tEnd + .9);
-    if (sk){
-      stampBadge('SEND TO YOUR AGENT', W - 100, 1150, lt, t1, th);
-      if (sk.tasks) rise(sk.tasks, W - 100, 1290, lt, t1 + .35, { f: FM, w: 600, z: 24, c: th.ink, ls: 3, al: 'right' });
-    }
+    const h = headline(sk ? sk.name.replace(/-/g, ' ') : dataOf(t).text, 90, 400, lt, .35, th, W - 180, 88, 1);
+    if (sk) aside(sk.description, 90, h.bottom + 85, lt, h.tEnd + .1, th);
   },
-  cues: d => [[.1, 'blip', 990, .06], [Math.min(d * .5, 2.2), 'stamp', .6], [d - .9, 'correct']]
+  cues: d => [[.35, 'slam', .35]]
 };

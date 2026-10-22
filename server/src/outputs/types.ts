@@ -1,8 +1,9 @@
 // What the processor makes from a ready artifact: a rendered short (workflow 2) and a concise skill (workflow 3).
 // Each reads one artifact revision and writes its own result table; historical task records are preserved.
+import type { ReasoningEffort } from "../openaiEffort.js";
 
 /** One OpenAI call's credentials and model. */
-export interface OpenAIOptions { apiKey: string; model?: string; fetchImpl?: typeof fetch }
+export interface OpenAIOptions { apiKey: string; model?: string; reasoningEffort?: ReasoningEffort; fetchImpl?: typeof fetch }
 
 /** The provider settings both outputs read, set once in src/index.ts. */
 export interface ProviderOptions {
@@ -60,12 +61,27 @@ export interface ScriptScene {
   source_ids: string[];
 }
 
+export const CRITIQUE_AXES = ["hook", "readability", "motion", "variety", "composition", "brand", "sound"] as const;
+export type CritiqueAxis = typeof CRITIQUE_AXES[number];
+export interface ShortReview {
+  scores: { grounding: number; clarity: number; usefulness: number; visuals: number; subtitles: number; caption_overlap: number };
+  reasons: string[];
+  defects: { id: string; result: "PASS" | "FAIL"; evidence: string }[];
+  axes: Record<CritiqueAxis, { score: number; evidence: string }>;
+  sound_verified: boolean;
+  worst_three: { timestamp: number; scene: number; problem: string }[];
+}
+export interface ReviewFix { axes: CritiqueAxis[]; scenes: number[]; description: string }
 export interface ShortJudgment {
   judge: "short-judge-v1";
   passed: boolean;
   captions_burned: true;
-  scores: { grounding: number; clarity: number; usefulness: number; visuals: number; subtitles: number };
+  scores: ShortReview["scores"];
   reasons: string[];
+  reviews: ShortReview[];
+  fixes: ReviewFix[];
+  cue_checks: string[];
+  review_log: string;
 }
 
 export interface RenderedVideo {

@@ -1,3 +1,5 @@
+import { publicationJudgment } from "../../src/outputs/render/judge.js";
+import { approvedJudgment } from "../outputs/helpers.js";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -10,6 +12,9 @@ import { mockFetch } from '../ingest/helpers.js';
 import { UNLIMITED } from '../../src/ingest/limits.js';
 import { DEFAULT_CATEGORIZATION_REQUEST, promptRevisionText } from '../../src/ingest/digest/prompt.js';
 import { SKILL_PROMPT_REVISION } from '../../src/outputs/skills.js';
+import { readFeed, canReadMedia } from '../../../web/src/feed.js';
+import { decodeRow as decodeWebRow } from '../../../web/src/db.js';
+import type { RenderedVideo } from '../../src/outputs/types.js';
 
 async function setup() {
   const { db,sqlite }=testDatabase();
@@ -126,12 +131,12 @@ test('D1 outputs retain claim ownership, bounded retries and skills-only writes 
     await assert.rejects(s.outputs.finishSkill(second,{...skill,action_items:[]}),/taken over/);
     assert.equal((await s.db.query('SELECT count(*) AS n FROM action_items')).rows[0].n,1,'lost claim cannot delete tasks');
     assert.deepEqual((await s.handoffs.loadSkills([second.id]))[0].action_items[0].steps,['Inspect']);
-    assert.deepEqual(await s.outputs.skillCard(art),{status:'ready',card:{name:'check-first',tasks:1}});
+    assert.deepEqual(await s.outputs.skillCard(art),{status:'ready',card:{name:'check-first',description:'Check'}});
     const v=(await s.outputs.claim('video',art))!;
     await assert.rejects(s.db.query("UPDATE video_results SET status='ready' WHERE id=?1",[v.id]),/CHECK|positive duration/);
     await s.db.query("UPDATE video_results SET updated_at='2000-01-01T00:00:00Z' WHERE id=?1",[v.id]);
     const v2=(await s.outputs.claim('video',art))!;
-    const rendered={judgment:{judge:'short-judge-v1' as const,passed:true,captions_burned:true as const,scores:{grounding:4,clarity:4,usefulness:4,visuals:4,subtitles:4},reasons:[]},script:{scenes:[]},prompt_revision:'script-v1',media_ref:`r2:videos/${a.id}/1/short.mp4`,caption_ref:`r2:captions/${a.id}/1/short.vtt`,narration_ref:`r2:audio/${a.id}/1/narration.m4a`,duration_seconds:34.5,music_provenance:'Licensed test provenance'};
+    const rendered={judgment:approvedJudgment(),script:{scenes:[]},prompt_revision:'script-v1',media_ref:`r2:videos/${a.id}/1/short.mp4`,caption_ref:`r2:captions/${a.id}/1/short.vtt`,narration_ref:`r2:audio/${a.id}/1/narration.m4a`,duration_seconds:34.5,music_provenance:'Licensed test provenance'};
     await assert.rejects(s.outputs.finishVideo(v,rendered),/taken over/);
     assert.equal(await s.outputs.fail('video',v,'late'),false);
     await s.outputs.finishVideo(v2,rendered);
@@ -204,9 +209,9 @@ test('legacy skills regenerate once without exposing old text or retrying a fail
     const claim=claims.find(Boolean)!;
     await s.db.query("UPDATE skill_results SET updated_at='2000-01-01T00:00:00Z' WHERE id=?1",[claim.id]);
     assert.equal(await s.outputs.claim('skill',a),null);
-    await s.outputs.finishSkill(claim,{skill_markdown:'---\nname: concise-skill\n---\nInspect the source.',supporting_refs:[],action_items:[]});
+    await s.outputs.finishSkill(claim,{skill_markdown:'---\nname: concise-skill\ndescription: Inspect the source.\n---\nInspect the source.',supporting_refs:[],action_items:[]});
     assert.equal(await s.outputs.claim('skill',a),null);
-    assert.deepEqual(await s.outputs.skillCard(a),{status:'ready',card:{name:'concise-skill',tasks:0}});
+    assert.deepEqual(await s.outputs.skillCard(a),{status:'ready',card:{name:'concise-skill',description:'Inspect the source.'}});
     assert.equal((await s.handoffs.loadSkills(ids)).length,1);
     assert.deepEqual(JSON.parse((await s.db.query('SELECT review_feedback FROM skill_results WHERE id=?1',[claim.id])).rows[0].review_feedback),{prompt_revision:SKILL_PROMPT_REVISION});
     const failed=(await s.outputs.claim('skill',b))!;
@@ -218,4 +223,110 @@ test('legacy skills regenerate once without exposing old text or retrying a fail
     assert.equal((await s.db.query('SELECT skill_markdown FROM skill_results WHERE id=?1',[failed.id])).rows[0].skill_markdown,old);
     assert.equal((await s.db.query('SELECT count(*) AS n FROM skill_results')).rows[0].n,2);
   } finally {s.sqlite.close();}
+});
+
+for (const status of ['ready', 'failed']) for (const outcome of ['approved', 'provider failure', 'judge rejection', 'crash']) {
+  test(`legacy ${status} video gets one refresh: ${outcome}`, async () => {
+    const s = await setup();
+    try {
+      const unit = await s.unit('ready'), a = await s.artifact([unit]);
+      const sql = async (parts: TemplateStringsArray, ...params: unknown[]) =>
+        (await s.db.query(parts.reduce((text, part, i) => text + (i ? `?${i}` : '') + part, ''), params)).rows.map(decodeWebRow);
+      const receipt = { ...(status === 'failed' ? { generator_revision: 'short-v1' } : {}), judge: 'short-judge-v1', passed: status === 'ready', captions_burned: true,
+        scores: { grounding: 4, clarity: 4, usefulness: 4, visuals: 4, subtitles: 4, caption_overlap: 4 }, reasons: [] };
+      const old = `videos/${a.id}/1/short.mp4`;
+      await s.db.query(`INSERT INTO video_results(artifact_id,artifact_version,status,attempts,media_ref,caption_ref,narration_ref,
+        duration_seconds,feed_order,review_status,review_feedback,opus_prompt_revision)
+        VALUES(?1,1,?2,3,?3,'r2:captions/old.vtt','r2:audio/old.m4a',30,1,?4,?5,'script-v2')`,
+        [a.id,status,`r2:${old}`,status === 'ready' ? 'approved' : 'rejected',JSON.stringify(receipt)]);
+      const replacement: RenderedVideo = { judgment: approvedJudgment(),
+        script: { scenes: [] }, prompt_revision: 'script-v3-cited-scenes', media_ref: `r2:videos/${a.id}/1/replacement/short.mp4`,
+        caption_ref: 'r2:captions/replacement/short.vtt', narration_ref: 'r2:audio/replacement/narration.m4a', duration_seconds: 31 };
+      assert.equal((await s.outputs.artifactsNeeding('video',10)).length,1);
+      const claims = await Promise.all([s.outputs.claim('video',a),s.outputs.claim('video',a)]);
+      assert.equal(claims.filter(Boolean).length,1,'only one processor can spend the refresh');
+      const claim = claims.find(Boolean)!;
+      const visible = status === 'ready';
+      for (const scope of [null,[unit]]) {
+        const feed = await readFeed(sql,scope);
+        assert.equal(feed.length,visible ? 1 : 0);
+        if (visible) assert.equal(feed[0].video.url,`/media/${old}`);
+      }
+      assert.equal(await canReadMedia(sql,old,[unit]),visible);
+      assert.equal((await s.db.query('SELECT attempts FROM video_results')).rows[0].attempts,4);
+      await s.db.query("UPDATE video_results SET updated_at='2000-01-01T00:00:00Z'");
+      assert.equal(await s.outputs.claim('video',a),null,'even a stale refresh cannot restart');
+      assert.deepEqual(await s.outputs.artifactsNeeding('video',10),[]);
+      if (outcome === 'crash') return;
+      if (outcome === 'approved') {
+        await s.outputs.finishVideo(claim,replacement);
+        for (const scope of [null,[unit]]) assert.equal((await readFeed(sql,scope))[0].video.url,replacement.media_ref.replace('r2:','/media/'));
+        assert.equal(await canReadMedia(sql,old,[unit]),false,'the serving pointer changes only at approval');
+        assert.equal(await canReadMedia(sql,replacement.media_ref.slice(3),[unit]),true);
+      } else {
+        await assert.rejects(s.outputs.finishVideo(claim,{...replacement,judgment:{...replacement.judgment,passed:false}}),/quality judge/);
+        const error = outcome === 'judge rejection' ? 'Quality judge rejected: unsupported claim' : 'R2 upload failed';
+        const reviewed = approvedJudgment();
+        reviewed.reviews[1].scores.grounding = 2;
+        const rejected = publicationJudgment(reviewed.reviews, [], reviewed.cue_checks);
+        const attemptReview = outcome === 'judge rejection' ? rejected : approvedJudgment();
+        assert.equal(await s.outputs.fail('video',claim,error,attemptReview),true);
+        const row = (await s.db.query('SELECT * FROM video_results')).rows[0];
+        assert.equal(row.status,status);
+        assert.equal(row.media_ref,`r2:${old}`);
+        assert.equal(row.error,error);
+        {
+          const saved = JSON.parse(row.review_feedback);
+          assert.deepEqual(saved.last_rejected_review, attemptReview);
+          assert.equal(saved.passed, receipt.passed, "prior publication receipt is retained");
+          assert.ok(saved.last_rejected_review.review_log.length > 2000, "full receipts survive beyond the error limit");
+        }
+        assert.equal(row.attempts,4,'attempt count never resets');
+        for (const scope of [null,[unit]]) assert.equal((await readFeed(sql,scope)).length,visible ? 1 : 0);
+        assert.equal(await canReadMedia(sql,old,[unit]),visible);
+      }
+      await assert.rejects(s.outputs.finishVideo(claim,replacement),/taken over/);
+      assert.equal(await s.outputs.fail('video',claim,'late failure'),false);
+      await s.db.query("UPDATE video_results SET updated_at='2000-01-01T00:00:00Z'");
+      assert.equal(await s.outputs.claim('video',a),null);
+      assert.deepEqual(await s.outputs.artifactsNeeding('video',10),[]);
+      assert.equal((await s.db.query('SELECT count(*) AS n FROM video_results')).rows[0].n,1,'stored row is retained');
+    } finally { s.sqlite.close(); }
+  });
+}
+
+test('legacy video refresh is bounded even when old review feedback is not an object', async () => {
+  const s = await setup();
+  try {
+    for (const feedback of [null,'[]','null','"old review"','invalid json']) {
+      const a = await s.artifact([await s.unit('ready')]);
+      await s.db.query(`INSERT INTO video_results(artifact_id,artifact_version,status,media_ref,caption_ref,narration_ref,duration_seconds,review_feedback)
+        VALUES(?1,1,'ready','r2:videos/old.mp4','r2:captions/old.vtt','r2:audio/old.m4a',30,?2)`,[a.id,feedback]);
+      const claims = await Promise.all([s.outputs.claim('video',a),s.outputs.claim('video',a)]);
+      assert.equal(claims.filter(Boolean).length,1);
+      const claim = claims.find(Boolean)!;
+      assert.equal(await s.outputs.fail('video',claim,'replacement failed'),true);
+      assert.equal(await s.outputs.claim('video',a),null);
+    }
+    assert.deepEqual(await s.outputs.artifactsNeeding('video',10),[]);
+  } finally { s.sqlite.close(); }
+});
+
+test('D1 infrastructure failures retain completed critiques without exhausting ordinary retries', async () => {
+  const s = await setup();
+  try {
+    const a = await s.artifact([await s.unit('ready')]);
+    const claim = (await s.outputs.claim('video', a))!;
+    const review = approvedJudgment();
+    assert.equal(await s.outputs.fail('video', claim, 'R2 HTTP 503: temporarily unavailable', review), true);
+    const row = (await s.db.query('SELECT * FROM video_results WHERE id=?1', [claim.id])).rows[0];
+    assert.equal(row.status, 'failed');
+    assert.equal(row.attempts, 1);
+    assert.equal(row.error, 'R2 HTTP 503: temporarily unavailable');
+    assert.deepEqual(JSON.parse(row.review_feedback).last_rejected_review, review);
+    assert.equal(await s.outputs.claim('video', a), null, 'normal backoff still applies');
+    await s.db.query("UPDATE video_results SET updated_at='2000-01-01T00:00:00Z' WHERE id=?1", [claim.id]);
+    assert.ok(await s.outputs.claim('video', a), 'a transient error still gets an ordinary retry');
+    assert.equal((await s.db.query('SELECT attempts FROM video_results WHERE id=?1', [claim.id])).rows[0].attempts, 2);
+  } finally { s.sqlite.close(); }
 });

@@ -7,7 +7,7 @@ import { renderArtifact } from "./render/render.js";
 import type { MediaStore } from "./render/media.js";
 import { LostClaim, type Kind, type OutputStore } from "./store.js";
 import { tracked } from "../activity.js";
-import { sourceRefs, type ProviderOptions, type ReadyArtifact } from "./types.js";
+import { sourceRefs, type ProviderOptions, type ReadyArtifact, type ShortJudgment } from "./types.js";
 import type { StoredArtifact } from "../ingest/types.js";
 
 export interface OutputOptions extends ProviderOptions {
@@ -52,7 +52,8 @@ async function produceNow(kind: Kind, a: ReadyArtifact, o: OutputOptions) {
       o.log?.(`${kind} ready for artifact ${a.id} v${a.version}`);
     } catch (e) {
       // A worker whose claim was taken over leaves the row to the one that took it.
-      const recorded = !(e instanceof LostClaim) && (await o.outputs.fail(kind, claim, (e as Error).message));
+      const error = e as Error & { judgment?: ShortJudgment };
+      const recorded = !(e instanceof LostClaim) && (await o.outputs.fail(kind, claim, error.message, error.judgment));
       recordError(`${kind} failed`, e);
       o.log?.(`${kind} ${recorded ? "failed" : "not recorded"} for artifact ${a.id} v${a.version}: ${(e as Error).message}`);
     }

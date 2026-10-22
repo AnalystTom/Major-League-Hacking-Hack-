@@ -9,10 +9,11 @@ const round = (n: number) => Math.round(n * 1000) / 1000;
 
 export function timeline(speechSeconds: number[]): Slot[] {
   let t = 0;
-  return speechSeconds.map((d) => {
+  return speechSeconds.map((d, i) => {
     if (!Number.isFinite(d) || d <= 0) throw new Error(`narration clip has no measurable length (${d})`);
-    const slot = { start: round(t), speechEnd: round(t + d), end: round(t + d + SCENE_GAP_SECONDS) };
-    t += d + SCENE_GAP_SECONDS;
+    const duration = i === speechSeconds.length - 1 ? Math.max(2.5, d + SCENE_GAP_SECONDS) : d + SCENE_GAP_SECONDS;
+    const slot = { start: round(t), speechEnd: round(t + d), end: round(t + duration) };
+    t += duration;
     return slot;
   });
 }

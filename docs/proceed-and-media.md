@@ -57,19 +57,45 @@ Node, in `server/src`. `POST /api/ingest/process` takes `{ "unit_ids": [...] }` 
 4. **Short** (`outputs/render/`): OpenAI writes the script; Gemini TTS speaks each scene, and measured speech
    determines the timeline and WebVTT cues. The default [motion renderer](../server/assets/motion-graphic-skill/README.md)
    uses headless Chromium; `RENDER_STYLE=basic` selects ffmpeg title cards without music. Both produce
-   1080×1920 H.264 + AAC with `+faststart` and burn high-contrast narration captions into the central safe area
-   before review. The player fits the whole frame and omits the duplicate WebVTT overlay for burned subtitles.
-5. **Checks before upload and `ready`.** The renderer probes dimensions, codecs and duration. An independent
-   one-pass model judge checks the artifact, timed narration and a sampled subtitled frame from each scene.
-   Grounding, clarity, usefulness, visuals and subtitles must each score at least 4/5 with no recorded defects
-   ([judge implementation](../server/src/outputs/render/judge.ts)). A rejection prevents upload and exhausts
-   automatic attempts; the internal receipt is retained in the stored failure, while progress shows a bounded
+   1080×1920 H.264 + AAC with `+faststart` and burn high-contrast narration captions into an exclusive lower safe band
+   with a black background; key scene content stays above it. Exact bounds shared by the renderer, script and judge
+   live in [`render/layout.ts`](../server/src/outputs/render/layout.ts). Captions follow each
+   measured narration clip using timed phrase cues, rather than a second word-alignment model.
+   The player fits the whole frame in a separate stage above its metadata and wrapping controls, including the sources sheet. Legacy WebVTT captions use the same lower band; burned subtitles omit the duplicate overlay.
+5. **Checks before upload and `ready`.** Every motion render first runs the upstream skill’s unmodified
+   `scripts/check.js` with audio, determinism, clipping, seven device layouts and touch checks enabled. A failure
+   stops recording and publication. The recorder then checks the encoded file; the renderer probes dimensions,
+   codecs and duration. Two independent model reviews with fresh context check the artifact, timed narration, two
+   high-detail subtitled frames from each scene and
+   an additional settled end-card frame. The ready skill's actual name and full description are supplied as
+   evidence for the end card only; lesson claims and repository paths still need artifact evidence.
+   Grounding, clarity, usefulness, visuals, subtitles and caption overlap must each score at least 4/5 with no recorded defects
+   ([judge implementation](../server/src/outputs/render/judge.ts)). The complete critique also records all eleven defect rows with evidence and all seven artistic axes on the original 1–10 scale (each ≥8, no FAILs). Round 1 is followed by one bounded storyboard revision, a new render with full checks, and round 2. Scores cannot rise without a logged fix touching that axis; unchanged axes retain the lower score. The builder writes cue-check evidence each round from the actual template cues and motion times, including their beat multiples and impact count. The judge also receives the upstream sheets, strips, stills and layout views, finished subtitled opening/cut strips, a correctly proportioned phone sheet, and measured final per-scene audio levels. Both cue-check receipts are retained; a logged sound revision may resolve a first-round cue failure, and only the final cue-check must pass. Publication requires round 2 to pass, with no third round. A final quality rejection prevents upload and exhausts
+   automatic attempts for that generator version; the internal receipt is retained in the stored failure, while progress shows a bounded
    plain-English quality reason. Successful uploads are size-checked; `video_results.review_feedback` retains
-   the passing receipt, and `review_status` becomes `approved` before the result is served.
+   the passing receipt, including both reviews, logged fixes, `review_log` and both `cue_checks`, and `review_status` becomes `approved` before the result is served. After at least one completed critique, available review and cue-check receipts from failed attempts are retained as `last_rejected_review` without replacing any previously approved receipt or media. Provider, TTS, rendering and upload failures retain their original errors and ordinary retry eligibility; completed passing critiques stay passing in these receipts. Legacy refreshes follow the bounded policy below.
 
-**Legacy outputs.** Ready shorts without the current judge marker are withheld from feed/media access and
-eligible for rerendering by the output sweep. The sweep considers ready, prompt-backed artifacts with an
-importer. Ready skills from older prompt revisions are withheld immediately and receive one regeneration
+**Motion skill and model settings.** The complete [upstream skill at `21e875e`](https://github.com/JakeB-5/motion-graphic-skill/tree/21e875e/skills/motion-graphic)
+ships under `server/assets/motion-graphic-skill`; its [distribution README](../server/assets/motion-graphic-skill/README.md)
+owns the file inventory and prompt integration. The automated source-grounded JSON storyboard replaces interactive
+approval. The script asks for
+15–40 seconds, a hook readable in 2 seconds, one idea per scene, a meaningful reveal every 2–4 seconds and a concrete
+payoff. Length follows the script's [word-count validation](../server/src/outputs/render/script.ts) and measured
+narration, rather than a hard runtime bound; the judge withholds weak hooks, dead stretches and overlaps.
+
+Model defaults and per-stage reasoning overrides live in the [provider configuration](../server/src/ingest/README.md).
+The recorded prompt revision names the actual script model and effort. A rejected initial script request fails
+explicitly before narration or upload.
+
+**Legacy outputs.** The sweep considers ready, prompt-backed artifacts with an importer. A ready or failed
+video without the current `generator_revision` in its review feedback gets exactly one generation attempt
+for the version in [`render/revision.ts`](../server/src/outputs/render/revision.ts). The atomic claim records
+that version before rendering, including for a previously exhausted rejection. Approved videos stay ready
+with their existing media and passing judge receipt during the attempt. Only a newly approved result swaps
+their media references; any failure keeps the prior approved video visible and records the error. Rejected
+videos remain hidden unless their replacement passes the unchanged judge. Failed or interrupted refreshes
+are not retried for the same generator version. Shorts lacking a passing judge receipt remain withheld.
+Ready skills from older prompt revisions are withheld immediately and receive one regeneration
 attempt when the processor next handles the eligible artifact. Success records the current prompt revision;
 failed or interrupted regeneration keeps the old text unavailable and reports a regeneration state without
 an automatic retry. Existing rows, task records and briefs are preserved. Claim and retry rules live in
@@ -77,12 +103,15 @@ an automatic retry. Existing rows, task records and briefs are preserved. Claim 
 [`web/src/skill-policy.js`](../web/src/skill-policy.js).
 
 R2 keys (resolved by the Worker as `r2:<key>`):
-- `videos/<artifact_id>/<version>/short.mp4`
-- `captions/<artifact_id>/<version>/short.vtt`
-- `audio/<artifact_id>/<version>/narration.m4a`
+- `videos/<artifact_id>/<version>/<render_id>/short.mp4`
+- `captions/<artifact_id>/<version>/<render_id>/short.vtt`
+- `audio/<artifact_id>/<version>/<render_id>/narration.m4a`
 
-**Claims.** Every job is claimed. A unit's claim, and the claim token on `video_results` or `skill_results`, can be
-taken over after 60 minutes (`server/src/claims.ts`), except for the bounded legacy skill regeneration above.
+Each render gets a fresh ID, so partial uploads or a worker that loses its claim cannot overwrite published
+bytes. Existing references without a render ID remain valid; stored media is not deleted.
+
+**Claims.** Every job is claimed; new output rows start as `running`. A unit's claim, and the claim token on `video_results` or `skill_results`, can be
+taken over after 60 minutes (`server/src/claims.ts`), except for the bounded legacy output regeneration above.
 A worker whose claim was taken over can't write its result.
 
 **Configuration**: see the [ingestion README](../server/src/ingest/README.md) for provider credentials, models,
@@ -131,9 +160,7 @@ and the page reports that state; no simulated clips or processing records are cr
 
 - The proposed Opus-generated animation-code step isn't built; the processor uses the vendored motion template
   described above.
-- **Length isn't held to 30–45 s.** Only the script's word count (40–160) is checked, so roughly 15–65 s passes.
-- **Scene citations are optional.** Script scenes may carry no `source_ids`, though the spec requires traceable
-  evidence for factual claims and the judge checks grounding.
+- **No fixed runtime bound.** See the [generation timing policy](#the-processor).
 - **Upload checks are size only.** "Playable" is checked on the local file before upload; after upload, only the
   size is compared.
 - **Skills only appear once a `skill_results` row exists.** A ready short whose skill was never started shows no
