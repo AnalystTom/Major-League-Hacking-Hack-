@@ -164,10 +164,20 @@ test("an X Article read through the embed route keeps its title and preview", as
   assert.equal(saved.transcript?.evidence_items[0].observed_spoken_content, "Article: 0 to 5,000 followers\n\nWhat I did and what failed.");
 });
 
-test("the captured pfernan95dev post retains its introduction and supplied article preview without keys", async () => {
+test("the captured pfernan95dev post retains its introduction and article preview with and without a key", async () => {
   const post = JSON.parse(readFileSync(new URL("./fixtures/xpost-2111437891322745223.json", import.meta.url), "utf8"));
+  let keyedCalls = 0;
+  let publicCalls = 0;
   const fetchImpl: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
+    if (url.origin + url.pathname === "https://api.twitterapi.io/twitter/tweets") {
+      keyedCalls++;
+      assert.equal(url.searchParams.get("tweet_ids"), post.id_str);
+      assert.equal(new Headers(init?.headers).get("x-api-key"), "tok");
+      return Response.json({ status: "success", tweets: [{ id: post.id_str, text: post.text, createdAt: post.created_at,
+        author: { userName: post.user.screen_name, name: post.user.name } }] });
+    }
+    publicCalls++;
     assert.equal(url.origin + url.pathname, "https://cdn.syndication.twimg.com/tweet-result");
     assert.equal(url.searchParams.get("id"), "2111437891322745223");
     assert.equal(init?.headers, undefined);
@@ -178,11 +188,18 @@ test("the captured pfernan95dev post retains its introduction and supplied artic
   assert.equal(read.transcript.evidence_items[0].observed_spoken_content,
     `${post.text}\n\nArticle: ${post.article.title}\n\n${post.article.preview_text}`);
   assert.deepEqual(read.transcript.window, [0, 0]);
-  const store = new MemoryStore();
-  const saved = await extractUnit({ ...xUnit(), sourceUrl: `https://x.com/i/status/${post.id_str}`, status: "running" }, { geminiKey: "", store, fetchImpl });
-  assert.equal(saved.status, "ready");
-  assert.equal(saved.extractionMethod, "x-embed:tweet-result:v2");
-  assert.deepEqual(saved.transcript, read.transcript);
+  for (const twitterApiKey of [undefined, "tok"]) {
+    const store = new MemoryStore();
+    const saved = await extractUnit({ ...xUnit(), sourceUrl: `https://x.com/i/status/${post.id_str}`, status: "running" }, { geminiKey: "", twitterApiKey, store, fetchImpl });
+    assert.equal(saved.status, "ready");
+    assert.equal(saved.error, null);
+    assert.equal(saved.extractionMethod, twitterApiKey ? "twitterapi.io:tweets:v2" : "x-embed:tweet-result:v2");
+    assert.equal(saved.title, read.title);
+    assert.deepEqual(saved.transcript, read.transcript);
+    assert.deepEqual((await store.getUnits([saved.id]))[0].transcript, read.transcript);
+  }
+  assert.equal(keyedCalls, 1);
+  assert.equal(publicCalls, 3);
 });
 
 test("twitterapi.io failures and empty results both allow the public route to read the post", async () => {

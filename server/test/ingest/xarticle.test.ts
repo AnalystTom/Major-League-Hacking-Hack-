@@ -30,16 +30,35 @@ test("a post that is only a link to an X Article reads the article's title and b
   assert.match(r.transcript.overview!, /^X Article by Movez \(@0xMovez\) on 2026-09-27/);
 });
 
-test("an ordinary post is read as before, with no article request", async () => {
-  const { f, seen } = routes({ "/twitter/tweets": { body: tweet("Write the failing check first. https://t.co/x") } });
+test("an ordinary post keeps its keyed text without a paid article request", async () => {
+  const { f, seen } = routes({
+    "/twitter/tweets": { body: tweet("Write the failing check first. https://t.co/x") },
+    "tweet-result": { body: { text: "Write the failing check first." } },
+  });
   const r = await extractXPost({ apiKey: "k", postId: "42", fetchImpl: f });
-  assert.equal(seen.length, 1);
+  assert.equal(seen.length, 2);
+  assert.match(seen[1], /cdn\.syndication\.twimg\.com\/tweet-result/);
   assert.equal(r.transcript.evidence_items[0].observed_spoken_content, "Write the failing check first. https://t.co/x");
   assert.match(r.transcript.overview!, /^X post by/);
 });
 
+test("public article evidence supplements keyed introductions and link-only posts while retaining quotes", async () => {
+  for (const own of ["Read my guide. https://t.co/abc", "https://t.co/abc"]) {
+    const post = tweet(own);
+    const { f } = routes({
+      "/twitter/tweets": { body: { ...post, tweets: [{ ...post.tweets[0], quoted_tweet: { text: "Original quote", author: { userName: "other" } } }] } },
+      "/twitter/article": { status: 404, body: {} },
+      "tweet-result": { body: { text: own, article: { title: "Guide", preview_text: "Available article evidence" } } },
+    });
+    const r = await extractXPost({ apiKey: "k", postId: "42", fetchImpl: f });
+    assert.equal(r.title, "@0xMovez: Guide");
+    assert.equal(r.transcript.evidence_items[0].observed_spoken_content,
+      `${own.startsWith("Read") ? `${own}\n\n` : ""}Article: Guide\n\nAvailable article evidence\n\nQuoted post by @other: Original quote`);
+  }
+});
+
 test("a link-only post without an article keeps the link, and article errors surface", async () => {
-  const none = routes({ "/twitter/tweets": { body: tweet("https://t.co/abc") }, "/twitter/article": { status: 404, body: { status: "error", msg: "not found" } } });
+  const none = routes({ "/twitter/tweets": { body: tweet("https://t.co/abc") }, "/twitter/article": { status: 404, body: { status: "error", msg: "not found" } }, "tweet-result": { status: 404, body: {} } });
   assert.equal((await extractXPost({ apiKey: "k", postId: "42", fetchImpl: none.f })).transcript.evidence_items[0].observed_spoken_content, "https://t.co/abc");
   const broken = routes({ "/twitter/tweets": { body: tweet("https://t.co/abc") }, "/twitter/article": { status: 500, body: { msg: "boom" } } });
   await assert.rejects(extractXPost({ apiKey: "k", postId: "42", fetchImpl: broken.f }), /twitterapi\.io article/);

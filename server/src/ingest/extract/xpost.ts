@@ -110,8 +110,8 @@ export async function extractXPost(o: XPostOptions): Promise<{ title: string; tr
   if (!post) throw new Error(UNAVAILABLE);
 
   const own = (post.text ?? "").trim();
-  // An X Article's post is just a link; its body is what the bookmark is for.
-  const article = onlyLinks(own) ? await readArticle(o, fetchUrl) : null;
+  let article = onlyLinks(own) ? await readArticle(o, fetchUrl) : null;
+  if (!article) article = (await readPublicPost(o).catch(() => null))?.article ?? null;
   const quoted = post.quoted_tweet?.text?.trim();
   return shape({ own, article, quoted, quotedHandle: post.quoted_tweet?.author?.userName, author: post.author, createdAt: post.createdAt });
 }
@@ -158,6 +158,10 @@ const syndicationToken = (id: string) => ((Number(id) / 1e15) * Math.PI).toStrin
  * An X Article comes back as its title and preview only; the full body needs twitterapi.io.
  */
 export async function extractXPostPublic(o: Pick<XPostOptions, "postId" | "fetchImpl" | "timeoutMs">): Promise<{ title: string; transcript: NonNullable<IngestedUnit["transcript"]> }> {
+  return shape(await readPublicPost(o));
+}
+
+async function readPublicPost(o: Pick<XPostOptions, "postId" | "fetchImpl" | "timeoutMs">): Promise<PostParts> {
   const res = await (o.fetchImpl ?? fetch)(`https://cdn.syndication.twimg.com/tweet-result?id=${o.postId}&token=${syndicationToken(o.postId)}`, { signal: AbortSignal.timeout(o.timeoutMs ?? 15_000) });
   const text = await res.text();
   if (res.status === 404) throw new Error(UNAVAILABLE);
@@ -170,5 +174,5 @@ export async function extractXPostPublic(o: Pick<XPostOptions, "postId" | "fetch
   const preview = [a?.title?.trim() && `Article: ${a.title.trim()}`, a?.preview_text?.trim()].filter(Boolean).join("\n\n");
   const article = a && preview ? { title: a.title?.trim() || null, text: preview } : null;
   const quoted = post.quoted_tweet?.text?.trim();
-  return shape({ own, article, quoted, quotedHandle: post.quoted_tweet?.user?.screen_name, author: { userName: post.user?.screen_name, name: post.user?.name }, createdAt: post.created_at });
+  return { own, article, quoted, quotedHandle: post.quoted_tweet?.user?.screen_name, author: { userName: post.user?.screen_name, name: post.user?.name }, createdAt: post.created_at };
 }
