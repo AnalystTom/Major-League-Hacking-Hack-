@@ -152,7 +152,6 @@ export default {
     // and a slow container would get a request without its unit ids.
     const body = request.method === "GET" ? undefined : await request.arrayBuffer();
     const forward = new Request(request.url, { method: request.method, headers: request.headers, body });
-    await registerDigestionPrompt(env);
     const processor = getContainer(env.PROCESSOR);
     await applySettings(processor, env);
     if (pathname === "/settings-status") {
@@ -162,6 +161,7 @@ export default {
         return Response.json({ error: String(error?.message ?? error) }, { status: 500 });
       }
     }
+    await registerDigestionPrompt(env);
     const reply = processor.fetch(forward)
       .catch(() => new Response("The processor didn't start.", { status: 502 }));
     ctx.waitUntil(reply);

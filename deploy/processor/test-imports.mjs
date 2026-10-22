@@ -4,7 +4,7 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { testDatabase } from '../../server/test/db/helpers.ts';
 import { D1Store } from '../../server/src/ingest/store.ts';
-import { DEFAULT_CATEGORIZATION_REQUEST, promptRevisionText } from '../../server/src/ingest/digest/prompt.ts';
+import { DEFAULT_CATEGORIZATION_REQUEST, promptRevisionText } from '../../server/src/ingest/digest/contract.ts';
 import app from '../../web/src/index.js';
 import { connect } from '../../web/src/db.js';
 import { readUnits } from '../../web/src/imports.js';
@@ -24,6 +24,7 @@ test('a cold processor Worker registers the revision before accepting a fresh im
   let blockRegistration = true, containerBegan = false, forwardedBody, forwards = 0;
   const processor = {
     async useSettings() {},
+    async settingsStatus() { return { container: 'stopped', running: false }; },
     async fetch(request) {
       forwards++;
       forwarding.resolve();
@@ -118,14 +119,21 @@ test('a cold processor Worker registers the revision before accepting a fresh im
     assert.deepEqual(await store.unitsNeedingDigest([excluded.id, successful.id], current), []);
     assert.equal((await db.query('SELECT count(*) AS n FROM digestion_prompts')).rows[0].n, 2);
 
-    const failedHost = { ...host, DB: { ...binding, async batch() { throw new Error('D1 offline'); } } };
+    let failedRegistrations = 0;
+    const failedHost = { ...host, DB: { ...binding, async batch() { failedRegistrations++; throw new Error('D1 offline'); } } };
     const request = () => new Request('https://processor/api/ingest/process', { method: 'POST', headers: { authorization: `Bearer ${host.INGEST_TOKEN}` },
       body: JSON.stringify({ unit_ids: [unit.id] }) });
     const before = forwards;
+    const settings = await worker.fetch(new Request('https://processor/settings-status', { headers: { authorization: `Bearer ${host.INGEST_TOKEN}` } }), failedHost, ctx);
+    assert.equal(settings.status, 200);
+    assert.deepEqual(await settings.json(), { container: 'stopped', running: false });
+    assert.equal(failedRegistrations, 0);
+    assert.equal(forwards, before);
     await assert.rejects(worker.fetch(request(), failedHost, ctx), /D1 offline/);
     const scheduled = [];
     worker.scheduled({}, failedHost, { waitUntil: (job) => scheduled.push(job) });
     await assert.rejects(scheduled[0], /D1 offline/);
+    assert.equal(failedRegistrations, 2);
     assert.equal(forwards, before);
     cold.resolve();
     await Promise.all(jobs);
