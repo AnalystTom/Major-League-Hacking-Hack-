@@ -3,7 +3,7 @@ import type { Database, Statement } from "../db.js";
 import type { DigestArtifact, IngestedUnit, StoredArtifact } from "./types.js";
 import { remaining, resumesAt, type Limits } from "./limits.js";
 import { available, deferredUntil, limitParams, NOW, USED_DAY, USED_MONTH } from "./ledger.js";
-import { promptRegistrationStatements } from "./digest/contract.js";
+import { promptLookupStatement, promptRegistrationStatements } from "./digest/contract.js";
 
 export interface Claimed { claimed: IngestedUnit[]; deferred: string[]; resumesAt: Date | null }
 export interface Reserved { allowed: string[]; deferred: string[]; resumesAt: Date | null }
@@ -44,6 +44,7 @@ export interface Store {
   unitsNeedingDigest(unitIds: string[], promptId: string): Promise<string[]>;
   /** Returns the id of the digestion_prompts revision for this exact text + few-shot set, creating the next revision if new. */
   registerPrompt(promptText: string, fewShot: unknown[]): Promise<string>;
+  findPrompt(promptText: string, fewShot: unknown[]): Promise<string | null>;
   saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null): Promise<StoredArtifact[]>;
   /** Records a digestion failure per unit as a failed artifact, so the unit shows the error instead of waiting forever. */
   saveFailedArtifacts(unitIds: string[], error: string, promptId: string | null): Promise<void>;
@@ -124,9 +125,13 @@ export class MemoryStore implements Store {
       && !this.artifacts.some((a) => a.source_ids.includes(id) && a.ingestion_status !== "failed")
       && !this.exclusions.some((e) => e.unit_id === id && e.promptId === promptId));
   }
+  private promptIdFor(promptText: string, fewShot: unknown[]) {
+    return this.prompts.find((p) => p.promptText === promptText && JSON.stringify(p.fewShot) === JSON.stringify(fewShot))?.id ?? null;
+  }
+  async findPrompt(promptText: string, fewShot: unknown[]) { return this.promptIdFor(promptText, fewShot); }
   async registerPrompt(promptText: string, fewShot: unknown[]) {
-    const found = this.prompts.find((p) => p.promptText === promptText && JSON.stringify(p.fewShot) === JSON.stringify(fewShot));
-    if (found) return found.id;
+    const found = this.promptIdFor(promptText, fewShot);
+    if (found) return found;
     const p = { id: randomUUID(), revision: this.prompts.length + 1, promptText, fewShot };
     this.prompts.push(p);
     return p.id;
@@ -268,6 +273,11 @@ export class D1Store implements Store {
   async registerPrompt(promptText: string, fewShot: unknown[]) {
     const results = await this.db.batch(promptRegistrationStatements(promptText, fewShot));
     return results[1].rows[0].id as string;
+  }
+  async findPrompt(promptText: string, fewShot: unknown[]) {
+    const { sql, params } = promptLookupStatement(promptText, fewShot);
+    const { rows } = await this.db.query(sql, params);
+    return (rows[0]?.id as string | undefined) ?? null;
   }
   async saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null) {
     const units = await this.getUnits([...new Set(artifacts.flatMap((a) => a.source_ids))]);

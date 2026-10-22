@@ -4,6 +4,7 @@
 import { isSubstackHost, parseSubstackLink } from "./substack.js";
 import { isXLink, parseXLink } from "./xpost.js";
 import { parseYouTubeLink } from "./youtube.js";
+import { activePromptId } from "./processor.js";
 
 // Per source type: a video costs a long Gemini read, an X post one cheap API read.
 export const MAX_YOUTUBE_LINKS = 20;
@@ -110,15 +111,16 @@ export async function userUnitIds(sql, userId, limit = 50) {
  * shared, but an artifact only counts when it's built entirely from videos in `visible` (all of the user's
  * imports), the same rule as the feed and skills, so a link's stage matches what the user can actually open.
  */
-export async function readUnits(sql, ids, visible = ids) {
+export async function readUnits(sql, ids, visible = ids, env) {
   if (ids.length === 0) return [];
+  const promptId = await activePromptId(env);
   const rows = await sql`
     SELECT u.id, u.source_url, u.start_seconds, u.title, u.content_type, u.status, u.error, u.deferred_until,
       (SELECT count(*) FROM artifacts a WHERE a.ingestion_status = 'failed'
         AND EXISTS (SELECT 1 FROM json_each(a.source_ids) WHERE value = u.id)) AS digest_failures,
       (SELECT json_group_array(reason) FROM
         (SELECT reason FROM artifact_exclusions e WHERE e.unit_id = u.id
-          AND e.digestion_prompt_id = (SELECT id FROM digestion_prompts WHERE name = 'Digestion Prompt' ORDER BY revision DESC LIMIT 1)
+          AND (${promptId === undefined ? 0 : 1} = 0 OR e.digestion_prompt_id = ${promptId ?? null})
           AND NOT EXISTS (SELECT 1 FROM processing_starts d WHERE d.unit_id = u.id AND d.kind = 'digest'
             AND julianday(d.created_at) > julianday(e.created_at))
           ORDER BY e.created_at)) AS exclusions,

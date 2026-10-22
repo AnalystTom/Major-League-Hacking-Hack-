@@ -114,10 +114,28 @@ test('a cold processor Worker registers the revision before accepting a fresh im
     await store.saveArtifacts([{ name: 'A substantive source', source_ids: [successful.id], category: 'Writing', processed_text: post.text,
       evidence: [], selection_reason: 'Source evidence' }], [], old);
     const sql = connect(env);
-    assert.equal((await readUnits(sql, [excluded.id]))[0].error, 'Nothing to explain.');
-    assert.equal((await readUnits(sql, [successful.id]))[0].stage, 'rendering');
     assert.deepEqual(await store.unitsNeedingDigest([excluded.id, successful.id], current), []);
     assert.equal((await db.query('SELECT count(*) AS n FROM digestion_prompts')).rows[0].n, 2);
+    const cli = await store.registerPrompt(promptRevisionText('Custom CLI request B'), []);
+    assert.notEqual(cli, current);
+    await store.registerPrompt(promptRevisionText(DEFAULT_CATEGORIZATION_REQUEST), [{ source: 'CLI example' }]);
+    assert.equal(await store.findPrompt(promptRevisionText(DEFAULT_CATEGORIZATION_REQUEST), []), current);
+    assert.deepEqual(await store.unitsNeedingDigest([excluded.id, successful.id], current), []);
+    const exclusion = (await readUnits(sql, [excluded.id], [excluded.id], env))[0];
+    assert.deepEqual([exclusion.stage, exclusion.settled, exclusion.error], ['not_selected', true, 'Nothing to explain.']);
+    assert.equal((await readUnits(sql, [successful.id], [successful.id], env))[0].stage, 'rendering');
+    assert.equal(containerBegan, false);
+
+    const configured = { ...host, DIGESTION_REQUEST: 'Configured processor request A' };
+    const configuredId = await store.registerPrompt(promptRevisionText(configured.DIGESTION_REQUEST), []);
+    await store.registerPrompt(promptRevisionText('Another custom CLI request B'), []);
+    await store.saveArtifacts([], [{ unit_id: excluded.id, reason: 'Nothing to explain under configured A.' }], configuredId);
+    const configuredEnv = { ...env, PROCESSOR: { fetch: (url, init) => worker.fetch(new Request(url, init), configured, ctx) } };
+    const configuredExclusion = (await readUnits(sql, [excluded.id], [excluded.id], configuredEnv))[0];
+    assert.deepEqual([configuredExclusion.stage, configuredExclusion.settled, configuredExclusion.error],
+      ['not_selected', true, 'Nothing to explain under configured A.']);
+    assert.deepEqual(await store.unitsNeedingDigest([excluded.id, successful.id], configuredId), []);
+    assert.equal((await readUnits(sql, [successful.id], [successful.id], configuredEnv))[0].stage, 'rendering');
 
     let failedRegistrations = 0;
     const failedHost = { ...host, DB: { ...binding, async batch() { failedRegistrations++; throw new Error('D1 offline'); } } };

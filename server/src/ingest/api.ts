@@ -83,6 +83,10 @@ export function createIngestApp(o: ApiOptions): Hono {
   const app = new Hono();
   app.use("*", bearerAuth({ token: o.token }));
 
+  app.get("/prompt", async (c) => c.json({
+    id: await o.store.findPrompt(promptRevisionText(o.categorizationRequest ?? DEFAULT_CATEGORIZATION_REQUEST), []),
+  }));
+
   // The processor contract: reply 202 quickly and work in the background. Duplicate requests are safe
   // because pending units are claimed atomically and digested units are skipped.
   app.post("/process", async (c) => {

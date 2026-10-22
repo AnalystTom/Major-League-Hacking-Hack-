@@ -8,6 +8,18 @@ export const PROCESSOR_BATCH = 10;
 // call goes through the PROCESSOR service binding. The URL's path still picks the route; its host is ignored.
 export const processorFetch = (env, fetchImpl) => (env.PROCESSOR ? (url, init) => env.PROCESSOR.fetch(url, init) : fetchImpl);
 
+export async function activePromptId(env = {}, fetchImpl = fetch) {
+  if (!env.PROCESSOR_URL) return undefined;
+  const response = await processorFetch(env, fetchImpl)(new URL("prompt", env.PROCESSOR_URL), {
+    headers: env.PROCESSOR_TOKEN ? { authorization: `Bearer ${env.PROCESSOR_TOKEN}` } : {},
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!response.ok) throw new Error("Processing status is unavailable.");
+  const { id } = await response.json();
+  if (id !== null && typeof id !== "string") throw new Error("Processing status is unavailable.");
+  return id;
+}
+
 /**
  * POSTs { unit_ids } to PROCESSOR_URL with the PROCESSOR_TOKEN bearer. Returns what actually happened:
  * "requested" (every batch 2xx), "unavailable" (any error or non-2xx; the sweep picks up what was missed),

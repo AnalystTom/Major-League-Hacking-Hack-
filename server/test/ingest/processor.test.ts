@@ -173,6 +173,9 @@ test("POST /process requires the bearer token, validates the body, and returns 2
   assert.equal((await send({ authorization: "Bearer wrong" }, good)).status, 401);
   assert.equal((await app.request("/imports/x")).status, 401, "every ingest route is protected");
   const auth = { authorization: "Bearer secret" };
+  assert.equal((await app.request("/prompt")).status, 401);
+  assert.deepEqual(await (await app.request("/prompt", { headers: auth })).json(), { id: null });
+  assert.equal(store.prompts.length, 0);
   assert.equal((await send(auth, { unit_ids: ["nope"] })).status, 400);
   assert.equal((await send(auth, { unit_ids: [] })).status, 400);
 
@@ -190,6 +193,10 @@ test("POST /process requires the bearer token, validates the body, and returns 2
     assert.deepEqual(await res.json(), { accepted: 1 });
     assert.equal(store.prompts.length, 1);
     assert.equal(calls.openai, 0);
+    const active = store.prompts[0].id;
+    await store.registerPrompt(promptRevisionText("Custom CLI request B"), []);
+    assert.deepEqual(await (await app.request("/prompt", { headers: auth })).json(), { id: active });
+    assert.equal(store.prompts.length, 2);
   } finally { release(); }
   for (let i = 0; i < 100 && store.artifacts.length === 0; i++) await new Promise((r) => setTimeout(r, 10));
   assert.equal(store.artifacts[0].project_context_id, null);

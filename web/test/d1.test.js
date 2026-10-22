@@ -108,6 +108,9 @@ test('shared import progress ignores obsolete exclusions and keeps digest retrie
     await sql`INSERT INTO artifact_exclusions(unit_id,digestion_prompt_id,reason,created_at)
       VALUES(${unit.id},${old.id},'Not an engineering problem.','2026-01-01T00:00:00.000Z')`;
     const [current]=await sql`INSERT INTO digestion_prompts(revision,prompt_text) VALUES(2,'Any substantive topic') RETURNING id`;
+    let active=current.id;
+    env.PROCESSOR_URL='https://processor/api/ingest/process';
+    env.PROCESSOR={async fetch(url){return new URL(url).pathname.endsWith('/prompt') ? Response.json({id:active}) : new Response(null,{status:202});}};
     const signup=await call('/api/auth/signup',{email:'retry@example.com',password:'correct horse battery'});
     const cookie=signup.headers.get('set-cookie').split(';')[0];
     const imported=await (await call('/api/imports',{links:[url]},cookie)).json();
@@ -138,7 +141,10 @@ test('shared import progress ignores obsolete exclusions and keeps digest retrie
     await sql`INSERT INTO artifact_exclusions(unit_id,digestion_prompt_id,reason,created_at)
       VALUES(${unit.id},${current.id},${reason},'2026-01-03T00:00:00.000Z')`;
     await expect('not_selected',true,reason);
-    await sql`INSERT INTO digestion_prompts(revision,prompt_text) VALUES(3,'Revised topic policy')`;
+    await sql`INSERT INTO digestion_prompts(revision,prompt_text) VALUES(3,'Custom CLI request B')`;
+    await expect('not_selected',true,reason);
+    const [next]=await sql`INSERT INTO digestion_prompts(revision,prompt_text) VALUES(4,'Revised topic policy') RETURNING id`;
+    active=next.id;
     await sql`INSERT INTO processing_starts(unit_id,kind,charged,created_at)
       VALUES(${unit.id},'digest',1,'2026-01-04T00:00:00.000Z')`;
     await expect('digesting',false);

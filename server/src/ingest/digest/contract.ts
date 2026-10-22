@@ -24,12 +24,19 @@ export function promptRevisionText(request: string): string {
   return `${SYSTEM_PROMPT}\n\n--- categorization request ---\n${request}`;
 }
 
+export function promptLookupStatement(promptText: string, fewShot: unknown[]) {
+  return {
+    sql: `SELECT id FROM digestion_prompts WHERE name='Digestion Prompt' AND prompt_text=?1 AND few_shot=?2 LIMIT 1`,
+    params: [promptText, JSON.stringify(fewShot)],
+  };
+}
+
 export function promptRegistrationStatements(promptText: string, fewShot: unknown[]) {
-  const params = [promptText, JSON.stringify(fewShot)];
+  const lookup = promptLookupStatement(promptText, fewShot);
   return [
     { sql: `INSERT INTO digestion_prompts(revision,prompt_text,few_shot)
       SELECT (SELECT coalesce(max(revision),0)+1 FROM digestion_prompts WHERE name='Digestion Prompt'),?1,?2
-      WHERE NOT EXISTS(SELECT 1 FROM digestion_prompts WHERE name='Digestion Prompt' AND prompt_text=?1 AND few_shot=?2)`, params },
-    { sql: `SELECT id FROM digestion_prompts WHERE name='Digestion Prompt' AND prompt_text=?1 AND few_shot=?2 LIMIT 1`, params },
+      WHERE NOT EXISTS(SELECT 1 FROM digestion_prompts WHERE name='Digestion Prompt' AND prompt_text=?1 AND few_shot=?2)`, params: lookup.params },
+    lookup,
   ];
 }
