@@ -68,7 +68,7 @@ export function publicationJudgment(reviews: ShortReview[], fixes: ReviewFix[], 
     if (value < 8) reasons.push(`${axis} scored ${value}/10; publication needs at least 8/10.`);
   }
   for (const [criterion, value] of Object.entries(last.scores)) if (value < 4) reasons.push(`${criterion} scored ${value}/5; publication needs at least 4/5.`);
-  if (cue_checks.length !== 2 || cue_checks.some((check, i) => !check.startsWith(`Round ${i + 1}\n`) || check.includes("FAIL"))) reasons.push("Every round requires a passing cue-check.");
+  if (cue_checks.length !== 2 || cue_checks.some((check, i) => !check.startsWith(`Round ${i + 1}\n`) || (i === 1 && check.includes("FAIL")))) reasons.push("Both rounds require cue-check receipts; the final round must pass.");
   const review_log = reviews.map((review, i) => `## Round ${i + 1}\nReviewer: separate model call, fresh context\n\n| # | Result | Evidence |\n|---|---|---|\n${review.defects.map(row => `| ${row.id} | ${row.result} | ${row.evidence} |`).join("\n")}\n\n| Axis | Score | Evidence / why |\n|---|---|---|\n${CRITIQUE_AXES.map(axis => `| ${axis} | ${review.axes[axis].score} | ${review.axes[axis].evidence} |`).join("\n")}\n\nWorst three:\n${review.worst_three.map((problem, n) => `${n + 1}. ${problem.timestamp}s scene ${problem.scene}: ${problem.problem}`).join("\n") || "None."}\n${i === 0 ? `\nFixed:\n${fixes.map(fix => `${fix.axes.join(", ")} scenes ${fix.scenes.join(", ")}: ${fix.description}`).join("\n") || "No changes."}` : adjustments.join("\n")}`).join("\n\n") + (reasons.length ? `\n\nUnresolved:\n${reasons.join("\n")}` : "");
   return { judge: "short-judge-v1", passed: reasons.length === 0, captions_burned: true, scores: last.scores, reasons, reviews, fixes, cue_checks, review_log };
 }

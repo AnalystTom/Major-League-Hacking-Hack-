@@ -1,11 +1,12 @@
-import { publicationJudgment } from "../../src/outputs/render/judge.js";
+import { JUDGE_SYSTEM_PROMPT, publicationJudgment } from "../../src/outputs/render/judge.js";
 import test from "node:test";
 import assert from "node:assert/strict";
+import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { LostClaim, MemoryOutputStore } from "../../src/outputs/store.js";
+import { LostClaim, MAX_OUTPUT_ATTEMPTS, MemoryOutputStore } from "../../src/outputs/store.js";
 import { produceOutputs, sweepOutputs } from "../../src/outputs/run.js";
 import type { MediaStore } from "../../src/outputs/render/media.js";
-import { artifact, outputsFetch, takeOver, approvedJudgment } from "./helpers.js";
+import { artifact, outputsFetch, takeOver, approvedJudgment, toneWav } from "./helpers.js";
 import type { RenderedVideo } from "../../src/outputs/types.js";
 
 const hasFfmpeg = (() => { try { execFileSync("ffmpeg", ["-version"]); return true; } catch { return false; } })();
@@ -144,5 +145,100 @@ for (const status of ["ready", "failed"] as const) for (const success of [true, 
     assert.equal(await outputs.fail("video",claim,"late"),false);
     assert.equal(await outputs.claim("video",a),null);
     assert.deepEqual(await outputs.artifactsNeeding("video",10),[]);
+  });
+}
+
+for (const stage of ["revision", "narration", "render", "judge", "video", "caption", "audio"] as const) {
+  test(`transient ${stage} failure after critique preserves receipts and retry eligibility`, { skip: !hasFfmpeg && "ffmpeg not installed", timeout: 120_000 }, async () => {
+    const a = artifact(), outputs = new MemoryOutputStore(0);
+    outputs.artifacts.push(a);
+    const { impl } = outputsFetch(a);
+    const font = process.env.RENDER_FONT;
+    let firstReviewed = false, uploadFailed = false;
+    const uploads: string[] = [];
+    const o = { outputs, openaiKey: "o", geminiKey: "g",
+      media: { put: async (key: string) => {
+        uploads.push(key);
+        if (!uploadFailed && key.startsWith(`${stage === "video" ? "videos" : stage === "caption" ? "captions" : stage === "audio" ? "audio" : "no-upload-failure"}/`)) {
+          uploadFailed = true;
+          throw new Error("R2 HTTP 503: temporarily unavailable");
+        }
+        return `r2:${key}`;
+      } },
+      fetchImpl: (async (url, init) => {
+        const body = JSON.parse(String(init?.body));
+        if (String(url).includes("interactions")) {
+          if (stage === "narration" && firstReviewed) return new Response("temporary", { status: 503 });
+          return Response.json({ steps: [{ type: "model_output", content: [{ type: "audio", data: toneWav(.8).toString("base64") }] }] });
+        }
+        if (body.messages[0].content === JUDGE_SYSTEM_PROMPT) {
+          const evidence = JSON.parse(body.messages[1].content[0].text);
+          if (stage === "judge" && evidence.round === 2) return new Response("temporary", { status: 503 });
+          const response = await impl(url, init);
+          if (evidence.round === 1) {
+            firstReviewed = true;
+            if (stage === "render") process.env.RENDER_FONT = join(process.cwd(), "missing-transient-render-font.ttf");
+          }
+          return response;
+        }
+        if (stage === "revision" && body.messages[1].content.includes("previous_scenes")) return new Response("temporary", { status: 503 });
+        return impl(url, init);
+      }) as typeof fetch,
+    };
+    try {
+      await produceOutputs([a], o);
+      const row = [...outputs.rows.video.values()][0];
+      const uploaded = ["video", "caption", "audio"].includes(stage);
+      assert.equal(row.status, "failed");
+      assert.equal(row.attempts, 1, "infrastructure errors do not exhaust ordinary attempts");
+      assert.match(row.error!, stage === "render" ? /ENOENT/ : stage === "narration" ? /TTS HTTP 503/ : uploaded ? /^R2 HTTP 503/ : /OpenAI HTTP 503/);
+      assert.doesNotMatch(row.error!, /Quality judge rejected/);
+      assert.equal(row.rejectedReview!.reviews.length, uploaded ? 2 : 1);
+      assert.equal(row.rejectedReview!.cue_checks.length, ["revision", "narration"].includes(stage) ? 1 : 2);
+      assert.equal(row.rejectedReview!.passed, uploaded, "passing critiques stay passing when an upload fails");
+      assert.match(row.rejectedReview!.review_log, /## Round 1/);
+      if (uploaded) assert.match(row.rejectedReview!.review_log, /## Round 2/);
+      assert.equal(uploads.length, uploaded ? ["video", "caption", "audio"].indexOf(stage) + 1 : 0);
+      assert.equal((await outputs.artifactsNeeding("video", 10))[0].id, a.id);
+      if (stage === "video") {
+        await sweepOutputs(o);
+        const ready = [...outputs.rows.video.values()][0];
+        assert.equal(ready.status, "ready", ready.error ?? "");
+        assert.equal(ready.attempts, 2);
+        assert.equal((ready.value as RenderedVideo).judgment.reviews.length, 2);
+      } else {
+        assert.ok(await outputs.claim("video", a), "ordinary failures remain retryable");
+      }
+    } finally {
+      if (font === undefined) delete process.env.RENDER_FONT;
+      else process.env.RENDER_FONT = font;
+    }
+  });
+}
+
+for (const status of ["ready", "failed"] as const) {
+  test(`legacy ${status} refresh keeps its one-attempt bound after a reviewed upload failure`, { skip: !hasFfmpeg && "ffmpeg not installed", timeout: 120_000 }, async () => {
+    const a = artifact(), outputs = new MemoryOutputStore(0);
+    outputs.artifacts.push(a);
+    const old: RenderedVideo = { judgment: approvedJudgment(), script: { scenes: [] }, prompt_revision: "old",
+      media_ref: "r2:videos/old/short.mp4", caption_ref: "r2:captions/old/short.vtt", narration_ref: "r2:audio/old/narration.m4a", duration_seconds: 30 };
+    await outputs.finishVideo((await outputs.claim("video", a))!, old);
+    Object.assign([...outputs.rows.video.values()][0], { status, generatorRevision: "short-v1" });
+    const { impl } = outputsFetch(a);
+    await produceOutputs([a], { outputs, openaiKey: "o", geminiKey: "g",
+      media: { put: async () => { throw new Error("R2 HTTP 503: temporarily unavailable"); } },
+      fetchImpl: async (url, init) => String(url).includes("interactions") ?
+        Response.json({ steps: [{ type: "model_output", content: [{ type: "audio", data: toneWav(.8).toString("base64") }] }] }) : impl(url, init),
+    });
+    const row = [...outputs.rows.video.values()][0];
+    assert.equal(row.status, status);
+    assert.equal(row.value, old, "previous media and approval remain intact");
+    assert.match(row.error!, /^R2 HTTP 503/);
+    assert.equal(row.rejectedReview!.passed, true);
+    assert.equal(row.rejectedReview!.reviews.length, 2);
+    assert.equal(row.rejectedReview!.cue_checks.length, 2);
+    assert.ok(row.attempts >= MAX_OUTPUT_ATTEMPTS);
+    assert.equal(await outputs.claim("video", a), null);
+    assert.deepEqual(await outputs.artifactsNeeding("video", 10), []);
   });
 }

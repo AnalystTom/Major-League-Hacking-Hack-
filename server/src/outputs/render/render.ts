@@ -40,7 +40,7 @@ async function readySkill(a: ReadyArtifact, o: RenderOptions): Promise<SkillCard
   }
 }
 
-async function renderRound(a: ReadyArtifact, draft: DraftScene[], dir: string, round: number, o: RenderOptions, skill: SkillCard | null) {
+async function renderRound(a: ReadyArtifact, draft: DraftScene[], dir: string, round: number, o: RenderOptions, skill: SkillCard | null, cue_checks: string[]) {
   await mkdir(dir, { recursive: true });
   const wavs: string[] = [];
   for (const [i, scene] of draft.entries()) {
@@ -54,20 +54,20 @@ async function renderRound(a: ReadyArtifact, draft: DraftScene[], dir: string, r
   await writeFile(vtt, toVtt(cues));
   let verification: unknown = null;
   let out: { mp4: string; narration: string; duration: number };
-  let cue_check: string;
-  if (renderStyle() === "motion-skill") {
-    const spec = motionSpec(a, draft, slots, skill);
-    cue_check = await cueCheck(spec, round);
+  const spec = renderStyle() === "motion-skill" ? motionSpec(a, draft, slots, skill) : null;
+  const cue_check = spec ? await cueCheck(spec, round) :
+    [`Round ${round}`, ...slots.map((_, i) => `Scene ${i}: no cues; narration only; no motion sound cue to synchronize. PASS`), "impact cues: 0 PASS"].join("\n");
+  cue_checks.push(cue_check);
+  await mkdir(join(dir, "motion-check"), { recursive: true });
+  await writeFile(join(dir, "motion-check", "cue-check.md"), cue_check);
+  if (spec) {
     const track = await narrationTrack(dir, wavs, slots);
     const film = await renderMotion(dir, spec, track.wav);
     verification = film.verification;
     out = { mp4: film.mp4, narration: track.m4a, duration: film.duration };
   } else {
-    cue_check = [`Round ${round}`, ...slots.map((_, i) => `Scene ${i}: no cues; narration only; no motion sound cue to synchronize. PASS`), "impact cues: 0 PASS"].join("\n");
     out = await composeShort({ dir, narration: wavs, onScreen: draft.map(scene => scene.on_screen_text), slots, category: a.category });
   }
-  await mkdir(join(dir, "motion-check"), { recursive: true });
-  await writeFile(join(dir, "motion-check", "cue-check.md"), cue_check);
   const scenes: ScriptScene[] = draft.map((scene, i) => ({
     start_seconds: slots[i].start, end_seconds: slots[i].end, narration_text: scene.narration_text,
     on_screen_text: scene.on_screen_text, visual_instruction: scene.visual_instruction, source_ids: scene.source_ids,
@@ -75,7 +75,7 @@ async function renderRound(a: ReadyArtifact, draft: DraftScene[], dir: string, r
   out.mp4 = await burnSubtitles(dir, out.mp4, cues);
   const review = await judgeShort(a, scenes, out.mp4, dir,
     { apiKey: o.openaiKey, model: o.openaiModel, fetchImpl: o.fetchImpl }, skill, verification, cue_check, round);
-  return { out, scenes, vtt, review, cue_check };
+  return { out, scenes, vtt, review };
 }
 
 export async function renderArtifact(a: ReadyArtifact, o: RenderOptions): Promise<RenderedVideo> {
@@ -87,14 +87,12 @@ export async function renderArtifact(a: ReadyArtifact, o: RenderOptions): Promis
   try {
     const motion = renderStyle() === "motion-skill";
     const skill = motion ? await readySkill(a, o) : null;
-    const first = await renderRound(a, draft, join(dir, "round-1"), 1, o, skill);
+    const first = await renderRound(a, draft, join(dir, "round-1"), 1, o, skill, cue_checks);
     reviews.push(first.review);
-    cue_checks.push(first.cue_check);
     const revised = await reviseScript(a, draft, first.review, model);
     fixes = revised.fixes;
-    const second = await renderRound(a, revised.scenes, join(dir, "round-2"), 2, o, skill);
+    const second = await renderRound(a, revised.scenes, join(dir, "round-2"), 2, o, skill, cue_checks);
     reviews.push(second.review);
-    cue_checks.push(second.cue_check);
     const judgment = publicationJudgment(reviews, fixes, cue_checks);
     await writeFile(join(dir, "review_log.md"), judgment.review_log);
     if (!judgment.passed) throw new QualityRejected(judgment);
@@ -110,12 +108,8 @@ export async function renderArtifact(a: ReadyArtifact, o: RenderOptions): Promis
       music_provenance: motion ? MOTION_MUSIC_PROVENANCE : null,
     };
   } catch (error) {
-    if (reviews.length && !(error instanceof QualityRejected)) {
-      const judgment = publicationJudgment(reviews, fixes, cue_checks);
-      judgment.passed = false;
-      judgment.reasons.push((error as Error).message);
-      judgment.review_log += `\nUnresolved: ${(error as Error).message}`;
-      throw new QualityRejected(judgment);
+    if (reviews.length && error instanceof Error && !(error instanceof QualityRejected)) {
+      Object.assign(error, { judgment: publicationJudgment(reviews, fixes, cue_checks) });
     }
     throw error;
   } finally {

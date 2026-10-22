@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { SCRIPT_SYSTEM_PROMPT, validateScript, writeScript, reviseScript } from "../../src/outputs/render/script.js";
 import { cueCheck, groundsFor, motionSpec } from "../../src/outputs/render/motion-skill.js";
 import { assertJudged, publicationJudgment } from "../../src/outputs/render/judge.js";
+import { MemoryOutputStore } from "../../src/outputs/store.js";
 import { artifact, approvedJudgment, reviewReply, scriptReply } from "./helpers.js";
 
 const narration = (n: number) => Array.from({ length: n }, (_, i) => `word${i}`).join(" ");
@@ -166,4 +167,50 @@ test("publication enforces both reviews, defect caps and logged score improvemen
   assert.ok(rejected.reasons.some(reason => reason.includes("motion scored 6")));
   const missing = { ...approvedJudgment(), reviews: [reviewReply(), { ...reviewReply(), defects: [] }] };
   assert.throws(() => assertJudged(missing), /quality judge/);
+});
+
+test("a logged sound revision resolves an initial cue failure without erasing history", async () => {
+  const a = artifact();
+  const raw = reply(a, [{ on_screen_text: "Check before done", move: "strike", swap: "proof" }, {}]);
+  const draft = validateScript(raw, a);
+  const short = [{ start: 0, speechEnd: .75, end: 1.1 }, { start: 1.1, speechEnd: 3.25, end: 3.6 }];
+  const longer = [{ start: 0, speechEnd: 1.65, end: 2 }, { start: 2, speechEnd: 4.15, end: 4.5 }];
+  const firstCue = await cueCheck(motionSpec(a, draft, short, null), 1);
+  assert.match(firstCue, /FAIL/);
+  const first = reviewReply();
+  first.sound_verified = false;
+  first.axes.sound.score = 6;
+  first.defects[10] = { id: "D11", result: "FAIL", evidence: firstCue };
+  const revised = await reviseScript(a, draft, first, { apiKey: "test", fetchImpl: async () => Response.json({ choices: [{ message: { content: JSON.stringify({
+    scenes: raw.scenes.map((scene, i) => i === 0 ? { ...scene, narration_text: `${scene.narration_text} Check before done.` } : scene),
+    fixes: [{ axes: ["sound"], scenes: [0], description: "Lengthen the first scene so its strike cue lands before the cut" }],
+  }) } }] }) });
+  const finalCue = await cueCheck(motionSpec(a, revised.scenes, longer, null), 2);
+  assert.doesNotMatch(finalCue, /FAIL/);
+  const second = reviewReply();
+  const judgment = publicationJudgment([first, second], revised.fixes, [firstCue, finalCue]);
+  assert.equal(judgment.passed, true);
+  assertJudged(judgment);
+  assert.deepEqual(judgment.cue_checks, [firstCue, finalCue]);
+  assert.equal(judgment.reviews[0].defects[10].result, "FAIL");
+  assert.match(judgment.review_log, /D11 \| FAIL/);
+  assert.equal(publicationJudgment([first, second], [], [firstCue, finalCue]).passed, false, "an unlogged score increase still cannot pass");
+});
+
+test("a final cue failure withholds publication even when the reviewer misses it", async () => {
+  const a = artifact();
+  const scenes = validateScript(reply(a, [{ on_screen_text: "Check before done", move: "strike", swap: "proof" }, {}]), a);
+  const slots = [{ start: 0, speechEnd: .75, end: 1.1 }, { start: 1.1, speechEnd: 3.25, end: 3.6 }];
+  const finalCue = await cueCheck(motionSpec(a, scenes, slots, null), 2);
+  assert.match(finalCue, /FAIL/);
+  const judgment = publicationJudgment([reviewReply(), reviewReply()], [], [approvedJudgment().cue_checks[0], finalCue]);
+  assert.equal(judgment.passed, false);
+  assert.ok(judgment.reasons.includes("Both rounds require cue-check receipts; the final round must pass."));
+  const outputs = new MemoryOutputStore(0);
+  const claim = (await outputs.claim("video", a))!;
+  await assert.rejects(outputs.finishVideo(claim, { judgment, script: { scenes: [] }, prompt_revision: "test",
+    media_ref: "r2:videos/new/short.mp4", caption_ref: "r2:captions/new/short.vtt", narration_ref: "r2:audio/new/narration.m4a", duration_seconds: 3.6 }), /quality judge/);
+  const row = [...outputs.rows.video.values()][0];
+  assert.equal(row.status, "running");
+  assert.equal(row.value, undefined, "no unapproved media becomes published");
 });

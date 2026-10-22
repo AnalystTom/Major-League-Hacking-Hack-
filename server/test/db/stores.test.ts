@@ -269,14 +269,15 @@ for (const status of ['ready', 'failed']) for (const outcome of ['approved', 'pr
         const reviewed = approvedJudgment();
         reviewed.reviews[1].scores.grounding = 2;
         const rejected = publicationJudgment(reviewed.reviews, [], reviewed.cue_checks);
-        assert.equal(await s.outputs.fail('video',claim,error, outcome === 'judge rejection' ? rejected : undefined),true);
+        const attemptReview = outcome === 'judge rejection' ? rejected : approvedJudgment();
+        assert.equal(await s.outputs.fail('video',claim,error,attemptReview),true);
         const row = (await s.db.query('SELECT * FROM video_results')).rows[0];
         assert.equal(row.status,status);
         assert.equal(row.media_ref,`r2:${old}`);
         assert.equal(row.error,error);
-        if (outcome === 'judge rejection') {
+        {
           const saved = JSON.parse(row.review_feedback);
-          assert.deepEqual(saved.last_rejected_review, rejected);
+          assert.deepEqual(saved.last_rejected_review, attemptReview);
           assert.equal(saved.passed, receipt.passed, "prior publication receipt is retained");
           assert.ok(saved.last_rejected_review.review_log.length > 2000, "full receipts survive beyond the error limit");
         }
@@ -308,5 +309,24 @@ test('legacy video refresh is bounded even when old review feedback is not an ob
       assert.equal(await s.outputs.claim('video',a),null);
     }
     assert.deepEqual(await s.outputs.artifactsNeeding('video',10),[]);
+  } finally { s.sqlite.close(); }
+});
+
+test('D1 infrastructure failures retain completed critiques without exhausting ordinary retries', async () => {
+  const s = await setup();
+  try {
+    const a = await s.artifact([await s.unit('ready')]);
+    const claim = (await s.outputs.claim('video', a))!;
+    const review = approvedJudgment();
+    assert.equal(await s.outputs.fail('video', claim, 'R2 HTTP 503: temporarily unavailable', review), true);
+    const row = (await s.db.query('SELECT * FROM video_results WHERE id=?1', [claim.id])).rows[0];
+    assert.equal(row.status, 'failed');
+    assert.equal(row.attempts, 1);
+    assert.equal(row.error, 'R2 HTTP 503: temporarily unavailable');
+    assert.deepEqual(JSON.parse(row.review_feedback).last_rejected_review, review);
+    assert.equal(await s.outputs.claim('video', a), null, 'normal backoff still applies');
+    await s.db.query("UPDATE video_results SET updated_at='2000-01-01T00:00:00Z' WHERE id=?1", [claim.id]);
+    assert.ok(await s.outputs.claim('video', a), 'a transient error still gets an ordinary retry');
+    assert.equal((await s.db.query('SELECT attempts FROM video_results WHERE id=?1', [claim.id])).rows[0].attempts, 2);
   } finally { s.sqlite.close(); }
 });
