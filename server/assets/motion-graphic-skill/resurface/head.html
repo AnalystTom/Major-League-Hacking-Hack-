@@ -4,3 +4,13 @@
 <title>Resurface short</title>
 <meta name="description" content="A Resurface short: one saved source, the lesson in it, and the skill it became.">
 <meta name="theme-color" content="#0E0D0B">
+<style>
+/* The portrait film must fit tall tablets as well as narrow phones. Keep the engine's player controls visible. */
+@media (orientation:portrait){
+  .app.app{grid-template-rows:minmax(0,1fr) auto;align-content:stretch;gap:0}
+  .stage.stage{aspect-ratio:auto;height:100%;min-height:0}
+}
+@media (pointer:coarse){
+  .scrub.scrub{top:clamp(0px,calc(var(--bar-y) - max(2.4%,16px)),calc(100% - 32px))}
+}
+</style>

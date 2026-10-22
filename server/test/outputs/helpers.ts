@@ -54,7 +54,7 @@ export function outputsFetch(a: ReadyArtifact, opts: { skill?: unknown; ttsStatu
       const system: string = JSON.parse(init!.body!).messages[0].content;
       if (system === JUDGE_SYSTEM_PROMPT) {
         calls.judge++;
-        return Response.json({ choices: [{ message: { content: JSON.stringify(opts.judge ?? {scores:{grounding:4,clarity:4,usefulness:4,visuals:4,subtitles:4},reasons:[]}) } }] });
+        return Response.json({ choices: [{ message: { content: JSON.stringify(opts.judge ?? {scores:{grounding:4,clarity:4,usefulness:4,visuals:4,subtitles:4, caption_overlap: 4},reasons:[]}) } }] });
       }
       const isScript = system === SCRIPT_SYSTEM_PROMPT;
       calls[isScript ? "script" : "skill"]++;

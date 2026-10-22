@@ -13,6 +13,7 @@ export interface ChatJsonOptions extends OpenAIOptions {
   system: string;
   user: string;
   images?: string[];
+  imageDetail?: "low" | "high";
 }
 
 /** One JSON-mode chat completion. Throws with the actual HTTP or parse failure. */
@@ -25,9 +26,9 @@ export async function chatJson(o: ChatJsonOptions): Promise<unknown> {
     body: JSON.stringify({
       model: o.model ?? DEFAULT_DIGEST_MODEL,
       max_completion_tokens: cap,
-      ...effortField(),
+      ...effortField(o.reasoningEffort),
       response_format: { type: "json_object" },
-      messages: [{ role: "system", content: o.system }, { role: "user", content: o.images?.length ? [{ type: "text", text: o.user }, ...o.images.map((url) => ({ type: "image_url", image_url: { url, detail: "low" } }))] : o.user }],
+      messages: [{ role: "system", content: o.system }, { role: "user", content: o.images?.length ? [{ type: "text", text: o.user }, ...o.images.map((url) => ({ type: "image_url", image_url: { url, detail: o.imageDetail ?? "low" } }))] : o.user }],
     }),
     // xhigh reasoning over a five-skill brief has taken over three minutes; a stuck call still ends inside STALE_BRIEF_MINUTES.
     signal: AbortSignal.timeout(600_000),

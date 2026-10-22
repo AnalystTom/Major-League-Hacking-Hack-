@@ -107,6 +107,9 @@ test("renders a motion short with the narration over the engine's music", { skip
       if (request.messages?.[0]?.content === JUDGE_SYSTEM_PROMPT) {
         const evidence = JSON.parse(request.messages[1].content[0].text);
         assert.deepEqual(evidence.generated_skill, card);
+        assert.deepEqual(evidence.verification_report.failures, [], "the skill's own full check ran before judging");
+        assert.ok(evidence.verification_report.langs.en.audio.startsWith("peak="));
+        assert.equal(Object.keys(evidence.verification_report.langs.en.layout).length, 7);
         assert.ok(evidence.scenes.every((s: { source_ids: string[] }) => s.source_ids.length > 0));
         const images = request.messages[1].content.filter((c: { type: string }) => c.type === "image_url");
         endCardFrame = Buffer.from(images.at(-1).image_url.url.split(",")[1], "base64");

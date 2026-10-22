@@ -88,9 +88,25 @@ test("a RENDER_FONT path with ':' or quotes still renders", { skip: !hasFfmpeg &
 
 test("a rejected or malformed quality judgment uploads nothing", { skip: !hasFfmpeg && "ffmpeg not installed", timeout: 120_000 }, async () => {
   const a = artifact(), media = new DirMedia(tmpdir());
-  const result = { scores: { grounding: 2, clarity: 4, usefulness: 4, visuals: 4, subtitles: 4 }, reasons: ["The narration invents a result."] };
+  const result = { scores: { grounding: 2, clarity: 4, usefulness: 4, visuals: 4, subtitles: 4, caption_overlap: 4 }, reasons: ["The narration invents a result."] };
   const { impl, calls } = outputsFetch(a, { judge: result });
   await assert.rejects(renderArtifact(a, { openaiKey: "o", geminiKey: "g", media, fetchImpl: impl }), /Quality judge rejected:.*invents a result/);
   assert.equal(calls.judge, 1, "one independent judging pass");
   assert.deepEqual(media.keys, [], "rejected clips never reach publication storage");
+  const overlap = outputsFetch(a, { judge: { scores: { grounding: 5, clarity: 5, usefulness: 5, visuals: 5, subtitles: 5, caption_overlap: 3 }, reasons: [] } });
+  await assert.rejects(renderArtifact(a, { openaiKey: "o", geminiKey: "g", media, fetchImpl: overlap.impl }), /Quality judge rejected:.*caption_overlap scored 3/);
+  assert.equal(overlap.calls.judge, 1);
+  assert.deepEqual(media.keys, [], "an otherwise excellent clip with caption overlap is withheld");
+});
+
+test("an unavailable model fails before narration, rendering or upload", async () => {
+  const a = artifact(), media = new DirMedia(tmpdir());
+  let calls = 0;
+  await assert.rejects(renderArtifact(a, { openaiKey: "o", geminiKey: "g", media, fetchImpl: async (_url, init) => {
+    calls++;
+    assert.equal(JSON.parse(String(init?.body)).model, "gpt-6.1-sol");
+    return Response.json({ error: { message: "Model gpt-6.1-sol is unavailable", code: "model_not_found" } }, { status: 404 });
+  } }), /OpenAI.*404.*gpt-6.1-sol/);
+  assert.equal(calls, 1);
+  assert.deepEqual(media.keys, []);
 });

@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { SCRIPT_SYSTEM_PROMPT, validateScript, writeScript } from "../../src/outputs/render/script.js";
 import { groundsFor, motionSpec } from "../../src/outputs/render/motion-skill.js";
 import { artifact } from "./helpers.js";
@@ -16,6 +17,12 @@ test("writeScript delivers its instructions and artifact evidence to the model",
     calls++;
     assert.equal(String(url), "https://api.openai.com/v1/chat/completions");
     const request = JSON.parse(String(init?.body));
+    assert.equal(request.model, "gpt-6.1-sol");
+    assert.equal(request.reasoning_effort, "medium");
+    for (const file of ["SKILL.md", "references/story.md", "references/styles.md", "references/scene-patterns.md"]) {
+      const reference = readFileSync(new URL(`../../assets/motion-graphic-skill/${file}`, import.meta.url), "utf8");
+      assert.ok(request.messages[0].content.includes(reference), `the model receives the actual vendored ${file}`);
+    }
     assert.deepEqual(request.messages, [
       { role: "system", content: SCRIPT_SYSTEM_PROMPT },
       { role: "user", content: JSON.stringify({ artifact: {
@@ -28,6 +35,21 @@ test("writeScript delivers its instructions and artifact evidence to the model",
   const scenes = await writeScript(a, { apiKey: "test", fetchImpl });
   assert.equal(calls, 1);
   assert.deepEqual(scenes.map(s => [s.narration_text, s.source_ids]), raw.scenes.map(s => [s.narration_text, s.source_ids]));
+});
+
+test("script effort can be overridden without changing other OpenAI calls", async () => {
+  const before = process.env.SCRIPT_REASONING_EFFORT;
+  process.env.SCRIPT_REASONING_EFFORT = "low";
+  try {
+    const a = artifact();
+    await writeScript(a, { apiKey: "test", fetchImpl: async (_url, init) => {
+      assert.equal(JSON.parse(String(init?.body)).reasoning_effort,"low");
+      return Response.json({choices:[{message:{content:JSON.stringify(reply(a,[{},{}]))}}]});
+    } });
+  } finally {
+    if (before === undefined) delete process.env.SCRIPT_REASONING_EFFORT;
+    else process.env.SCRIPT_REASONING_EFFORT = before;
+  }
 });
 
 test("each scene keeps its move only when the template can draw it honestly", () => {

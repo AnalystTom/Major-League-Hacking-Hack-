@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import { probe, run } from "./ffmpeg.js";
 import type { Slot } from "./timeline.js";
 import type { ReadyArtifact } from "../types.js";
+import { CAPTION_BAND, CONTENT_BOTTOM } from "./layout.js";
 
 export const MOTION_SKILL_REVISION = "visuals:motion-graphic-skill";
 export const MOTION_MUSIC_PROVENANCE =
@@ -26,6 +27,7 @@ export interface SkillCard { name: string; description: string }
 
 export interface MotionScene { d: number; code: string; theme: string; text: string; sub: string; label: string; move: string; swap: string }
 export interface MotionSpec {
+  layout: { caption_band: typeof CAPTION_BAND; content_bottom: number };
   id: string;
   category: string;
   source: { kind: "x" | "youtube" | "other"; platform: string; title: string; byline: string; tag: string };
@@ -80,6 +82,7 @@ export function motionSpec(a: ReadyArtifact, scenes: SpecScene[], slots: Slot[],
   const description = skill ? oneLine(skill.description).match(/^.{1,80}(?=\s|$)/u)?.[0] : undefined;
   if (skill && !description) throw new Error("Skill description has no complete word within 80 characters");
   return {
+    layout: { caption_band: CAPTION_BAND, content_bottom: CONTENT_BOTTOM },
     id: a.id.slice(0, 8),
     category: oneLine(a.category ?? a.name),
     source: sourceOf(a),
@@ -125,9 +128,19 @@ export function recordEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessE
  * Records the template with this spec to film.mp4 (picture + the engine's music), then mixes narration.wav over it
  * into short.mp4: the music is ducked under the voice and the whole mix is normalised to -14 LUFS.
  */
-export async function renderMotion(dir: string, spec: MotionSpec, narrationWav: string): Promise<{ mp4: string; duration: number }> {
+export async function renderMotion(dir: string, spec: MotionSpec, narrationWav: string): Promise<{ mp4: string; duration: number; verification: unknown }> {
   const html = join(dir, "short.html"), film = join(dir, "film.mp4"), mp4 = join(dir, "short.mp4");
   await writeFile(html, fillTemplate(await readFile(join(SKILL_DIR, "resurface-short.html"), "utf8"), spec));
+  try {
+    await runWithEnv(process.execPath, [join(SKILL_DIR, "scripts", "check.js"), html, "--out", join(dir, "motion-check")], recordEnv(), "check.js", /ALL CHECKS PASSED/);
+  } catch (error) {
+    // The renderer removes scratch files; retain the actual defects in the stored generation failure.
+    const report = await readFile(join(dir, "motion-check", "report.json"), "utf8").then(JSON.parse).catch(() => null);
+    if (report?.failures?.length) throw new Error(`motion-graphic-skill check.js rejected: ${report.failures.join("; ").slice(0, 800)}`);
+    throw error;
+  }
+  const { failures, langs } = JSON.parse(await readFile(join(dir, "motion-check", "report.json"), "utf8"));
+  if (!Array.isArray(failures) || failures.length) throw new Error("motion-graphic-skill check.js reported failures");
   await runWithEnv(process.execPath, [join(SKILL_DIR, "scripts", "record.js"), html, "--out", film, "--crf", "20"], recordEnv());
   await run("ffmpeg", [
     "-y", "-hide_banner", "-loglevel", "error", "-i", film, "-i", narrationWav, "-filter_complex",
@@ -138,7 +151,7 @@ export async function renderMotion(dir: string, spec: MotionSpec, narrationWav: 
   const p = await probe(mp4);
   if (p.video?.codec !== "h264" || p.video.width !== 1080 || p.video.height !== 1920) throw new Error(`motion short is not 1080x1920 H.264 (${JSON.stringify(p.video)})`);
   if (p.audio?.codec !== "aac") throw new Error("motion short has no AAC audio track");
-  return { mp4, duration: Math.round(p.duration * 100) / 100 };
+  return { mp4, duration: Math.round(p.duration * 100) / 100, verification: { failures, langs } };
 }
 
 /** One narration track on the scene timeline: each clip, then silence to its slot's end. Writes WAV and M4A. */
@@ -153,7 +166,7 @@ export async function narrationTrack(dir: string, wavs: string[], slots: Slot[])
   return { wav, m4a };
 }
 
-function runWithEnv(cmd: string, args: string[], env: NodeJS.ProcessEnv): Promise<void> {
+function runWithEnv(cmd: string, args: string[], env: NodeJS.ProcessEnv, script = "record.js", success = /verified:/): Promise<void> {
   return new Promise((done, reject) => {
     const child = spawn(cmd, args, { env, stdio: ["ignore", "pipe", "pipe"] });
     let tail = "";
@@ -163,17 +176,17 @@ function runWithEnv(cmd: string, args: string[], env: NodeJS.ProcessEnv): Promis
     // SIGTERM first: puppeteer's handler closes the Chromium it launched (its own process group) before exiting.
     let kill: NodeJS.Timeout | undefined;
     const timer = setTimeout(() => {
-      tail += `\nrecord.js timed out after ${RECORD_TIMEOUT_MS / 60_000} minutes`;
+      tail += `\n${script} timed out after ${RECORD_TIMEOUT_MS / 60_000} minutes`;
       child.kill("SIGTERM");
       kill = setTimeout(() => child.kill("SIGKILL"), 15_000);
     }, RECORD_TIMEOUT_MS);
-    child.on("error", (e) => { clearTimeout(timer); reject(new Error(`record.js could not start: ${e.message}`)); });
+    child.on("error", (e) => { clearTimeout(timer); reject(new Error(`${script} could not start: ${e.message}`)); });
     child.on("close", (code) => {
       clearTimeout(timer);
       clearTimeout(kill);
       // record.js prints "verified: …" last only when the MP4 is playable and as long as the film.
-      if (code === 0 && /verified:/.test(tail)) done();
-      else reject(new Error(`motion-graphic-skill record.js failed (exit ${code}): ${tail.trim().split("\n").slice(-3).join(" ").slice(0, 400)}`));
+      if (code === 0 && success.test(tail)) done();
+      else reject(new Error(`motion-graphic-skill ${script} failed (exit ${code}): ${tail.trim().split("\n").slice(-3).join(" ").slice(0, 400)}`));
     });
   });
 }

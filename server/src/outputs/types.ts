@@ -1,8 +1,9 @@
 // What the processor makes from a ready artifact: a rendered short (workflow 2) and a concise skill (workflow 3).
 // Each reads one artifact revision and writes its own result table; historical task records are preserved.
+import type { ReasoningEffort } from "../openaiEffort.js";
 
 /** One OpenAI call's credentials and model. */
-export interface OpenAIOptions { apiKey: string; model?: string; fetchImpl?: typeof fetch }
+export interface OpenAIOptions { apiKey: string; model?: string; reasoningEffort?: ReasoningEffort; fetchImpl?: typeof fetch }
 
 /** The provider settings both outputs read, set once in src/index.ts. */
 export interface ProviderOptions {
@@ -64,7 +65,7 @@ export interface ShortJudgment {
   judge: "short-judge-v1";
   passed: boolean;
   captions_burned: true;
-  scores: { grounding: number; clarity: number; usefulness: number; visuals: number; subtitles: number };
+  scores: { grounding: number; clarity: number; usefulness: number; visuals: number; subtitles: number; caption_overlap: number };
   reasons: string[];
 }
 

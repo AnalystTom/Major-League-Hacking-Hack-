@@ -2,16 +2,14 @@
 // The picture is drawn with motion-graphic-skill (motion-skill.ts) unless RENDER_STYLE=basic, which keeps the plain
 // ffmpeg text cards; both use the same script, narration and captions.
 
-import { reasoningEffort } from "../../openaiEffort.js";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DEFAULT_DIGEST_MODEL } from "../../ingest/digest/run.js";
 import { judgeShort } from "./judge.js";
 import { burnSubtitles, composeShort, probe } from "./ffmpeg.js";
 import type { MediaStore } from "./media.js";
-import { SCRIPT_PROMPT_REVISION, writeScript } from "./script.js";
+import { SCRIPT_PROMPT_REVISION, scriptEffort, shortModel, writeScript } from "./script.js";
 import { captionCues, timeline, toVtt } from "./timeline.js";
 import { synthesize, TTS_MODEL } from "./tts.js";
 import { MOTION_MUSIC_PROVENANCE, MOTION_SKILL_REVISION, motionSpec, narrationTrack, renderMotion, type SkillCard } from "./motion-skill.js";
@@ -61,10 +59,12 @@ export async function renderArtifact(a: ReadyArtifact, o: RenderOptions): Promis
     await writeFile(vtt, toVtt(cues));
     const motion = renderStyle() === "motion-skill";
     const skill = motion ? await readySkill(a, o) : null;
+    let verification: unknown = null;
     let out: { mp4: string; narration: string; duration: number };
     if (motion) {
       const track = await narrationTrack(dir, wavs, slots);
       const film = await renderMotion(dir, motionSpec(a, draft, slots, skill), track.wav);
+      verification = film.verification;
       out = { mp4: film.mp4, narration: track.m4a, duration: film.duration };
     } else {
       out = await composeShort({ dir, narration: wavs, onScreen: draft.map((s) => s.on_screen_text), slots, category: a.category });
@@ -75,7 +75,7 @@ export async function renderArtifact(a: ReadyArtifact, o: RenderOptions): Promis
       narration_text: s.narration_text, on_screen_text: s.on_screen_text, visual_instruction: s.visual_instruction, source_ids: s.source_ids,
     }));
     out.mp4 = await burnSubtitles(dir, out.mp4, cues);
-    const judgment = await judgeShort(a, scenes, out.mp4, dir, { apiKey: o.openaiKey, model: o.openaiModel, fetchImpl: o.fetchImpl }, skill);
+    const judgment = await judgeShort(a, scenes, out.mp4, dir, { apiKey: o.openaiKey, model: o.openaiModel, fetchImpl: o.fetchImpl }, skill, verification);
 
     // A failed upload or lost claim must never overwrite the video still being served.
     const base = `${a.id}/${a.version}/${randomUUID()}`;
@@ -87,7 +87,7 @@ export async function renderArtifact(a: ReadyArtifact, o: RenderOptions): Promis
       judgment,
       script: { scenes },
       // The model and reasoning effort that wrote the script, so a render shows how it was made.
-      prompt_revision: `${SCRIPT_PROMPT_REVISION}; openai:${o.openaiModel ?? DEFAULT_DIGEST_MODEL}${reasoningEffort() ? `/${reasoningEffort()}` : ""}; tts:${o.ttsModel ?? TTS_MODEL}${motion ? `; ${MOTION_SKILL_REVISION}` : ""}`,
+      prompt_revision: `${SCRIPT_PROMPT_REVISION}; openai:${shortModel(o.openaiModel)}/${scriptEffort()}; tts:${o.ttsModel ?? TTS_MODEL}${motion ? `; ${MOTION_SKILL_REVISION}` : ""}`,
       media_ref, caption_ref, narration_ref, duration_seconds: out.duration,
       music_provenance: motion ? MOTION_MUSIC_PROVENANCE : null,
     };

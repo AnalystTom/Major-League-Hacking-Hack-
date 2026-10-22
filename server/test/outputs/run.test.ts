@@ -111,7 +111,7 @@ for (const status of ["ready", "failed"] as const) for (const success of [true, 
     const a = artifact(), outputs = new MemoryOutputStore(0);
     outputs.artifacts.push(a);
     const old: RenderedVideo = { judgment: { judge: "short-judge-v1", passed: true, captions_burned: true,
-      scores: { grounding: 4, clarity: 4, usefulness: 4, visuals: 4, subtitles: 4 }, reasons: [] },
+      scores: { grounding: 4, clarity: 4, usefulness: 4, visuals: 4, subtitles: 4, caption_overlap: 4 }, reasons: [] },
       script: { scenes: [] }, prompt_revision: "script-v2", media_ref: "r2:videos/old/short.mp4",
       caption_ref: "r2:captions/old/short.vtt", narration_ref: "r2:audio/old/narration.m4a", duration_seconds: 30 };
     await outputs.finishVideo((await outputs.claim("video",a))!,old);

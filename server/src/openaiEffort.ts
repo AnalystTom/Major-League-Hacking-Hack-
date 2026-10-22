@@ -12,4 +12,4 @@ export function reasoningEffort(value = process.env.OPENAI_REASONING_EFFORT): Re
 }
 
 /** The request field, only when an effort is configured. */
-export const effortField = () => { const e = reasoningEffort(); return e ? { reasoning_effort: e } : {}; };
+export const effortField = (effort?: ReasoningEffort) => { const e = effort ?? reasoningEffort(); return e ? { reasoning_effort: e } : {}; };

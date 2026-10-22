@@ -5,6 +5,7 @@ import { existsSync } from "node:fs";
 import { copyFile, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { wrap, type Slot, type Cue } from "./timeline.js";
+import { CAPTION_BAND } from "./layout.js";
 
 const FONT_CANDIDATES = [
   "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
@@ -121,19 +122,21 @@ export async function composeShort(c: ComposeInput): Promise<{ mp4: string; narr
   return { mp4, narration, duration: Math.round(p.duration * 100) / 100 };
 }
 
-/** Burn measured narration cues into a 10%-inset, high-contrast safe area of the vertical frame. */
+/** Burn measured narration in its exclusive lower band, separated from the scene's key visuals. */
 export async function burnSubtitles(dir: string, mp4: string, cues: Cue[]): Promise<string> {
   if (!cues.length) throw new Error("No narration captions to burn");
   const font = await fontOption(dir);
+  const band = CAPTION_BAND;
   const filters = [];
   for (const [i, cue] of cues.entries()) {
     const file = join(dir, `caption-${i}.txt`);
     // Break unusually long source words too: no caption can run outside the frame.
     const text = cue.text.replace(/(\S{16})(?=\S)/gu, "$1 ");
     await writeFile(file, wrap(text, 16));
-    filters.push(`drawtext=${font}:textfile='${file}':expansion=none:fontsize=52:fontcolor=white:line_spacing=10:` +
-      `borderw=3:bordercolor=black:box=1:boxcolor=black@0.8:boxborderw=16:x=(w-text_w)/2:y=1040-text_h/2:` +
-      `enable='gte(t,${cue.start.toFixed(3)})*lt(t,${cue.end.toFixed(3)})'`);
+    const enabled = `gte(t,${cue.start.toFixed(3)})*lt(t,${cue.end.toFixed(3)})`;
+    filters.push(`drawbox=x=${band.left}:y=${band.top}:w=${band.right-band.left}:h=${band.bottom-band.top}:color=black@0.92:t=fill:enable='${enabled}'`,
+      `drawtext=${font}:textfile='${file}':expansion=none:fontsize=52:fontcolor=white:line_spacing=10:` +
+      `borderw=2:bordercolor=black:x=(w-text_w)/2:y=${(band.top+band.bottom)/2}-text_h/2:enable='${enabled}'`);
   }
   const output = join(dir, "subtitled.mp4");
   await run("ffmpeg", ["-y", "-v", "error", "-i", mp4, "-vf", filters.join(","), "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart", output]);

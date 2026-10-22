@@ -10,6 +10,16 @@
 <title>Resurface short</title>
 <meta name="description" content="A Resurface short: one saved source, the lesson in it, and the skill it became.">
 <meta name="theme-color" content="#0E0D0B">
+<style>
+/* The portrait film must fit tall tablets as well as narrow phones. Keep the engine's player controls visible. */
+@media (orientation:portrait){
+  .app.app{grid-template-rows:minmax(0,1fr) auto;align-content:stretch;gap:0}
+  .stage.stage{aspect-ratio:auto;height:100%;min-height:0}
+}
+@media (pointer:coarse){
+  .scrub.scrub{top:clamp(0px,calc(var(--bar-y) - max(2.4%,16px)),calc(100% - 32px))}
+}
+</style>
 <!-- @@/head -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -353,7 +363,7 @@ const headTiming = (text, t0, span = 1.4) => { const n = Math.max(1, text.split(
 // mode 'land' springs each word up; 'slam' hits it in from the right with a skew and motion blur, as in the reel.
 function headline(text, x, y, lt, t0, th, width = W - 2 * x, z = 132, span = 1.4, o = {}){
   const { mode = 'land', ul = true } = o;
-  const { lines, z: size } = wrapLines(text, FD, 800, z, width, 5), lh = size * 1.02;
+  const { lines, z: size } = wrapLines(text, FD, 800, z, width, 3), lh = size * 1.02;
   const words = lines.flatMap((l, li) => l.split(' ').map((w, wi, arr) => ({ w, li, pre: arr.slice(0, wi).join(' ') + (wi ? ' ' : '') })));
   const { step, tEnd } = headTiming(text, t0, span);
   words.forEach((wd, k) => { const t1 = t0 + k * step; if (lt < t1) return;
@@ -432,7 +442,7 @@ const MOVE = {
   },
   // the headline rolls letter by letter into the swap
   roll: (s, th, lt, t0, d) => {
-    const a = s.text, b = s.swap, y = 820; let z = 230;
+    const a = s.text, b = s.swap, y = 700; let z = 230;
     while ((mw(a, FD, 800, z) > HW || mw(b, FD, 800, z) > HW) && z > 90) z *= .94;
     const tOut = Math.max(t0 + .9, Math.min(d * .35, t0 + 1.5)), tIn = tOut + .12;
     ctx.save(); ctx.beginPath(); ctx.rect(0, y - z * 1.0, W, z * 1.3); ctx.clip();
@@ -450,7 +460,7 @@ const MOVE = {
   count: (s, th, lt, t0) => {
     // a signed number can't count up from zero, so it slams like any headline (validateScript already avoids this)
     const m = s.text.match(NUM); if (!m || /([-−–+]\s*[$€£]?|[$€£]\s+)\s*$/.test(s.text.slice(0, m.index))) return MOVE.slam(s, th, lt, t0);
-    const rest = s.text.replace(m[0], ' ').replace(/\s+/g, ' ').trim(), y = 760;
+    const rest = s.text.replace(m[0], ' ').replace(/\s+/g, ' ').trim(), y = 650;
     const shown = `${m[1]}${countText(m[2], inv(t0 + .05, t0 + 1.15, lt))}${m[3]}`, full = `${m[1]}${m[2]}${m[3]}`;
     let z = 330; while (mw(full, FD, 800, z) > HW && z > 120) z *= .94;
     rise(shown, HX, y, lt, t0, { f: FD, w: 800, z, c: th.ink }, .35, 60);
@@ -474,8 +484,10 @@ function lesson(s, th, lt, t0, d){
   const mv = MOVE[s.move] ? s.move : 'slam', at = moveTimes({ ...s, move: mv }, t0, d);
   if (mv === 'stamp') shake(lt, at.hit);
   const h = MOVE[mv](s, th, lt, t0, d);
-  const end = s.sub ? aside(s.sub, HX, h.bottom + 90, lt, h.tEnd + .25, th) : h.bottom;
-  if (mv === 'stamp' && s.swap) stampBadge(s.swap.toUpperCase(), W - HX - 10, Math.min(1500, end + 170), lt, at.hit - .18, th);
+  const end = s.sub ? aside(s.sub, HX, h.bottom + 90, lt, Math.max(h.tEnd + .25, Math.min(2.2, d * .35)), th) : h.bottom;
+  if (mv === 'stamp' && s.swap) stampBadge(s.swap.toUpperCase(), W - HX - 10, Math.min(1190, end + 170), lt, at.hit - .18, th);
+  // A paced progress reveal keeps longer spoken scenes alive after headline and aside land.
+  if (d > 4 && lt > 2.4){ ctx.fillStyle = th.acc; ctx.fillRect(HX, DATA.layout.content_bottom - 30, HW * inv(2.4, d - .2, lt), 8); }
 }
 const moveCues = (s, t0, d) => {
   const mv = s && s.move, at = s ? moveTimes(s, t0, d) : { hit: t0 };
@@ -497,35 +509,26 @@ function tile(cx, cy, s, kind, a){
   ctx.restore();
 }
 
-const openCut = d => Math.min(2.6, d * .45);
 S.open = {
   draw(lt, d, t){
-    const th = THEMES.night, src = DATA.source, cut = openCut(d);
-    // 1) the saved source: tile, platform, title, author
-    const out = eIO(inv(cut - .35, cut, lt)), up = out * 160;
-    if (out < 1){
-      const tp = spring(lt - .05, ...SPRING.playful);
-      tile(W / 2, 560 - up, 240 * tp, src.kind, 1 - out);
-      T(src.platform.toUpperCase(), W / 2, 740 - up, { f: FM, w: 600, z: 22, c: th.dim, ls: 4, al: 'center', a: inv(.3, .5, lt) * (1 - out) });
-      const { lines, z } = wrapLines(src.title, FK, 700, 54, 860, 3);
-      lines.forEach((l, i) => rise(l, W / 2, 850 + i * 66 - up, lt, .45 + i * .08, { f: FK, w: 700, z, c: th.ink, al: 'center', a: 1 - out }));
-      rise(src.byline, W / 2, 850 + lines.length * 66 + 30 - up, lt, .8, { f: FS, w: 'italic 400', z: 48, c: th.acc, al: 'center', a: 1 - out });
-      kicker('SAVED FOR LATER', W / 2, 400 - up, lt, .1, th.dim, 'center');
-    }
-    // 2) what it says, landing with the scene's move
-    if (lt > cut - .1){
-      label(DATA.category.toUpperCase(), 90, 330, lt, cut, th.acc);
-      lesson(dataOf(t), th, lt, cut + .05, d);
-    }
+    const th = THEMES.night, src = DATA.source;
+    // Source context supports the hook instead of delaying it behind a title-card preamble.
+    tile(130, 240, 80, src.kind, inv(0, .25, lt));
+    label(src.platform.toUpperCase(), 210, 215, lt, .05, th.dim);
+    const { lines, z } = wrapLines(src.title, FK, 700, 28, W - 300, 2);
+    lines.forEach((l, i) => rise(l, 210, 260 + i * z * 1.15, lt, .1, { f: FK, w: 700, z, c: th.dim }));
+    label(DATA.category.toUpperCase(), 90, 330, lt, .05, th.acc);
+    lesson(dataOf(t), th, lt, .12, d);
   },
-  cues: d => [[0, 'whoosh', .3, .12], [.05, 'blip', 880, .05], [openCut(d), 'whoosh', .25, .1], ...moveCues(DATA.scenes[0], openCut(d) + .05, d)]
+  // The engine's groove starts with scene 2; a quiet chord sustains the opening beneath its narration.
+  cues: d => [[0, 'pad', [220, 261.63, 329.63], d, .1], [0, 'whoosh', .3, .12], [.05, 'blip', 880, .05], ...moveCues(DATA.scenes[0], .12, d)]
 };
 
 S.say = {
   draw(lt, d, t){
     const sc = sceneAt(t), th = themeOf(sc), s = dataOf(t);
-    // a big ghost step number sits behind the copy, low, so captions over the middle stay clear
-    T(String(sc.i).padStart(2, '0'), W - 90, 1560, { f: FD, w: 800, z: 520, c: rgba(th.ink, .07), al: 'right', a: inv(.1, .5, lt) });
+    // Decorative step number also stays above the reserved caption band.
+    T(String(sc.i).padStart(2, '0'), W - 90, 1300, { f: FD, w: 800, z: 320, c: rgba(th.ink, .07), al: 'right', a: inv(.1, .5, lt) });
     label(`LESSON ${String(sc.i).padStart(2, '0')}${s.label ? ` · ${s.label.toUpperCase()}` : ''}`, 90, 330, lt, .15, th.acc === th.ink ? th.ink : th.acc);
     lesson(s, th, lt, .25, d);
   },

@@ -57,17 +57,37 @@ Node, in `server/src`. `POST /api/ingest/process` takes `{ "unit_ids": [...] }` 
 4. **Short** (`outputs/render/`): OpenAI writes the script; Gemini TTS speaks each scene, and measured speech
    determines the timeline and WebVTT cues. The default [motion renderer](../server/assets/motion-graphic-skill/README.md)
    uses headless Chromium; `RENDER_STYLE=basic` selects ffmpeg title cards without music. Both produce
-   1080×1920 H.264 + AAC with `+faststart` and burn high-contrast narration captions into the central safe area
-   before review. The player fits the whole frame and omits the duplicate WebVTT overlay for burned subtitles.
-5. **Checks before upload and `ready`.** The renderer probes dimensions, codecs and duration. An independent
-   one-pass model judge checks the artifact, timed narration, a sampled subtitled frame from each scene and
+   1080×1920 H.264 + AAC with `+faststart` and burn high-contrast narration captions into an exclusive lower safe band
+   (x=108..972, y=1420..1720, with a black background); key scene content stays above y=1340. Captions follow each
+   measured narration clip using timed phrase cues, rather than a second word-alignment model.
+   The player fits the whole frame and omits the duplicate WebVTT overlay for burned subtitles.
+5. **Checks before upload and `ready`.** Every motion render first runs the upstream skill’s unmodified
+   `scripts/check.js` with audio, determinism, clipping, seven device layouts and touch checks enabled. A failure
+   stops recording and publication. The recorder then checks the encoded file; the renderer probes dimensions,
+   codecs and duration. An independent one-pass model judge checks the artifact, timed narration, two
+   high-detail subtitled frames from each scene and
    an additional settled end-card frame. The ready skill's actual name and full description are supplied as
    evidence for the end card only; lesson claims and repository paths still need artifact evidence.
-   Grounding, clarity, usefulness, visuals and subtitles must each score at least 4/5 with no recorded defects
+   Grounding, clarity, usefulness, visuals, subtitles and caption overlap must each score at least 4/5 with no recorded defects
    ([judge implementation](../server/src/outputs/render/judge.ts)). A rejection prevents upload and exhausts
    automatic attempts for that generator version; the internal receipt is retained in the stored failure, while progress shows a bounded
    plain-English quality reason. Successful uploads are size-checked; `video_results.review_feedback` retains
    the passing receipt, and `review_status` becomes `approved` before the result is served.
+
+**Motion skill and model settings.** The complete [upstream skill at `21e875e`](https://github.com/JakeB-5/motion-graphic-skill/tree/21e875e/skills/motion-graphic)
+ships under `server/assets/motion-graphic-skill`. Its SKILL, story, styles and scene patterns are included verbatim
+in the script request; its critique rubric is included in the judge request. The existing portrait renderer uses
+its engine, assembler and recorder. The automated source-grounded JSON contract and single-pass publication gate
+replace the reference’s interactive storyboard approval and multi-round reviewer workflow. The script asks for
+15–40 seconds, a hook readable in 2 seconds, one idea per scene, a meaningful reveal every 2–4 seconds and a concrete
+payoff. Length remains driven by measured narration; the judge withholds weak hooks, dead stretches and overlaps.
+
+Deployment sets `OPENAI_MODEL=gpt-6.1-sol`. Shorts also default to that model when the variable is absent;
+`SCRIPT_REASONING_EFFORT` defaults to `medium`, `JUDGE_REASONING_EFFORT` to `high`. Both are environment-overridable.
+The recorded prompt revision names the actual script model and effort. A rejected model request fails explicitly
+before narration or upload. Model availability with the production app key is the **first check after the captain
+merges**, followed by a complete generated-and-approved subtitled short, source-grounded end card, exclusive
+caption band, and legacy ready/rejected rerender checks. Provider availability has not been tested locally.
 
 **Legacy outputs.** The sweep considers ready, prompt-backed artifacts with an importer. A ready or failed
 video without the current `generator_revision` in its review feedback gets exactly one generation attempt
