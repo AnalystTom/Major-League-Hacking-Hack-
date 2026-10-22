@@ -1,5 +1,5 @@
-// Reads ready artifacts and writes the processor's outputs: video_results (workflow 2), skill_results and
-// action_items (workflow 3). Needs db/migrations/005_outputs.sql for the one-result-per-revision keys.
+// Writes video_results (workflow 2) and skill_results (workflow 3), preserving historical action_items.
+// Needs db/migrations/005_outputs.sql for the one-result-per-revision keys.
 
 import { assertJudged } from "./render/judge.js";
 import { randomUUID } from "node:crypto";
@@ -17,7 +17,7 @@ export const MAX_OUTPUT_ATTEMPTS = 3;
 /** A failed result waits this long times its attempts so far before it's tried again (5, then 10 minutes). */
 export const RETRY_AFTER_MINUTES = 5;
 
-/** A result row a worker may take: never started, abandoned by a crashed worker, or failed with attempts left. */
+/** Eligible rows include stale ready outputs; legacy skill regeneration gets one attempt, without crash reclaim. */
 const CLAIMABLE = (r: string, kind: Kind) => `(${r}.status = 'pending'
   OR (${r}.status='ready' AND coalesce(json_extract(iif(json_valid(${r}.review_feedback),${r}.review_feedback,'{}'),'$.${kind === 'video' ? 'judge' : 'prompt_revision'}'),'') <> '${kind === 'video' ? 'short-judge-v1' : SKILL_PROMPT_REVISION}')
   OR (${r}.status = 'running' ${kind === 'skill' ? `AND coalesce(json_extract(iif(json_valid(${r}.review_feedback),${r}.review_feedback,'{}'),'$.regenerating'),0)=0` : ''}

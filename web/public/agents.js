@@ -17,7 +17,7 @@ export const FRONTMATTER = /^---\n([\s\S]*?)\n---\n/;
 // A failed skill with attempts left is still being written: the processor's sweep retries it.
 export const skillWriting = (s) => s.status === "pending" || s.status === "running" || (s.status === "regenerating" && !s.error) || s.retrying === true;
 
-/** The id of a skill's card in the Skills sheet; a short's "View skill & tasks" link points at it. */
+/** The id of a skill's card in the Skills sheet; a short's "View skill" link points at it. */
 export const skillAnchor = (artifactId, version) => `skill-${artifactId}-${version}`;
 
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
