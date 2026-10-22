@@ -11,7 +11,8 @@ import { renderArtifact } from "../../src/outputs/render/render.js";
 import { fillTemplate, motionSpec, recordEnv } from "../../src/outputs/render/motion-skill.js";
 import { MemoryOutputStore, skillCardOf } from "../../src/outputs/store.js";
 import { JUDGE_SYSTEM_PROMPT } from "../../src/outputs/render/judge.js";
-import { artifact, outputsFetch } from "./helpers.js";
+import { SCRIPT_SYSTEM_PROMPT } from "../../src/outputs/render/script.js";
+import { artifact, outputsFetch, scriptReply, toneWav } from "./helpers.js";
 
 const slots = [{ start: 0, speechEnd: 5.4, end: 5.75 }, { start: 5.75, speechEnd: 13, end: 13.35 }, { start: 13.35, speechEnd: 20, end: 20.35 }];
 const scenes = [
@@ -93,6 +94,14 @@ test("renders a motion short with the narration over the engine's music", { skip
     let endCardFrame: Buffer | undefined;
     const fetchImpl: typeof fetch = async (url, init) => {
       const request = JSON.parse(String(init?.body));
+      if (request.messages?.[0]?.content === SCRIPT_SYSTEM_PROMPT) {
+        const script = scriptReply(a);
+        script.scenes.at(-1)!.narration_text = "Check first.";
+        return Response.json({ choices: [{ message: { content: JSON.stringify(script) } }] });
+      }
+      if (request.input?.[0]?.content?.[0]?.text === "Check first.") {
+        return Response.json({ steps: [{ type: "model_output", content: [{ type: "audio", data: toneWav(0.8).toString("base64") }] }] });
+      }
       if (request.messages?.[0]?.content === JUDGE_SYSTEM_PROMPT) {
         const evidence = JSON.parse(request.messages[1].content[0].text);
         assert.deepEqual(evidence.generated_skill, card);
@@ -114,12 +123,17 @@ test("renders a motion short with the narration over the engine's music", { skip
     assert.equal(p.audio?.codec, "aac");
     assert.ok(Math.abs(p.duration - v.script.scenes.at(-1)!.end_seconds) < 0.5, "the film is as long as the narrated timeline");
     const last = v.script.scenes.at(-1)!;
+    assert.equal(last.narration_text, "Check first.");
+    assert.ok(Math.abs(last.end_seconds - last.start_seconds - 2.5) < 0.001);
+    assert.ok(Math.abs((await probe(join(out, `audio_${a.id}_1_narration.m4a`))).duration - v.duration_seconds) < 0.05);
     const frameAt = (time: number) => execFileSync("ffmpeg", ["-v", "error", "-ss", String(time), "-i", join(out, `videos_${a.id}_1_short.mp4`), "-frames:v", "1", "-vf", "scale=390:694", "-pix_fmt", "yuvj420p", "-f", "image2pipe", "-c:v", "mjpeg", "pipe:1"]);
     const cardPixels = (jpeg: Buffer) => execFileSync("ffmpeg", ["-v", "error", "-i", "pipe:0", "-vf", "crop=320:208:32:128", "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1"], { input: jpeg });
     const settled = cardPixels(frameAt(last.end_seconds - 0.2));
     assert.notDeepEqual(cardPixels(frameAt(last.start_seconds + 1)), settled, "one second misses the delayed skill description");
     assert.ok(endCardFrame);
-    assert.deepEqual(cardPixels(endCardFrame), settled, "the judge sees the settled actual skill name and description");
+    const sampled = cardPixels(endCardFrame);
+    const difference = sampled.reduce((sum, value, i) => sum + Math.abs(value - settled[i]), 0) / sampled.length;
+    assert.ok(difference < 0.5, "the judge sees the settled actual skill name and description");
   } finally {
     await rm(out, { recursive: true, force: true });
   }

@@ -77,6 +77,8 @@ export function groundsFor(scenes: SpecScene[]): string[] {
 /** The template's data: one entry per narrated scene, timed to its measured narration slot. */
 export function motionSpec(a: ReadyArtifact, scenes: SpecScene[], slots: Slot[], skill: SkillCard | null): MotionSpec {
   const last = scenes.length - 1, grounds = groundsFor(scenes);
+  const description = skill ? oneLine(skill.description).match(/^.{1,80}(?=\s|$)/u)?.[0] : undefined;
+  if (skill && !description) throw new Error("Skill description has no complete word within 80 characters");
   return {
     id: a.id.slice(0, 8),
     category: oneLine(a.category ?? a.name),
@@ -94,7 +96,7 @@ export function motionSpec(a: ReadyArtifact, scenes: SpecScene[], slots: Slot[],
         move, swap: move === "slam" || move === "count" ? "" : clip(oneLine(s.swap ?? ""), 24),
       };
     }),
-    skill: skill && { name: oneLine(skill.name), description: clip(oneLine(skill.description), 160) },
+    skill: skill && { name: oneLine(skill.name), description: description! },
   };
 }
 

@@ -41,4 +41,4 @@ Scene 1 is always night and the end card is always paper. `groundsFor` in `motio
 
 **Frame.** The HUD has corner marks, `RESURFACE`, the scene code, the timecode and the source tag. The italic serif aside carries the second voice.
 
-**Honesty.** The copy comes only from the artifact. The end card shows only a ready skill’s actual name and one-line description; otherwise it shows the next step. It never invents an installation path. The same skill metadata is supplied to the judge as evidence for the end card.
+**Honesty.** The copy comes only from the artifact. The end card shows only a ready skill’s actual name and description, cut at a word boundary to at most 80 characters; otherwise it shows the next step. The closing scene lasts at least 2.5 seconds without changing narration or caption timing. It never invents an installation path. The same skill metadata and a settled end-card frame are supplied to the judge as evidence.

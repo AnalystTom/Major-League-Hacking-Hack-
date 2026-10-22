@@ -3,17 +3,20 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { skillCardOf } from "../../src/outputs/store.js";
 import { motionSpec, type SkillCard } from "../../src/outputs/render/motion-skill.js";
 import { validateScript } from "../../src/outputs/render/script.js";
 import { judgeShort } from "../../src/outputs/render/judge.js";
+import { composeShort, probe } from "../../src/outputs/render/ffmpeg.js";
+import { timeline } from "../../src/outputs/render/timeline.js";
+import { toneWav } from "./helpers.js";
 import type { ReadyArtifact } from "../../src/outputs/types.js";
 
 const cases: { artifact: ReadyArtifact; skill: SkillCard }[] = JSON.parse(readFileSync(new URL("./fixtures/rejected-end-cards.json", import.meta.url), "utf8"));
-const slots = [0, 1, 2].map(start => ({ start, speechEnd: start + 0.8, end: start + 1 }));
+const slots = timeline([0.8, 0.8, 0.8]);
 const scriptFor = (a: ReadyArtifact) => validateScript({ scenes: slots.map((_, i) => ({
   narration_text: a.processed_text.split(/\s+/).slice(i * 15, (i + 1) * 15).join(" "),
   on_screen_text: a.name.split(/\s+/).slice(0, 5).join(" "), source_ids: a.source_ids,
@@ -28,13 +31,29 @@ for (const { artifact, skill } of cases) {
     const spec = motionSpec(artifact, scenes, slots, card);
     assert.deepEqual(Object.keys(spec.skill!), ["name", "description"]);
     assert.equal(spec.skill!.name, skill.name);
-    assert.ok(skill.description.startsWith(spec.skill!.description.replace(/…$/, "")));
+    assert.ok(spec.skill!.description.length > 0 && spec.skill!.description.length <= 80);
+    assert.ok(skill.description.startsWith(`${spec.skill!.description} `));
+    assert.doesNotMatch(spec.skill!.description, /…/);
+    assert.deepEqual(spec.scenes.map(scene => scene.d), [1.15, 1.15, 2.5]);
     assert.doesNotMatch(JSON.stringify(spec), /\.agents\/skills\/|SKILL\.md|SEND TO YOUR AGENT/);
     assert.throws(() => validateScript({ scenes: scenes.map((s, i) => ({ ...s, source_ids: i === scenes.length - 1 ? [] : s.source_ids })) }, artifact), /source_ids/);
   });
 }
 
 const hasFfmpeg = (() => { try { execFileSync("ffmpeg", ["-version"]); return true; } catch { return false; } })();
+
+test("the basic renderer pads closing audio to the extended scene end", { skip: !hasFfmpeg && "ffmpeg not installed" }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "resurface-closing-audio-"));
+  try {
+    const narration = [join(dir, "first.wav"), join(dir, "last.wav")];
+    for (const file of narration) await writeFile(file, toneWav(0.8));
+    const out = await composeShort({ dir, narration, onScreen: ["First scene", "Check first."], slots: timeline([0.8, 0.8]), category: null });
+    assert.ok(Math.abs(out.duration - 3.65) < 0.05);
+    assert.ok(Math.abs((await probe(out.narration)).duration - 3.65) < 0.05);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 test("both rejected cases supply skill evidence, narration samples and a late end-card sample", { skip: !hasFfmpeg && "ffmpeg not installed" }, async () => {
   const dir = await mkdtemp(join(tmpdir(), "resurface-judge-evidence-")), mp4 = join(dir, "frames.mp4");

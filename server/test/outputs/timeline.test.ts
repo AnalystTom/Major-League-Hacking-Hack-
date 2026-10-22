@@ -28,6 +28,22 @@ test("captions split each scene's narration and stay inside its speech", () => {
   assert.equal(cues.at(-1)!.text, "short");
 });
 
+test("a 1.15-second closing slot extends to 2.5 seconds without shifting speech or earlier scenes", () => {
+  const slots = timeline([0.5, 0.8, 0.8]);
+  assert.deepEqual(slots, [
+    { start: 0, speechEnd: 0.5, end: 0.85 },
+    { start: 0.85, speechEnd: 1.65, end: 2 },
+    { start: 2, speechEnd: 2.8, end: 4.5 },
+  ]);
+  assert.deepEqual(captionCues(["Opening", "Lesson", "Check first."], slots), [
+    { start: 0, end: 0.5, text: "Opening" },
+    { start: 0.85, end: 1.65, text: "Lesson" },
+    { start: 2, end: 2.8, text: "Check first." },
+  ]);
+  assert.deepEqual(timeline([0.8]), [{ start: 0, speechEnd: 0.8, end: 2.5 }]);
+  assert.deepEqual(timeline([0.5, 0.8, 3]).at(-1), { start: 2, speechEnd: 5, end: 5.35 });
+});
+
 test("WebVTT output has a header and well-formed cue times", () => {
   const vtt = toVtt([{ start: 0, end: 1.5, text: "hello" }, { start: 61.25, end: 3725.001, text: "a --> b" }]);
   assert.match(vtt, /^WEBVTT\n\n1\n00:00:00\.000 --> 00:00:01\.500\nhello\n/);

@@ -79,7 +79,6 @@ export interface ComposeInput {
 export async function composeShort(c: ComposeInput): Promise<{ mp4: string; narration: string; duration: number }> {
   const total = c.slots.at(-1)!.end;
   const font = await fontOption(c.dir);
-  const gap = (c.slots[0].end - c.slots[0].speechEnd).toFixed(3);
 
   const header = join(c.dir, "header.txt");
   await writeFile(header, headerText(c.category));
@@ -89,7 +88,7 @@ export async function composeShort(c: ComposeInput): Promise<{ mp4: string; narr
     return p;
   }));
 
-  const audio = c.narration.map((_, i) => `[${i + 1}:a]aresample=48000,apad=pad_dur=${gap}[a${i}]`).join(";");
+  const audio = c.narration.map((_, i) => `[${i + 1}:a]aresample=48000,apad=whole_dur=${(c.slots[i].end - c.slots[i].start).toFixed(3)}[a${i}]`).join(";");
   const joined = `${c.narration.map((_, i) => `[a${i}]`).join("")}concat=n=${c.narration.length}:v=0:a=1,asplit=2[aout][anar]`;
   const scenes = texts.map((p, i) => {
     const s = c.slots[i].start.toFixed(3), e = c.slots[i].end.toFixed(3);
