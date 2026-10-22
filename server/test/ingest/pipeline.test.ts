@@ -120,6 +120,23 @@ const sequence = (...replies: (object | Response)[]) => {
   return { f, bodies };
 };
 
+test("digest requests keep a fixed sampling seed and preserve configured reasoning", async () => {
+  const previous = process.env.OPENAI_REASONING_EFFORT;
+  process.env.OPENAI_REASONING_EFFORT = "high";
+  try {
+    const { f, bodies } = sequence({ artifacts: [], exclusions: [] });
+    await digest(f);
+    await digest(f);
+    assert.equal(bodies[0].seed, 0);
+    assert.equal(bodies[0].reasoning_effort, "high");
+    assert.equal(bodies[0].temperature, undefined);
+    assert.deepEqual(bodies[0], bodies[1], "the same source and settings emit the same sampling request");
+  } finally {
+    if (previous === undefined) delete process.env.OPENAI_REASONING_EFFORT;
+    else process.env.OPENAI_REASONING_EFFORT = previous;
+  }
+});
+
 test("the model sees short refs, not UUIDs, and refs resolve to real unit ids", async () => {
   const units = [ready(1), ready(2)];
   const { f, bodies } = sequence({ artifacts: [{ ...artifactFor("u2"), source_ids: ["u1", "u2"] }], exclusions: [] });
