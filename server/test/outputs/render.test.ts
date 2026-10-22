@@ -34,6 +34,8 @@ test("renders a 1080x1920 H.264/AAC short with captions timed to the narration",
     const v = await renderArtifact(a, { openaiKey: "o", geminiKey: "g", media, fetchImpl: impl });
 
     assert.equal(calls.script, 1);
+    assert.equal(calls.judge, 1);
+    assert.equal(v.judgment.passed, true);
     assert.equal(calls.tts, 4, "one narration clip per scene");
     assert.deepEqual(media.keys, [`videos/${a.id}/1/short.mp4`, `captions/${a.id}/1/short.vtt`, `audio/${a.id}/1/narration.m4a`]);
     assert.equal(v.media_ref, `r2:videos/${a.id}/1/short.mp4`);
@@ -50,7 +52,7 @@ test("renders a 1080x1920 H.264/AAC short with captions timed to the narration",
 
     const vtt = await readFile(join(out, `captions_${a.id}_1_short.vtt`), "utf8");
     assert.match(vtt, /^WEBVTT/);
-    assert.match(vtt, /Your coding agent says it's done/);
+    assert.match(vtt, /Your coding agent says it's/);
   } finally {
     await rm(out, { recursive: true, force: true });
   }
@@ -79,4 +81,13 @@ test("a RENDER_FONT path with ':' or quotes still renders", { skip: !hasFfmpeg &
     else process.env.RENDER_FONT = before;
     await rm(out, { recursive: true, force: true });
   }
+});
+
+test("a rejected or malformed quality judgment uploads nothing", { skip: !hasFfmpeg && "ffmpeg not installed", timeout: 120_000 }, async () => {
+  const a = artifact(), media = new DirMedia(tmpdir());
+  const result = { scores: { grounding: 2, clarity: 4, usefulness: 4, visuals: 4, subtitles: 4 }, reasons: ["The narration invents a result."] };
+  const { impl, calls } = outputsFetch(a, { judge: result });
+  await assert.rejects(renderArtifact(a, { openaiKey: "o", geminiKey: "g", media, fetchImpl: impl }), /Quality judge rejected:.*invents a result/);
+  assert.equal(calls.judge, 1, "one independent judging pass");
+  assert.deepEqual(media.keys, [], "rejected clips never reach publication storage");
 });

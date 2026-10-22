@@ -135,7 +135,10 @@ export class MemoryStore implements Store {
     return { src, sources: src.map((u) => ({ url: u.sourceUrl, title: u.title, content_type: u.contentType ?? "youtube_video", retrieved_at: u.extractedAt })) };
   }
   async saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null) {
+    artifacts = artifacts.filter((a, i) => artifacts.findIndex((b) => JSON.stringify([...b.source_ids].sort()) === JSON.stringify([...a.source_ids].sort())) === i);
     const stored = artifacts.map((a): StoredArtifact => {
+      const existing = this.artifacts.find((b) => b.ingestion_status === "ready" && JSON.stringify([...b.source_ids].sort()) === JSON.stringify([...a.source_ids].sort()));
+      if (existing) return existing;
       const { src, sources } = this.sourcesFor(a.source_ids);
       return {
         ...a, id: randomUUID(), version: 1, source_url: src[0]?.sourceUrl ?? "", sources,
@@ -143,9 +146,9 @@ export class MemoryStore implements Store {
         project_context_id: null, project_context_version: null, error: null,
       };
     });
-    this.artifacts.push(...stored);
+    this.artifacts.push(...stored.filter((a) => !this.artifacts.some((b) => b.id === a.id)));
     for (const e of exclusions) this.exclusions.push({ ...e, promptId });
-    return stored;
+    return [...new Map(stored.map((a) => [a.id, a])).values()];
   }
   async saveFailedArtifacts(unitIds: string[], error: string, promptId: string | null) {
     for (const id of unitIds) {
@@ -276,16 +279,21 @@ export class D1Store implements Store {
   }
   async saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null) {
     const units = await this.getUnits([...new Set(artifacts.flatMap((a) => a.source_ids))]);
-    const statements: Statement[] = artifacts.map((a) => {
+    artifacts = artifacts.filter((a, i) => artifacts.findIndex((b) => JSON.stringify([...b.source_ids].sort()) === JSON.stringify([...a.source_ids].sort())) === i);
+    const statements: Statement[] = artifacts.flatMap((a) => {
       const src = a.source_ids.map((id) => units.find((u) => u.id===id)).filter((u): u is IngestedUnit => !!u);
       const sources = src.map((u) => ({ url: u.sourceUrl,title: u.title,content_type: u.contentType,retrieved_at: u.extractedAt }));
-      return { sql: `INSERT INTO artifacts(name,source_url,source_ids,sources,processed_text,category,selection_reason,evidence,
-        digestion_prompt_id,ingestion_status,processed_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,'ready',${NOW}) RETURNING *`,
-        params: [a.name,src[0]?.sourceUrl ?? '',JSON.stringify(a.source_ids),JSON.stringify(sources),a.processed_text,a.category,a.selection_reason,JSON.stringify(a.evidence),promptId] };
+      const sameSources = `ingestion_status='ready' AND json_array_length(source_ids)=json_array_length(?3)
+        AND NOT EXISTS(SELECT 1 FROM json_each(source_ids) WHERE value NOT IN (SELECT value FROM json_each(?3)))`;
+      return [{ sql: `INSERT INTO artifacts(name,source_url,source_ids,sources,processed_text,category,selection_reason,evidence,
+        digestion_prompt_id,ingestion_status,processed_at) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,'ready',${NOW}
+        WHERE NOT EXISTS(SELECT 1 FROM artifacts WHERE ${sameSources})`,
+        params: [a.name,src[0]?.sourceUrl ?? '',JSON.stringify(a.source_ids),JSON.stringify(sources),a.processed_text,a.category,a.selection_reason,JSON.stringify(a.evidence),promptId] },
+        { sql: `SELECT * FROM artifacts WHERE ${sameSources} ORDER BY created_at DESC,id LIMIT 1`, params: [null,null,JSON.stringify(a.source_ids)] }];
     });
     if (promptId) for (const e of exclusions) statements.push({ sql: `INSERT INTO artifact_exclusions(unit_id,digestion_prompt_id,reason) VALUES(?1,?2,?3)`, params: [e.unit_id,promptId,e.reason] });
     const results = await this.db.batch(statements);
-    return artifacts.map((a,i) => ({ ...a,...results[i].rows[0] })) as StoredArtifact[];
+    return artifacts.map((a,i) => ({ ...a,...results[i*2+1].rows[0] })) as StoredArtifact[];
   }
   async saveFailedArtifacts(ids: string[], error: string, promptId: string | null) {
     const statements: Statement[] = (await this.getUnits(ids)).map((u) => ({

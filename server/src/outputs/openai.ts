@@ -7,11 +7,12 @@ import type { OpenAIOptions } from "./types.js";
 /** model is OPENAI_MODEL, else the digest default. The output cap is the digest's, counting hidden reasoning. */
 export interface ChatJsonOptions extends OpenAIOptions {
   /** Which output this call is for, recorded with its token usage. */
-  step: Extract<Usage["step"], "skill" | "script" | "handoff">;
+  step: Extract<Usage["step"], "skill" | "script" | "handoff" | "judge">;
   /** The artifact it's for. */
   ref?: string;
   system: string;
   user: string;
+  images?: string[];
 }
 
 /** One JSON-mode chat completion. Throws with the actual HTTP or parse failure. */
@@ -26,7 +27,7 @@ export async function chatJson(o: ChatJsonOptions): Promise<unknown> {
       max_completion_tokens: cap,
       ...effortField(),
       response_format: { type: "json_object" },
-      messages: [{ role: "system", content: o.system }, { role: "user", content: o.user }],
+      messages: [{ role: "system", content: o.system }, { role: "user", content: o.images?.length ? [{ type: "text", text: o.user }, ...o.images.map((url) => ({ type: "image_url", image_url: { url, detail: "low" } }))] : o.user }],
     }),
     // xhigh reasoning over a five-skill brief has taken over three minutes; a stuck call still ends inside STALE_BRIEF_MINUTES.
     signal: AbortSignal.timeout(600_000),

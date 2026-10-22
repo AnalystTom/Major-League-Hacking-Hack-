@@ -18,9 +18,9 @@ Every route needs `Authorization: Bearer $INGEST_TOKEN`. The web Worker sends it
 | `NIMBLE_API_KEY` | [Nimble](https://docs.nimbleway.com) key, used to read public Substack posts (`ingested_units.content_type = 'substack_post'`). Without it Substack units fail with "NIMBLE_API_KEY is not configured". |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | Extraction. Model defaults to `gemini-3.5-flash-lite`. |
 | `WINDOW_SECONDS` | Seconds extracted from each unit's start time (30-3600, default 3600, i.e. 1 hour). |
-| `OPENAI_API_KEY`, `OPENAI_MODEL` | Digests, skills/tasks, scripts and handoffs use the OpenAI API at `https://api.openai.com/v1`. Without a key units are extracted but not digested. The default model is defined in [`digest/run.ts`](digest/run.ts) as `DEFAULT_DIGEST_MODEL`. |
+| `OPENAI_API_KEY`, `OPENAI_MODEL` | Digests, skills, scripts and the short-quality judge use the OpenAI API at `https://api.openai.com/v1`. Without a key units are extracted but not digested. The default model is defined in [`digest/run.ts`](digest/run.ts) as `DEFAULT_DIGEST_MODEL`. |
 | `OPENAI_MAX_OUTPUT_TOKENS` | Digest and generated-output cap including reasoning tokens; its fallback is `DEFAULT_MAX_OUTPUT_TOKENS` in [`digest/run.ts`](digest/run.ts). Raise it if digests report hitting the cap. |
-| `OPENAI_REASONING_EFFORT` | Optional reasoning effort for digests, skills, scripts and handoffs. Unset uses the model's default; accepted values are defined in [`openaiEffort.ts`](../openaiEffort.ts). |
+| `OPENAI_REASONING_EFFORT` | Optional reasoning effort for digests, skills, scripts and the short-quality judge. Unset uses the model's default; accepted values are defined in [`openaiEffort.ts`](../openaiEffort.ts). |
 | `DIGESTION_REQUEST` | Categorization request stored with each Digestion Prompt revision. |
 | `D1_URL`, `D1_TOKEN` | Authenticated processor Worker D1 bridge. Enables the sweep; without both, ephemeral CLI runs use memory. |
 | `SWEEP_INTERVAL_MS` | Pending-unit sweep interval (default 60000). |

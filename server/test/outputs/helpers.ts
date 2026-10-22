@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { pcmToWav } from "../../src/outputs/render/tts.js";
+import { JUDGE_SYSTEM_PROMPT } from "../../src/outputs/render/judge.js";
 import { SCRIPT_SYSTEM_PROMPT } from "../../src/outputs/render/script.js";
 import type { ReadyArtifact } from "../../src/outputs/types.js";
 import type { Kind, MemoryOutputStore } from "../../src/outputs/store.js";
@@ -44,13 +45,17 @@ export const scriptReply = (a: ReadyArtifact) => ({
 });
 
 /** Routes OpenAI (skill or script, told apart by the system prompt) and Gemini TTS to canned replies. */
-export function outputsFetch(a: ReadyArtifact, opts: { skill?: unknown; ttsStatus?: number; openaiStatus?: number } = {}) {
-  const calls = { skill: 0, script: 0, tts: 0 };
+export function outputsFetch(a: ReadyArtifact, opts: { skill?: unknown; ttsStatus?: number; openaiStatus?: number; judge?: unknown } = {}) {
+  const calls = { skill: 0, script: 0, tts: 0, judge: 0 };
   const impl = (async (url: string, init?: { body?: string }) => {
     const u = String(url);
     if (u.includes("openai")) {
       if (opts.openaiStatus) return new Response("boom", { status: opts.openaiStatus });
       const system: string = JSON.parse(init!.body!).messages[0].content;
+      if (system === JUDGE_SYSTEM_PROMPT) {
+        calls.judge++;
+        return Response.json({ choices: [{ message: { content: JSON.stringify(opts.judge ?? {scores:{grounding:4,clarity:4,usefulness:4,visuals:4,subtitles:4},reasons:[]}) } }] });
+      }
       const isScript = system === SCRIPT_SYSTEM_PROMPT;
       calls[isScript ? "script" : "skill"]++;
       const content = isScript ? scriptReply(a) : (opts.skill ?? skillReply(a));

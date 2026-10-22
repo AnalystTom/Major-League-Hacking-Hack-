@@ -17,10 +17,10 @@ Built at AI Engineer NYC 2026.
 
 ## Features
 
-- **Shorts**: each save becomes a short of the part worth keeping; see the [content selection rules](docs/project-actions-spec.md#filtering-and-digestion-prompt).
+- **Shorts**: source-grounded clips with visible narration subtitles, checked by a model judge before upload. See the [processor flow](docs/proceed-and-media.md#the-processor).
 - **Keep**: mark items worth keeping. Keeps become skills, linked to their source (coming at launch).
-- **Skills**: every short becomes a skill your coding agent can install.
-- **Agent tasks**: turn what you keep into tasks for your coding agent (coming at launch).
+- **Skills**: concise source-grounded SKILL.md files for your coding agent; see the [skill contract](docs/project-actions-spec.md#workflow-3-processed-skill-and-codex-use).
+- **Private reels**: sign in for your personal reel, or choose **View available reels & Skills** to browse the public catalogue at `/available`.
 - **Source checking**: before installing, Resurface pulls the linked repo, release notes, and open issues so outdated tips (such as a deprecated flag) don't ship.
 - **Reviewable installs**: skills, rules, and `AGENTS.md` sections land in your repo as a reviewable diff, each linked back to its original post or video.
 
@@ -65,3 +65,6 @@ npm test --prefix server
 
 Getting started is free: create an account at the live site.
 For import reuse and refreshing older X reads, see the [import rules](docs/project-actions-spec.md#http-api).
+
+Task generation and agent-task handoffs are unavailable for now. Copy or download a skill from the Skills sheet.
+API access and deduplication follow the [HTTP contract](docs/project-actions-spec.md#http-api); legacy output refreshes follow the [processor policy](docs/proceed-and-media.md#the-processor).

@@ -96,7 +96,7 @@ export function motionSpec(a: ReadyArtifact, scenes: SpecScene[], slots: Slot[],
     }),
     skill: skill && {
       name: skill.name, path: `.agents/skills/${skill.name}/SKILL.md`,
-      tasks: skill.tasks > 0 ? `${skill.tasks} TASK${skill.tasks === 1 ? "" : "S"} READY` : "",
+      tasks: "",
     },
   };
 }

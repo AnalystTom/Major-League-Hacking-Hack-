@@ -7,7 +7,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_DIGEST_MODEL } from "../../ingest/digest/run.js";
-import { composeShort, probe } from "./ffmpeg.js";
+import { judgeShort } from "./judge.js";
+import { burnSubtitles, composeShort, probe } from "./ffmpeg.js";
 import type { MediaStore } from "./media.js";
 import { SCRIPT_PROMPT_REVISION, writeScript } from "./script.js";
 import { captionCues, timeline, toVtt } from "./timeline.js";
@@ -55,7 +56,8 @@ export async function renderArtifact(a: ReadyArtifact, o: RenderOptions): Promis
     const slots = timeline(lengths);
 
     const vtt = join(dir, "short.vtt");
-    await writeFile(vtt, toVtt(captionCues(draft.map((s) => s.narration_text), slots)));
+    const cues = captionCues(draft.map((s) => s.narration_text), slots, 32);
+    await writeFile(vtt, toVtt(cues));
     const motion = renderStyle() === "motion-skill";
     let out: { mp4: string; narration: string; duration: number };
     if (motion) {
@@ -66,16 +68,20 @@ export async function renderArtifact(a: ReadyArtifact, o: RenderOptions): Promis
       out = await composeShort({ dir, narration: wavs, onScreen: draft.map((s) => s.on_screen_text), slots, category: a.category });
     }
 
+    const scenes: ScriptScene[] = draft.map((s, i) => ({
+      start_seconds: slots[i].start, end_seconds: slots[i].end,
+      narration_text: s.narration_text, on_screen_text: s.on_screen_text, visual_instruction: s.visual_instruction, source_ids: s.source_ids,
+    }));
+    out.mp4 = await burnSubtitles(dir, out.mp4, cues);
+    const judgment = await judgeShort(a, scenes, out.mp4, dir, { apiKey: o.openaiKey, model: o.openaiModel, fetchImpl: o.fetchImpl });
+
     const base = `${a.id}/${a.version}`;
     const media_ref = await o.media.put(`videos/${base}/short.mp4`, out.mp4, "video/mp4");
     const caption_ref = await o.media.put(`captions/${base}/short.vtt`, vtt, "text/vtt; charset=utf-8");
     const narration_ref = await o.media.put(`audio/${base}/narration.m4a`, out.narration, "audio/mp4");
 
-    const scenes: ScriptScene[] = draft.map((s, i) => ({
-      start_seconds: slots[i].start, end_seconds: slots[i].end,
-      narration_text: s.narration_text, on_screen_text: s.on_screen_text, visual_instruction: s.visual_instruction, source_ids: s.source_ids,
-    }));
     return {
+      judgment,
       script: { scenes },
       // The model and reasoning effort that wrote the script, so a render shows how it was made.
       prompt_revision: `${SCRIPT_PROMPT_REVISION}; openai:${o.openaiModel ?? DEFAULT_DIGEST_MODEL}${reasoningEffort() ? `/${reasoningEffort()}` : ""}; tts:${o.ttsModel ?? TTS_MODEL}${motion ? `; ${MOTION_SKILL_REVISION}` : ""}`,

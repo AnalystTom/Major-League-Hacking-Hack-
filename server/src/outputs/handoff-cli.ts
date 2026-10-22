@@ -1,5 +1,5 @@
 // Runs the whole text path for a few links and writes what each step produced:
-// extraction -> Digestion Prompt artifacts -> one skill per artifact -> one merged agent handoff.
+// extraction -> Digestion Prompt artifacts -> one concise skill per artifact. Task handoffs are paused.
 //
 // usage: npm run handoff -- [--out <dir>] <youtube-url>...
 // env: GEMINI_API_KEY, OPENAI_API_KEY; optional D1_URL and D1_TOKEN (also stores units, artifacts and skills), DIGESTION_REQUEST.
@@ -11,7 +11,7 @@ import { DEFAULT_CATEGORIZATION_REQUEST } from "../ingest/digest/prompt.js";
 import { digestAndStore, ingestLinks } from "../ingest/pipeline.js";
 import { MemoryStore, D1Store, type Store } from "../ingest/store.js";
 import type { StoredArtifact } from "../ingest/types.js";
-import { refineHandoff, renderAllPrompts, type HandoffSkill } from "./handoff.js";
+import { type HandoffSkill } from "./handoff.js";
 import { D1HandoffStore, rowToSkill, uniqueSlugs } from "./handoff-store.js";
 import { generateSkill } from "./skills.js";
 import { D1OutputStore } from "./store.js";
@@ -71,7 +71,7 @@ for (const a of artifacts) {
       id: claim?.id ?? a.id, skill_markdown: g.skill_markdown, artifact_name: a.name, category: a.category, sources: a.sources,
       evidence: a.evidence, unit_titles: Object.fromEntries(a.source_ids.map((id) => [id, titles.get(id) ?? null])), action_items: g.action_items,
     }));
-    step(`  ready: ${skills.at(-1)!.slug} (${g.action_items.length} task(s))`);
+    step(`  ready: ${skills.at(-1)!.slug}`);
   } catch (e) {
     if (outputs && claim) await outputs.fail("skill", claim, (e as Error).message);
     step(`  failed for "${a.name}": ${(e as Error).message}`);
@@ -83,10 +83,4 @@ const selected = db ? await new D1HandoffStore(db).loadSkills(skillIds) : unique
 for (const s of selected) await write(`3-skills/${s.slug}/SKILL.md`, s.skill_markdown);
 await write("3-skills/skills.json", selected);
 
-step(`merging ${selected.length} skill(s) into one handoff`);
-const brief = await refineHandoff(selected, { apiKey: openaiKey, model });
-await write("4-brief.json", brief);
-const prompts = renderAllPrompts(brief, selected) as Record<string, Record<string, string>>;
-for (const [agent, modes] of Object.entries(prompts)) for (const [mode, text] of Object.entries(modes)) await write(`5-prompts/${agent}-${mode}.md`, text);
-step(`  ${brief.themes.length} theme(s), ${brief.tensions.length} tension(s), ${brief.actions.length} action(s)`);
-step(`done: ${out}/5-prompts/codex-review.md`);
+step(`done: ${out}/3-skills/`);

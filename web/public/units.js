@@ -14,6 +14,7 @@ export const STAGE = {
   fetching: "Reading the source",
   digesting: "Picking out what's useful",
   rendering: "Rendering the short",
+  reviewing: "Checking short quality",
   ready: "Ready to watch",
   failed: "Couldn't read this source",
   render_failed: "Rendering failed",

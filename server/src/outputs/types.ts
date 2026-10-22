@@ -1,5 +1,5 @@
-// What the processor makes from a ready artifact: a rendered short (workflow 2) and a skill with tasks (workflow 3).
-// Both read one artifact revision and write only their own tables (video_results, skill_results, action_items).
+// What the processor makes from a ready artifact: a rendered short (workflow 2) and a concise skill (workflow 3).
+// Each reads one artifact revision and writes its own result table; historical task records are preserved.
 
 /** One OpenAI call's credentials and model. */
 export interface OpenAIOptions { apiKey: string; model?: string; fetchImpl?: typeof fetch }
@@ -60,7 +60,16 @@ export interface ScriptScene {
   source_ids: string[];
 }
 
+export interface ShortJudgment {
+  judge: "short-judge-v1";
+  passed: boolean;
+  captions_burned: true;
+  scores: { grounding: number; clarity: number; usefulness: number; visuals: number; subtitles: number };
+  reasons: string[];
+}
+
 export interface RenderedVideo {
+  judgment: ShortJudgment;
   script: { scenes: ScriptScene[] };
   prompt_revision: string;
   media_ref: string;

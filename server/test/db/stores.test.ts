@@ -9,6 +9,7 @@ import { processUnits, sweepOnce } from '../../src/ingest/processor.js';
 import { mockFetch } from '../ingest/helpers.js';
 import { UNLIMITED } from '../../src/ingest/limits.js';
 import { DEFAULT_CATEGORIZATION_REQUEST, promptRevisionText } from '../../src/ingest/digest/prompt.js';
+import { SKILL_PROMPT_REVISION } from '../../src/outputs/skills.js';
 
 async function setup() {
   const { db,sqlite }=testDatabase();
@@ -102,7 +103,7 @@ test('atomic D1 extraction and digest reservations never exceed the last daily/m
   } finally { s.sqlite.close(); }
 });
 
-test('D1 outputs retain claim ownership, bounded retries and transactional task writes',async()=>{
+test('D1 outputs retain claim ownership, bounded retries and skills-only writes without deleting stored tasks',async()=>{
   const s=await setup();
   try {
     const id=await s.unit('ready'),a=await s.artifact([id]);
@@ -120,6 +121,7 @@ test('D1 outputs retain claim ownership, bounded retries and transactional task 
     const skill={skill_markdown:'---\nname: check-first\ndescription: "Check"\n---\nbody',supporting_refs:art.sources,
       action_items:[{task:'Check',applicability_evidence:[],prerequisites:[],steps:['Inspect'],source_refs:[id],completion_check:'Verified'}]};
     await assert.rejects(s.outputs.finishSkill(c,skill),/taken over/);
+    await s.db.query("INSERT INTO action_items(skill_result_id,task,steps,completion_check) VALUES(?1,'Historical task','[\"Inspect\"]','Checked')",[second.id]);
     await s.outputs.finishSkill(second,skill);
     await assert.rejects(s.outputs.finishSkill(second,{...skill,action_items:[]}),/taken over/);
     assert.equal((await s.db.query('SELECT count(*) AS n FROM action_items')).rows[0].n,1,'lost claim cannot delete tasks');
@@ -129,13 +131,13 @@ test('D1 outputs retain claim ownership, bounded retries and transactional task 
     await assert.rejects(s.db.query("UPDATE video_results SET status='ready' WHERE id=?1",[v.id]),/CHECK|positive duration/);
     await s.db.query("UPDATE video_results SET updated_at='2000-01-01T00:00:00Z' WHERE id=?1",[v.id]);
     const v2=(await s.outputs.claim('video',art))!;
-    const rendered={script:{scenes:[]},prompt_revision:'script-v1',media_ref:`r2:videos/${a.id}/1/short.mp4`,caption_ref:`r2:captions/${a.id}/1/short.vtt`,narration_ref:`r2:audio/${a.id}/1/narration.m4a`,duration_seconds:34.5,music_provenance:'Licensed test provenance'};
+    const rendered={judgment:{judge:'short-judge-v1' as const,passed:true,captions_burned:true as const,scores:{grounding:4,clarity:4,usefulness:4,visuals:4,subtitles:4},reasons:[]},script:{scenes:[]},prompt_revision:'script-v1',media_ref:`r2:videos/${a.id}/1/short.mp4`,caption_ref:`r2:captions/${a.id}/1/short.vtt`,narration_ref:`r2:audio/${a.id}/1/narration.m4a`,duration_seconds:34.5,music_provenance:'Licensed test provenance'};
     await assert.rejects(s.outputs.finishVideo(v,rendered),/taken over/);
     assert.equal(await s.outputs.fail('video',v,'late'),false);
     await s.outputs.finishVideo(v2,rendered);
     assert.equal((await s.db.query('SELECT music_provenance FROM video_results WHERE id=?1',[v2.id])).rows[0].music_provenance,rendered.music_provenance);
     assert.equal(await s.outputs.claim('video',art),null);
-    const b=await s.artifact([id]),retry={...art,id:b.id};
+    const b=await s.artifact([await s.unit('ready')]),retry={...art,id:b.id};
     const failed=(await s.outputs.claim('skill',retry))!;
     await s.outputs.fail('skill',failed,'failed');
     for(let i=0;i<2;i++) {
@@ -166,4 +168,54 @@ test('D1 shared digests stay private and handoff claims survive migration',async
     assert.equal(await s.handoffs.fail(claim,'actual error'),true);
     assert.equal((await s.db.query('SELECT error FROM agent_briefs WHERE id=?1',[brief])).rows[0].error,'actual error');
   } finally { s.sqlite.close(); }
+});
+
+
+test('artifact creation reuses an identical source set and a quality rejection cannot be retried into publication',async()=>{
+  const s=await setup();
+  try {
+    const id=await s.unit('ready');
+    const [a,b]=await Promise.all([s.artifact([id]),s.artifact([id])]);
+    assert.equal(a.id,b.id);
+    assert.equal((await s.db.query('SELECT count(*) AS n FROM artifacts')).rows[0].n,1);
+    const claim=(await s.outputs.claim('video',a))!;
+    await s.outputs.fail('video',claim,'Quality judge rejected: unsupported claim');
+    await s.db.query("UPDATE video_results SET updated_at='2000-01-01T00:00:00Z'");
+    assert.equal(await s.outputs.claim('video',a),null);
+    assert.deepEqual(await s.outputs.artifactsNeeding('video',10),[]);
+    assert.match((await s.db.query('SELECT error FROM video_results')).rows[0].error,/unsupported claim/);
+  } finally {s.sqlite.close();}
+});
+
+test('legacy skills regenerate once without exposing old text or retrying a failed refresh',async()=>{
+  const s=await setup();
+  try {
+    const artifacts=await Promise.all([s.unit('ready'),s.unit('ready')].map(async id=>s.artifact([await id])));
+    const old='---\nname: legacy-skill\n---\nOld procedure';
+    for (const a of artifacts) await s.db.query("INSERT INTO skill_results(artifact_id,artifact_version,status,skill_markdown,attempts,review_feedback) VALUES(?1,1,'ready',?2,1,?3)",[a.id,old,JSON.stringify({prompt_revision:'skill-v3'})]);
+    const needing=await s.outputs.artifactsNeeding('skill',10);
+    assert.equal(needing.length,2);
+    const [a,b]=needing;
+    assert.deepEqual(await s.outputs.skillCard(a),{status:'pending',card:null});
+    const ids=(await s.db.query('SELECT id FROM skill_results')).rows.map(r=>r.id);
+    assert.deepEqual(await s.handoffs.loadSkills(ids),[]);
+    const claims=await Promise.all([s.outputs.claim('skill',a),s.outputs.claim('skill',a)]);
+    assert.equal(claims.filter(Boolean).length,1);
+    const claim=claims.find(Boolean)!;
+    await s.db.query("UPDATE skill_results SET updated_at='2000-01-01T00:00:00Z' WHERE id=?1",[claim.id]);
+    assert.equal(await s.outputs.claim('skill',a),null);
+    await s.outputs.finishSkill(claim,{skill_markdown:'---\nname: concise-skill\n---\nInspect the source.',supporting_refs:[],action_items:[]});
+    assert.equal(await s.outputs.claim('skill',a),null);
+    assert.deepEqual(await s.outputs.skillCard(a),{status:'ready',card:{name:'concise-skill',tasks:0}});
+    assert.equal((await s.handoffs.loadSkills(ids)).length,1);
+    assert.deepEqual(JSON.parse((await s.db.query('SELECT review_feedback FROM skill_results WHERE id=?1',[claim.id])).rows[0].review_feedback),{prompt_revision:SKILL_PROMPT_REVISION});
+    const failed=(await s.outputs.claim('skill',b))!;
+    await s.outputs.fail('skill',failed,'provider unavailable');
+    await s.db.query("UPDATE skill_results SET updated_at='2000-01-01T00:00:00Z' WHERE id=?1",[failed.id]);
+    assert.equal(await s.outputs.claim('skill',b),null);
+    assert.deepEqual(await s.outputs.artifactsNeeding('skill',10),[]);
+    assert.deepEqual(await s.outputs.skillCard(b),{status:'failed',card:null});
+    assert.equal((await s.db.query('SELECT skill_markdown FROM skill_results WHERE id=?1',[failed.id])).rows[0].skill_markdown,old);
+    assert.equal((await s.db.query('SELECT count(*) AS n FROM skill_results')).rows[0].n,2);
+  } finally {s.sqlite.close();}
 });

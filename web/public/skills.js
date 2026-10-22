@@ -1,7 +1,6 @@
-// Skills and Tasks on the signed-in home: each ready artifact's SKILL.md, where the chosen agent reads it, and
-// its tasks ready to paste into that agent. Every API string goes in through textContent.
+// Each ready artifact's SKILL.md and the path where the chosen agent reads it. Every API string goes in through textContent.
 
-import { AGENTS, agentOrDefault, evidenceLink, skillAnchor, skillFile, skillSlug, taskPrompt } from "./agents.js";
+import { AGENTS, agentOrDefault, skillAnchor, skillFile, skillSlug } from "./agents.js";
 import { el } from "./dom.js";
 
 const AGENT_KEY = "resurface-agent";
@@ -34,10 +33,11 @@ export function download(name, text) {
 
 const SKILL_STATE = {
   pending: "Queued to become a skill.",
-  running: "Writing the skill and its tasks…",
+  running: "Writing the skill…",
+  regenerating: "This skill is being regenerated.",
 };
 
-export function createSkills({ skillsList, tasksList, picker, skillsStatus, tasksStatus }) {
+export function createSkills({ skillsList, picker, skillsStatus }) {
   let skills = [];
   let agent = "claude-code";
   try { agent = agentOrDefault(localStorage.getItem(AGENT_KEY)); } catch {}
@@ -68,7 +68,8 @@ export function createSkills({ skillsList, tasksList, picker, skillsStatus, task
     const li = el("li", { class: "skill", id: skillAnchor(s.artifact.id, s.artifact.version), "data-status": s.status }, head);
     if (s.status !== "ready") {
       const failed = s.retrying ? `Couldn't write this skill yet; trying again in a few minutes. ${s.error || ""}` : `Couldn't write this skill. ${s.error || "Reason unknown."}`;
-      li.append(el("p", { class: "skill-state", text: s.status === "failed" ? failed.trim() : SKILL_STATE[s.status] ?? s.status }));
+      const message = s.status === "regenerating" && s.error ? "Regeneration couldn't finish; the old skill is unavailable." : SKILL_STATE[s.status] ?? s.status;
+      li.append(el("p", { class: "skill-state", text: s.status === "failed" ? failed.trim() : message }));
       return li;
     }
     const file = skillFile(s, agent);
@@ -94,32 +95,8 @@ export function createSkills({ skillsList, tasksList, picker, skillsStatus, task
     return li;
   }
 
-  function taskCard(t, s) {
-    const evidence = t.evidence.map((e) => {
-      const link = evidenceLink(e, s.videos);
-      return el("li", {}, el("p", { class: "task-passage", text: e.passage }),
-        link ? el("a", { href: link.url, target: "_blank", rel: "noopener noreferrer", text: link.label }) : null);
-    });
-    return el("li", { class: "task" },
-      el("p", { class: "skill-from", text: `From the ${s.name ?? s.artifact.name} skill` }),
-      el("h3", { text: t.task }),
-      t.prerequisites.length ? el("div", { class: "task-block" }, el("p", { class: "task-label", text: "Needs" }),
-        el("ul", {}, ...t.prerequisites.map((p) => el("li", { text: p })))) : null,
-      el("div", { class: "task-block" }, el("p", { class: "task-label", text: "Steps" }),
-        el("ol", {}, ...t.steps.map((step) => el("li", { text: step })))),
-      el("div", { class: "task-block task-check" }, el("p", { class: "task-label", text: "Done when" }), el("p", { text: t.completion_check })),
-      evidence.length ? el("details", { class: "task-evidence" }, el("summary", { text: "Why it applies" }), el("ul", {}, ...evidence)) : null,
-      el("div", { class: "skill-actions" },
-        el("button", { type: "button", class: "btn btn-small", text: `Copy for ${AGENTS[agent].name}`,
-          onclick: async () => say(tasksStatus, await copyText(taskPrompt(t, s, agent)),
-            `Copied. Paste it into ${AGENTS[agent].name}; it's done when the check passes.`, "Your browser blocked copying.") }))
-    );
-  }
-
   function render() {
     skillsList.replaceChildren(...skills.map(skillCard));
-    const tasks = skills.filter((s) => s.status === "ready").flatMap((s) => s.action_items.map((t) => taskCard(t, s)));
-    tasksList.replaceChildren(...tasks);
   }
 
   return {
@@ -131,7 +108,7 @@ export function createSkills({ skillsList, tasksList, picker, skillsStatus, task
     },
     get counts() {
       const ready = skills.filter((s) => s.status === "ready");
-      return { skills: ready.length, tasks: ready.reduce((n, s) => n + s.action_items.length, 0) };
+      return { skills: ready.length };
     },
   };
 }

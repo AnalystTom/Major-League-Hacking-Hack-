@@ -16,65 +16,19 @@ dev. The processor's hosting is PR #5. Shorts reach production only when that's 
    [unit progress contract](project-actions-spec.md#http-api).
 4. **Watch the reel**, full screen at 9:16 below the top bar, edge to edge on phones. **Add videos** opens a sheet
    with the paste box.
-5. **Skills and Tasks** open as a sheet over the reel, from top-bar buttons with counts or a short's
-   **View skill & tasks** link (which opens the sheet at that skill's card). Skills reach an agent by copy or
-   download; nothing is delivered directly.
+5. **Skills** open as a sheet over the reel, from the top-bar button or a short's **View skill** link at its
+   skill card. Copy or download a skill for the selected agent; tasks and Send to agent are unavailable.
+6. **View available reels & Skills** opens `/available` without requiring sign-in. The landing page links to
+   this catalogue instead of displaying sample shorts. Access rules live in the [HTTP contract](project-actions-spec.md#http-api).
 
-There is no project, setup step, or review gate: whatever the processor marks `ready` is shown. Signed-in
-visitors see "Open your feed" on the landing page.
-
-```
-Browser ──POST /api/auth/signup──▶ Worker ──INSERT users, sessions──▶ D1   (httpOnly cookie back)
-        ──POST /api/imports──▶ Worker ──INSERT ingested_units, user_imports──▶ D1
-                                  └──POST PROCESSOR_URL {unit_ids}──▶ Processor (server/src)
-Processor: Gemini extraction → Digestion Prompt (OpenAI) → artifacts
-           → skill + up to 3 tasks (OpenAI)             ──▶ skill_results, action_items
-           → script (OpenAI) → narration (Gemini TTS) → ffmpeg ──PUT mp4, vtt, m4a──▶ R2 ──▶ video_results
-Browser ──GET /api/imports, /api/feed?scope=mine, /api/skills (every 4 s while anything moves)──▶ Worker ──▶ D1
-        ──POST /api/handoffs {skill_ids}──▶ Worker ──INSERT agent_briefs──▶ D1
-                                  └──POST …/api/ingest/handoff {brief_id}──▶ Processor
-Processor: merge the picked skills → Handoff refinement (OpenAI) → prompt per agent and mode ──▶ agent_briefs
-Browser ──GET /api/handoffs/:id (every 3 s until ready)──▶ Worker   then copy or download the prompt into the agent
-        ──GET /media/videos/…mp4 (Range)──▶ Worker ──▶ R2
-        ──POST /api/handoffs {skill_ids}──▶ Worker ──INSERT agent_briefs──▶ D1
-                                  └──POST …/api/ingest/handoff {brief_id}──▶ Processor
-Processor: merge the picked skills → Handoff refinement → prompt per agent and mode ──UPDATE agent_briefs──▶ D1
-Browser ──GET /api/handoffs/:id (every 3 s until ready)──▶ Worker   then copy/download the prompt into Codex
-```
+There is no project or setup step. Output eligibility follows the [feed contract](project-actions-spec.md#feed-read-contract).
+Signed-in visitors see "Open your feed" on the landing page.
 
 ## Endpoints (web Worker, same origin as the page)
 
-Every mutation must be `application/json`; with the `SameSite=Lax` session cookie that blocks cross-site forms.
-
-| Route | Does |
-| --- | --- |
-| `POST /api/auth/signup` `{ email, password, name? }` | Creates the account (password ≥ 10 chars, PBKDF2-SHA256, 100k iterations) and signs in. `409` if the email is taken. |
-| `POST /api/auth/login` `{ email, password }` | Signs in. Wrong password and unknown email get the same `401`. |
-| `POST /api/auth/logout` | Ends the session. |
-| `GET /api/me` | `{ user, imports }`; `{ user: null }` when signed out. |
-| `POST /api/imports` `{ links }` | Returns `{ units, processor }`; see the [import rules](project-actions-spec.md#http-api) for reuse, X refreshes and processor requests. |
-| `GET /api/imports` | The user's links with their stage and reason; see the [unit progress contract](project-actions-spec.md#http-api). |
-| `GET /api/feed?scope=mine` | The user's shorts: artifacts they can see (below) whose artifact and video are both `ready`. |
-| `GET /api/skills` | The newest skill per visible ready artifact: `{ id, status, error, artifact, name, description, markdown, videos, action_items }`. Tasks carry `task`, `prerequisites`, `steps`, `completion_check` and `evidence`. |
-| `GET /api/feed` | The public curated feed (needs `feed_order`); no account. |
-| `POST /api/handoffs` `{ skill_ids }` | Queues one agent prompt for 1-12 of the user's ready skills (reused for the same skill revisions) and asks the processor to write it. Returns `{ brief, processor }`. |
-| `GET /api/handoffs/:id`, `GET /api/handoffs/latest` | The brief: `status`, actual `error`, title, summary, themes, tensions, actions, and `prompts` per agent (`claude`, `codex`, `cursor`, `hermes`) and mode (`review`, `apply`) once ready. |
-| `GET /media/<key>` | Streams `videos/`, `captions/` or `posters/` objects from R2 with byte ranges (Safari and seeking need them). Narration under `audio/` is stored but not served. |
-
-The page polls the three read routes every 4 s while a link is moving or a skill is being written. When a short
-is ready but its skill hasn't started, it checks every 20 s, at most 15 times. A failing `/api/skills` doesn't stop
-links and shorts from updating.
-
-Rate limits: sign-up and sign-in 10 per IP per minute (`AUTH_LIMITER`), imports 5 per account per minute (`IMPORT_LIMITER`).
-
-Processing limits cap provider spend across all users: the processor starts at most `DAILY_VIDEO_LIMIT` new units
-per UTC day (default 10) and `MONTHLY_VIDEO_LIMIT` per UTC month (default 40, about $5 at ~$0.12 a short with the
-5-minute window). Each paid start is recorded in `processing_starts` (`db/migrations/007_processing_starts.sql`):
-every extraction is charged, and so is every digest except the first one after a unit's extraction, so a new video
-costs one slot while re-digests of shared videos and retries cost their own. Every source type, sweep and retry
-counts; `0` pauses processing. Links over the limit stay saved, show **Limit reached** with when they'll start
-(`ingested_units.deferred_until`), and the sweeps start them once there's room. The processor's dev `/imports` route,
-which reads links directly, is only mounted with `ENABLE_DEV_IMPORTS=1`.
+The [HTTP contract](project-actions-spec.md#http-api) owns routes, response shapes, authentication,
+import reuse, progress states, polling, rate limits, and processing spend limits. Local configuration is
+listed in [`server/.env.example`](../server/.env.example).
 
 ## Who sees what
 
@@ -83,9 +37,9 @@ so **a user sees an artifact, its short and its skill only when they imported ev
 (`feed.js`, `imports.js`, `skills.js`). That keeps one person's videos out of another's reel. The processor
 re-digests a shared video for any importer who can't see a digest of it yet (`server/src/ingest/store.ts`).
 
-**Open decision.** This replaces the earlier "digested once, shared by everyone" rule, and it can give someone a
-second short covering a video that's already in a combined digest. The alternative is fully shared digests, which
-means people see others' videos. The user hasn't chosen yet.
+This ownership rule applies to personal views. Explicit public designation is separate and follows the
+[HTTP contract](project-actions-spec.md#http-api). A single-source digest and a combined digest can both
+remain visible; exact deduplication does not collapse overlapping source sets.
 
 ## The processor
 
@@ -98,15 +52,29 @@ Node, in `server/src`. `POST /api/ingest/process` takes `{ "unit_ids": [...] }` 
 2. **Digest**: the Digestion Prompt (OpenAI) writes `artifacts` (`project_context_id` null) and
    `artifact_exclusions` with reasons. A digest that fails is stored as a failed artifact with its error and is
    retried, up to 3 times per unit.
-3. **Skill** (`outputs/skills.ts`): one ready artifact becomes a `SKILL.md` (front matter `name` and `description`,
-   a review warning, `## Sources`) and up to three tasks, each with steps and a `completion_check`.
-4. **Short** (`outputs/render/`): OpenAI writes a 4–6 scene script (about 70–110 words of narration). Gemini TTS
-   speaks each scene, and the scene times come from the measured speech. Captions are WebVTT cues spread over
-   that speech. ffmpeg composes one title card per scene over the narration, 1080×1920 H.264 + AAC with
-   `+faststart`. There's no music in v0.
-5. **Checks before `ready`.** The rendered file must probe as 1080×1920 H.264 with an AAC track, and its duration
-   must match the timeline within a second. Each upload's stored size is checked before `video_results`
-   records the script, the models used, `media_ref`, `caption_ref`, `narration_ref` and the measured duration.
+3. **Skill** (`outputs/skills.ts`): generate the [concise skill contract](project-actions-spec.md#workflow-3-processed-skill-and-codex-use)
+   independently of video rendering.
+4. **Short** (`outputs/render/`): OpenAI writes the script; Gemini TTS speaks each scene, and measured speech
+   determines the timeline and WebVTT cues. The default [motion renderer](../server/assets/motion-graphic-skill/README.md)
+   uses headless Chromium; `RENDER_STYLE=basic` selects ffmpeg title cards without music. Both produce
+   1080×1920 H.264 + AAC with `+faststart` and burn high-contrast narration captions into the central safe area
+   before review. The player fits the whole frame and omits the duplicate WebVTT overlay for burned subtitles.
+5. **Checks before upload and `ready`.** The renderer probes dimensions, codecs and duration. An independent
+   one-pass model judge checks the artifact, timed narration and a sampled subtitled frame from each scene.
+   Grounding, clarity, usefulness, visuals and subtitles must each score at least 4/5 with no recorded defects
+   ([judge implementation](../server/src/outputs/render/judge.ts)). A rejection prevents upload and exhausts
+   automatic attempts; the internal receipt is retained in the stored failure, while progress shows a bounded
+   plain-English quality reason. Successful uploads are size-checked; `video_results.review_feedback` retains
+   the passing receipt, and `review_status` becomes `approved` before the result is served.
+
+**Legacy outputs.** Ready shorts without the current judge marker are withheld from feed/media access and
+eligible for rerendering by the output sweep. The sweep considers ready, prompt-backed artifacts with an
+importer. Ready skills from older prompt revisions are withheld immediately and receive one regeneration
+attempt when the processor next handles the eligible artifact. Success records the current prompt revision;
+failed or interrupted regeneration keeps the old text unavailable and reports a regeneration state without
+an automatic retry. Existing rows, task records and briefs are preserved. Claim and retry rules live in
+[`outputs/store.ts`](../server/src/outputs/store.ts), and skill serving policy in
+[`web/src/skill-policy.js`](../web/src/skill-policy.js).
 
 R2 keys (resolved by the Worker as `r2:<key>`):
 - `videos/<artifact_id>/<version>/short.mp4`
@@ -114,8 +82,8 @@ R2 keys (resolved by the Worker as `r2:<key>`):
 - `audio/<artifact_id>/<version>/narration.m4a`
 
 **Claims.** Every job is claimed. A unit's claim, and the claim token on `video_results` or `skill_results`, can be
-taken over after 60 minutes (`server/src/claims.ts`), which is longer than the slowest extraction or render. A
-worker whose claim was taken over can't write its result.
+taken over after 60 minutes (`server/src/claims.ts`), except for the bounded legacy skill regeneration above.
+A worker whose claim was taken over can't write its result.
 
 **Configuration**: see the [ingestion README](../server/src/ingest/README.md) for provider credentials, models,
 output caps and sweep settings, and [`server/.env.example`](../server/.env.example) for local settings.
@@ -161,16 +129,15 @@ and the page reports that state; no simulated clips or processing records are cr
 
 ## Known gaps
 
-- **Shorts are basic title cards**: one large text frame per scene over narration, with no motion design and no
-  stored animation code. The spec's Opus script and animation-code step isn't built.
+- The proposed Opus-generated animation-code step isn't built; the processor uses the vendored motion template
+  described above.
 - **Length isn't held to 30–45 s.** Only the script's word count (40–160) is checked, so roughly 15–65 s passes.
-- **Citations are optional.** Script scenes and tasks may carry no `source_ids` or evidence, though the spec
-  requires traceable evidence for factual claims.
+- **Scene citations are optional.** Script scenes may carry no `source_ids`, though the spec requires traceable
+  evidence for factual claims and the judge checks grounding.
 - **Upload checks are size only.** "Playable" is checked on the local file before upload; after upload, only the
   size is compared.
 - **Skills only appear once a `skill_results` row exists.** A ready short whose skill was never started shows no
   skill state (the page retries for about 5 minutes).
-- **The visibility rule is still open** (see Who sees what).
 - Sign-up reveals whether an email already has an account (`409`); it's rate limited. There's no email
   verification or password reset yet. Consider Turnstile on sign-up before reopening it.
 - Bodies are capped at 32 KB and links at 2,048 characters. The API never returns `submitted_url`. Reel source

@@ -78,7 +78,7 @@ export async function produceOutputs(artifacts: ReadyArtifact[], o: OutputOption
   await Promise.all([...artifacts.map((a) => produce("skill", a, o)), ...artifacts.map((a) => queueRender(a, o))]);
 }
 
-/** Finds ready artifacts still missing a skill or a short and produces them. Returns how many it started. */
+/** Finds ready artifacts needing output generation or legacy refresh. Returns how many it started. */
 export async function sweepOutputs(o: OutputOptions, limit = 10): Promise<number> {
   const [skills, videos] = await Promise.all([o.outputs.artifactsNeeding("skill", limit), o.outputs.artifactsNeeding("video", limit)]);
   await Promise.all([
