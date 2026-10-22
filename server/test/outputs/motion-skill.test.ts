@@ -12,6 +12,7 @@ import { fillTemplate, motionSpec, recordEnv } from "../../src/outputs/render/mo
 import { MemoryOutputStore, skillCardOf } from "../../src/outputs/store.js";
 import { JUDGE_SYSTEM_PROMPT } from "../../src/outputs/render/judge.js";
 import { SCRIPT_SYSTEM_PROMPT } from "../../src/outputs/render/script.js";
+import { SCENE_GAP_SECONDS } from "../../src/outputs/render/timeline.js";
 import { artifact, outputsFetch, scriptReply, toneWav } from "./helpers.js";
 
 const slots = [{ start: 0, speechEnd: 5.4, end: 5.75 }, { start: 5.75, speechEnd: 13, end: 13.35 }, { start: 13.35, speechEnd: 20, end: 20.35 }];
@@ -92,6 +93,7 @@ test("renders a motion short with the narration over the engine's music", { skip
     const { impl } = outputsFetch(a);
     let judged = false;
     let endCardFrame: Buffer | undefined;
+    const closingSpeechSeconds = 0.8;
     const fetchImpl: typeof fetch = async (url, init) => {
       const request = JSON.parse(String(init?.body));
       if (request.messages?.[0]?.content === SCRIPT_SYSTEM_PROMPT) {
@@ -100,7 +102,7 @@ test("renders a motion short with the narration over the engine's music", { skip
         return Response.json({ choices: [{ message: { content: JSON.stringify(script) } }] });
       }
       if (request.input?.[0]?.content?.[0]?.text === "Check first.") {
-        return Response.json({ steps: [{ type: "model_output", content: [{ type: "audio", data: toneWav(0.8).toString("base64") }] }] });
+        return Response.json({ steps: [{ type: "model_output", content: [{ type: "audio", data: toneWav(closingSpeechSeconds).toString("base64") }] }] });
       }
       if (request.messages?.[0]?.content === JUDGE_SYSTEM_PROMPT) {
         const evidence = JSON.parse(request.messages[1].content[0].text);
@@ -117,16 +119,25 @@ test("renders a motion short with the narration over the engine's music", { skip
     assert.ok(judged, "the rendered skill is supplied as judge evidence");
     assert.match(v.prompt_revision, /; visuals:motion-graphic-skill$/);
     assert.match(v.music_provenance ?? "", /Web Audio/);
-    assert.deepEqual(keys, [`videos/${a.id}/1/short.mp4`, `captions/${a.id}/1/short.vtt`, `audio/${a.id}/1/narration.m4a`]);
-    const p = await probe(join(out, `videos_${a.id}_1_short.mp4`));
+    assert.deepEqual(keys, [v.media_ref, v.caption_ref, v.narration_ref].map(ref => ref.slice(3)));
+    const video = join(out, keys[0].replace(/\//g, "_"));
+    const p = await probe(video);
     assert.deepEqual(p.video, { codec: "h264", width: 1080, height: 1920 });
     assert.equal(p.audio?.codec, "aac");
     assert.ok(Math.abs(p.duration - v.script.scenes.at(-1)!.end_seconds) < 0.5, "the film is as long as the narrated timeline");
     const last = v.script.scenes.at(-1)!;
     assert.equal(last.narration_text, "Check first.");
     assert.ok(Math.abs(last.end_seconds - last.start_seconds - 2.5) < 0.001);
-    assert.ok(Math.abs((await probe(join(out, `audio_${a.id}_1_narration.m4a`))).duration - v.duration_seconds) < 0.05);
-    const frameAt = (time: number) => execFileSync("ffmpeg", ["-v", "error", "-ss", String(time), "-i", join(out, `videos_${a.id}_1_short.mp4`), "-frames:v", "1", "-vf", "scale=390:694", "-pix_fmt", "yuvj420p", "-f", "image2pipe", "-c:v", "mjpeg", "pipe:1"]);
+    const narrationDuration = (await probe(join(out, keys[2].replace(/\//g, "_")))).duration;
+    const [frameRate, frameBase] = execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate",
+      "-of", "default=noprint_wrappers=1:nokey=1", video], { encoding: "utf8" }).trim().split("/").map(Number);
+    const frameSeconds = frameBase / frameRate;
+    assert.ok(Number.isFinite(frameSeconds) && frameSeconds > 0);
+    const closingExtension = last.end_seconds - last.start_seconds - closingSpeechSeconds - SCENE_GAP_SECONDS;
+    assert.ok(p.duration >= narrationDuration, `film ${p.duration}s must not clip ${narrationDuration}s narration`);
+    assert.ok(p.duration - narrationDuration <= closingExtension + frameSeconds,
+      "the film may outlast narration only by the closing extension and one render frame");
+    const frameAt = (time: number) => execFileSync("ffmpeg", ["-v", "error", "-ss", String(time), "-i", video, "-frames:v", "1", "-vf", "scale=390:694", "-pix_fmt", "yuvj420p", "-f", "image2pipe", "-c:v", "mjpeg", "pipe:1"]);
     const cardPixels = (jpeg: Buffer) => execFileSync("ffmpeg", ["-v", "error", "-i", "pipe:0", "-vf", "crop=320:208:32:128", "-pix_fmt", "rgb24", "-f", "rawvideo", "pipe:1"], { input: jpeg });
     const settled = cardPixels(frameAt(last.end_seconds - 0.2));
     assert.notDeepEqual(cardPixels(frameAt(last.start_seconds + 1)), settled, "one second misses the delayed skill description");

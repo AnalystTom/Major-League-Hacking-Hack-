@@ -5,6 +5,7 @@ import { LostClaim, MemoryOutputStore } from "../../src/outputs/store.js";
 import { produceOutputs, sweepOutputs } from "../../src/outputs/run.js";
 import type { MediaStore } from "../../src/outputs/render/media.js";
 import { artifact, outputsFetch, takeOver } from "./helpers.js";
+import type { RenderedVideo } from "../../src/outputs/types.js";
 
 const hasFfmpeg = (() => { try { execFileSync("ffmpeg", ["-version"]); return true; } catch { return false; } })();
 // These cover the plain ffmpeg renderer; motion-skill.test.ts covers the motion-graphic-skill path.
@@ -104,3 +105,40 @@ test("a worker whose claim was taken over can't save or fail the result", async 
   assert.equal(await outputs.fail("video", stale, "late"), false);
   assert.equal([...outputs.rows.video.values()][0].status, "running", "the newer worker's row is untouched");
 });
+
+for (const status of ["ready", "failed"] as const) for (const success of [true, false]) {
+  test(`memory ${status} video refresh retains publication and settles once (${success ? "pass" : "fail"})`, async () => {
+    const a = artifact(), outputs = new MemoryOutputStore(0);
+    outputs.artifacts.push(a);
+    const old: RenderedVideo = { judgment: { judge: "short-judge-v1", passed: true, captions_burned: true,
+      scores: { grounding: 4, clarity: 4, usefulness: 4, visuals: 4, subtitles: 4 }, reasons: [] },
+      script: { scenes: [] }, prompt_revision: "script-v2", media_ref: "r2:videos/old/short.mp4",
+      caption_ref: "r2:captions/old/short.vtt", narration_ref: "r2:audio/old/narration.m4a", duration_seconds: 30 };
+    await outputs.finishVideo((await outputs.claim("video",a))!,old);
+    const row = [...outputs.rows.video.values()][0];
+    Object.assign(row,{status,attempts:3,generatorRevision:"short-v1"});
+    const claims = await Promise.all([outputs.claim("video",a),outputs.claim("video",a)]);
+    assert.equal(claims.filter(Boolean).length,1);
+    const claim = claims.find(Boolean)!;
+    const held = [...outputs.rows.video.values()][0];
+    assert.equal(held.status,status === "ready" ? "ready" : "running");
+    assert.equal(held.value,old);
+    assert.deepEqual(await outputs.artifactsNeeding("video",10),[]);
+    const replacement = {...old,media_ref:"r2:videos/replacement/short.mp4"};
+    if (success) {
+      await outputs.finishVideo(claim,replacement);
+      assert.equal(held.status,"ready");
+      assert.equal(held.value,replacement);
+    } else {
+      await assert.rejects(outputs.finishVideo(claim,{...replacement,judgment:{...old.judgment,passed:false}}),/quality judge/);
+      assert.equal(await outputs.fail("video",claim,"Quality judge rejected: unsupported claim"),true);
+      assert.equal(held.status,status);
+      assert.equal(held.value,old);
+      assert.equal(held.attempts,4);
+    }
+    await assert.rejects(outputs.finishVideo(claim,replacement),LostClaim);
+    assert.equal(await outputs.fail("video",claim,"late"),false);
+    assert.equal(await outputs.claim("video",a),null);
+    assert.deepEqual(await outputs.artifactsNeeding("video",10),[]);
+  });
+}

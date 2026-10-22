@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { copyFile, mkdtemp, readFile, rm } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fontFile, probe } from "../../src/outputs/render/ffmpeg.js";
@@ -31,16 +31,19 @@ test("renders a 1080x1920 H.264/AAC short with captions timed to the narration",
     const a = artifact();
     const { impl, calls } = outputsFetch(a);
     const media = new DirMedia(out);
+    const previous = join(out, `videos_${a.id}_1_short.mp4`);
+    await writeFile(previous, "previous approved video");
     const v = await renderArtifact(a, { openaiKey: "o", geminiKey: "g", media, fetchImpl: impl });
 
     assert.equal(calls.script, 1);
     assert.equal(calls.judge, 1);
     assert.equal(v.judgment.passed, true);
     assert.equal(calls.tts, 4, "one narration clip per scene");
-    assert.deepEqual(media.keys, [`videos/${a.id}/1/short.mp4`, `captions/${a.id}/1/short.vtt`, `audio/${a.id}/1/narration.m4a`]);
-    assert.equal(v.media_ref, `r2:videos/${a.id}/1/short.mp4`);
+    assert.deepEqual(media.keys, [v.media_ref, v.caption_ref, v.narration_ref].map(ref => ref.slice(3)));
+    assert.notEqual(v.media_ref, `r2:videos/${a.id}/1/short.mp4`);
+    assert.equal(await readFile(previous, "utf8"), "previous approved video", "a replacement cannot overwrite published bytes");
 
-    const p = await probe(join(out, `videos_${a.id}_1_short.mp4`));
+    const p = await probe(join(out, media.keys[0].replace(/\//g, "_")));
     assert.deepEqual(p.video, { codec: "h264", width: 1080, height: 1920 });
     assert.equal(p.audio?.codec, "aac");
     assert.ok(Math.abs(p.duration - v.duration_seconds) < 0.05);
@@ -50,7 +53,7 @@ test("renders a 1080x1920 H.264/AAC short with captions timed to the narration",
     for (let i = 1; i < scenes.length; i++) assert.equal(scenes[i].start_seconds, scenes[i - 1].end_seconds);
     assert.ok(Math.abs(scenes.at(-1)!.end_seconds - v.duration_seconds) < 0.1, "the timeline fills the measured video");
 
-    const vtt = await readFile(join(out, `captions_${a.id}_1_short.vtt`), "utf8");
+    const vtt = await readFile(join(out, media.keys[1].replace(/\//g, "_")), "utf8");
     assert.match(vtt, /^WEBVTT/);
     assert.match(vtt, /Your coding agent says it's/);
   } finally {

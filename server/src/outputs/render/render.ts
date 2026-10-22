@@ -3,6 +3,7 @@
 // ffmpeg text cards; both use the same script, narration and captions.
 
 import { reasoningEffort } from "../../openaiEffort.js";
+import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -76,7 +77,8 @@ export async function renderArtifact(a: ReadyArtifact, o: RenderOptions): Promis
     out.mp4 = await burnSubtitles(dir, out.mp4, cues);
     const judgment = await judgeShort(a, scenes, out.mp4, dir, { apiKey: o.openaiKey, model: o.openaiModel, fetchImpl: o.fetchImpl }, skill);
 
-    const base = `${a.id}/${a.version}`;
+    // A failed upload or lost claim must never overwrite the video still being served.
+    const base = `${a.id}/${a.version}/${randomUUID()}`;
     const media_ref = await o.media.put(`videos/${base}/short.mp4`, out.mp4, "video/mp4");
     const caption_ref = await o.media.put(`captions/${base}/short.vtt`, vtt, "text/vtt; charset=utf-8");
     const narration_ref = await o.media.put(`audio/${base}/narration.m4a`, out.narration, "audio/mp4");

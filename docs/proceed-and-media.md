@@ -65,13 +65,19 @@ Node, in `server/src`. `POST /api/ingest/process` takes `{ "unit_ids": [...] }` 
    evidence for the end card only; lesson claims and repository paths still need artifact evidence.
    Grounding, clarity, usefulness, visuals and subtitles must each score at least 4/5 with no recorded defects
    ([judge implementation](../server/src/outputs/render/judge.ts)). A rejection prevents upload and exhausts
-   automatic attempts; the internal receipt is retained in the stored failure, while progress shows a bounded
+   automatic attempts for that generator version; the internal receipt is retained in the stored failure, while progress shows a bounded
    plain-English quality reason. Successful uploads are size-checked; `video_results.review_feedback` retains
    the passing receipt, and `review_status` becomes `approved` before the result is served.
 
-**Legacy outputs.** Ready shorts without the current judge marker are withheld from feed/media access and
-eligible for rerendering by the output sweep. The sweep considers ready, prompt-backed artifacts with an
-importer. Ready skills from older prompt revisions are withheld immediately and receive one regeneration
+**Legacy outputs.** The sweep considers ready, prompt-backed artifacts with an importer. A ready or failed
+video without the current `generator_revision` in its review feedback gets exactly one generation attempt
+for the version in [`render/revision.ts`](../server/src/outputs/render/revision.ts). The atomic claim records
+that version before rendering, including for a previously exhausted rejection. Approved videos stay ready
+with their existing media and passing judge receipt during the attempt. Only a newly approved result swaps
+their media references; any failure keeps the prior approved video visible and records the error. Rejected
+videos remain hidden unless their replacement passes the unchanged judge. Failed or interrupted refreshes
+are not retried for the same generator version. Shorts lacking a passing judge receipt remain withheld.
+Ready skills from older prompt revisions are withheld immediately and receive one regeneration
 attempt when the processor next handles the eligible artifact. Success records the current prompt revision;
 failed or interrupted regeneration keeps the old text unavailable and reports a regeneration state without
 an automatic retry. Existing rows, task records and briefs are preserved. Claim and retry rules live in
@@ -79,12 +85,15 @@ an automatic retry. Existing rows, task records and briefs are preserved. Claim 
 [`web/src/skill-policy.js`](../web/src/skill-policy.js).
 
 R2 keys (resolved by the Worker as `r2:<key>`):
-- `videos/<artifact_id>/<version>/short.mp4`
-- `captions/<artifact_id>/<version>/short.vtt`
-- `audio/<artifact_id>/<version>/narration.m4a`
+- `videos/<artifact_id>/<version>/<render_id>/short.mp4`
+- `captions/<artifact_id>/<version>/<render_id>/short.vtt`
+- `audio/<artifact_id>/<version>/<render_id>/narration.m4a`
+
+Each render gets a fresh ID, so partial uploads or a worker that loses its claim cannot overwrite published
+bytes. Existing references without a render ID remain valid; stored media is not deleted.
 
 **Claims.** Every job is claimed. A unit's claim, and the claim token on `video_results` or `skill_results`, can be
-taken over after 60 minutes (`server/src/claims.ts`), except for the bounded legacy skill regeneration above.
+taken over after 60 minutes (`server/src/claims.ts`), except for the bounded legacy output regeneration above.
 A worker whose claim was taken over can't write its result.
 
 **Configuration**: see the [ingestion README](../server/src/ingest/README.md) for provider credentials, models,
