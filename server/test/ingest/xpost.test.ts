@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { processUnits } from "../../src/ingest/processor.js";
-import { MemoryStore } from "../../src/ingest/store.js";
+import { D1Store, MemoryStore } from "../../src/ingest/store.js";
+import { testDatabase } from "../db/helpers.js";
+import { createUnits } from "../../../web/src/imports.js";
+import { connect } from "../../../web/src/db.js";
 import { mockFetch } from "./helpers.js";
 import { DEFAULT_CATEGORIZATION_REQUEST } from "../../src/ingest/digest/prompt.js";
 import { runDigestion } from "../../src/ingest/digest/run.js";
@@ -62,7 +65,7 @@ test("an X post is read from twitterapi.io, then digested like any other unit, w
 
   const saved = (await store.getUnits([unit.id]))[0];
   assert.equal(saved.status, "ready");
-  assert.equal(saved.extractionMethod, "twitterapi.io:tweets:v2");
+  assert.equal(saved.extractionMethod, "twitterapi.io:tweets");
   assert.equal(x.auth, "tok");
   assert.equal(calls.gemini, 0);
   assert.equal(saved.title, "@someone: Use evals before you ship an agent. Seriously.");
@@ -200,6 +203,57 @@ test("the captured pfernan95dev post retains its introduction and article previe
   }
   assert.equal(keyedCalls, 1);
   assert.equal(publicCalls, 3);
+});
+
+test("the captured post is replaced after a failed article lookup and reused after recovery", async () => {
+  const post = JSON.parse(readFileSync(new URL("./fixtures/xpost-2111437891322745223.json", import.meta.url), "utf8"));
+  for (const failure of [
+    () => new Response("temporarily unavailable", { status: 503 }),
+    () => { throw new DOMException("lookup timed out", "TimeoutError"); },
+    () => new Response("{invalid JSON"),
+    () => new Response("", { status: 404 }),
+  ]) {
+    const { db, sqlite } = testDatabase();
+    try {
+      const store = new D1Store(db);
+      const sql = connect({ DB: { prepare(query: string) { return { bind(...params: (string | number | null)[]) {
+        return { async all() { return { results: sqlite.prepare(query).all(...params) }; } };
+      } }; } } });
+      const source = `https://x.com/i/status/${post.id_str}`;
+      const submit = () => createUnits(sql, [{ submitted_url: `https://x.com/pfernan95dev/status/${post.id_str}`, source_url: source, start_seconds: null, content_type: "x_post" }]);
+      let recovered = false;
+      const fetchImpl: typeof fetch = async (input) => {
+        const url = new URL(String(input));
+        if (url.origin + url.pathname === "https://api.twitterapi.io/twitter/tweets") {
+          return Response.json({ status: "success", tweets: [{ id: post.id_str, text: post.text, createdAt: post.created_at,
+            author: { userName: post.user.screen_name, name: post.user.name } }] });
+        }
+        assert.equal(url.origin + url.pathname, "https://cdn.syndication.twimg.com/tweet-result");
+        return recovered ? Response.json(post) : failure();
+      };
+      const options = { geminiKey: "", twitterApiKey: "tok", store, fetchImpl };
+      const [first] = await submit();
+      const partial = await extractUnit((await store.claimPendingUnits([first.id]))[0], options);
+      assert.equal(partial.status, "ready");
+      assert.equal(partial.error, null);
+      assert.equal(partial.extractionMethod, "twitterapi.io:tweets");
+      assert.equal(partial.transcript?.evidence_items[0].observed_spoken_content, post.text);
+      const [replacement] = await submit();
+      assert.notEqual(replacement.id, partial.id);
+      assert.equal(replacement.reused, false);
+      assert.equal((await submit())[0].id, replacement.id);
+      recovered = true;
+      const complete = await extractUnit((await store.claimPendingUnits([replacement.id]))[0], options);
+      assert.equal(complete.status, "ready");
+      assert.equal(complete.extractionMethod, "twitterapi.io:tweets:v2");
+      assert.equal(complete.transcript?.evidence_items[0].observed_spoken_content,
+        `${post.text}\n\nArticle: ${post.article.title}\n\n${post.article.preview_text}`);
+      const [reused] = await submit();
+      assert.equal(reused.id, complete.id);
+      assert.equal(reused.reused, true);
+      assert.equal((await store.getUnits([partial.id]))[0].transcript?.evidence_items[0].observed_spoken_content, post.text);
+    } finally { sqlite.close(); }
+  }
 });
 
 test("twitterapi.io failures and empty results both allow the public route to read the post", async () => {

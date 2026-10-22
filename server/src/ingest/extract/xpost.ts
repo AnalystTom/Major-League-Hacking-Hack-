@@ -93,7 +93,7 @@ export interface XPostOptions {
  * Posts have no timeline, so the single evidence item sits at second 0 and the window is [0, 0].
  * Throws with the actual failure (deleted, protected, bad key, rate limited) so the unit shows it.
  */
-export async function extractXPost(o: XPostOptions): Promise<{ title: string; transcript: NonNullable<IngestedUnit["transcript"]> }> {
+export async function extractXPost(o: XPostOptions): Promise<{ title: string; transcript: NonNullable<IngestedUnit["transcript"]>; articleLookupComplete: boolean }> {
   const fetchUrl = (url: string) => (o.fetchImpl ?? fetch)(url, { headers: { "x-api-key": o.apiKey }, signal: AbortSignal.timeout(o.timeoutMs ?? 15_000) });
   const get = () => fetchUrl(`https://api.twitterapi.io/twitter/tweets?tweet_ids=${encodeURIComponent(o.postId)}`);
   const res = await pacedGet(get);
@@ -111,9 +111,11 @@ export async function extractXPost(o: XPostOptions): Promise<{ title: string; tr
 
   const own = (post.text ?? "").trim();
   let article = onlyLinks(own) ? await readArticle(o, fetchUrl) : null;
-  if (!article) article = (await readPublicPost(o).catch(() => null))?.article ?? null;
+  const publicPost = article ? null : await readPublicPost(o).catch(() => null);
+  article ??= publicPost?.article ?? null;
   const quoted = post.quoted_tweet?.text?.trim();
-  return shape({ own, article, quoted, quotedHandle: post.quoted_tweet?.author?.userName, author: post.author, createdAt: post.createdAt });
+  return { ...shape({ own, article, quoted, quotedHandle: post.quoted_tweet?.author?.userName, author: post.author, createdAt: post.createdAt }),
+    articleLookupComplete: article !== null || publicPost !== null };
 }
 
 interface PostParts {

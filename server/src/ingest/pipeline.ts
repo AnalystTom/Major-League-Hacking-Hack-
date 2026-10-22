@@ -60,6 +60,7 @@ async function extractXPostUnit(unit: IngestedUnit, o: IngestOptions): Promise<I
     try {
       if (!o.twitterApiKey) throw new Error("TWITTERAPI_IO_KEY is not configured");
       read = await extractXPost({ apiKey: o.twitterApiKey, postId, fetchImpl: o.fetchImpl });
+      if (!read.articleLookupComplete) out.extractionMethod = "twitterapi.io:tweets";
     } catch (e) {
       try {
         read = await extractXPostPublic({ postId, fetchImpl: o.fetchImpl });

@@ -28,6 +28,7 @@ test("a post that is only a link to an X Article reads the article's title and b
   assert.equal(body, "Article: How to build motion design studio\n\nMost people end up with the same video.\n\nGive it a reference");
   assert.equal(r.title, "@0xMovez: How to build motion design studio");
   assert.match(r.transcript.overview!, /^X Article by Movez \(@0xMovez\) on 2026-09-27/);
+  assert.equal(r.articleLookupComplete, true);
 });
 
 test("an ordinary post keeps its keyed text without a paid article request", async () => {
@@ -40,6 +41,7 @@ test("an ordinary post keeps its keyed text without a paid article request", asy
   assert.match(seen[1], /cdn\.syndication\.twimg\.com\/tweet-result/);
   assert.equal(r.transcript.evidence_items[0].observed_spoken_content, "Write the failing check first. https://t.co/x");
   assert.match(r.transcript.overview!, /^X post by/);
+  assert.equal(r.articleLookupComplete, true);
 });
 
 test("public article evidence supplements keyed introductions and link-only posts while retaining quotes", async () => {
