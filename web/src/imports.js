@@ -5,7 +5,7 @@ import { isSubstackHost, parseSubstackLink } from "./substack.js";
 import { isXLink, parseXLink } from "./xpost.js";
 import { parseYouTubeLink } from "./youtube.js";
 
-// Per source type: a video costs a long Gemini read, an X post one cheap API read.
+// Per source type: a video costs a long Gemini read; X posts use text-reading endpoints.
 export const MAX_YOUTUBE_LINKS = 20;
 export const MAX_X_LINKS = 100;
 export const MAX_SUBSTACK_LINKS = 20; // a post is one Nimble read plus a long digest input
@@ -64,8 +64,7 @@ export function parseUnitIds(value) {
 }
 
 /**
- * Reuses the newest unit for the same video (or X post) and start time unless it failed, otherwise inserts a
- * pending one. Reuse means an already processed video shows its results instead of paying for a rerun.
+ * Import reuse and X refresh rules: docs/project-actions-spec.md#http-api.
  * Only ids and status come back: a reused unit's submitted_url is another visitor's original link,
  * which can carry their share or playlist parameters, so it never leaves the database.
  */
@@ -77,6 +76,8 @@ export async function createUnits(sql, links, { userId = null } = {}) {
       WHERE source_url = ${link.source_url}
         AND start_seconds IS ${link.start_seconds}
         AND status <> 'failed'
+        AND (${link.content_type ?? "youtube_video"} <> 'x_post' OR status IN ('pending','running')
+          OR extraction_method IN ('twitterapi.io:tweets:v2','x-embed:tweet-result:v2'))
       ORDER BY created_at DESC LIMIT 1`;
     const [unit] = existing
       ? [{ ...existing, reused: true }]

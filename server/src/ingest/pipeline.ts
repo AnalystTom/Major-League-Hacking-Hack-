@@ -12,7 +12,7 @@ import type { IngestedUnit, StoredArtifact } from "./types.js";
 
 export interface IngestOptions {
   geminiKey: string;
-  /** twitterapi.io key: reads X Articles in full. Without it (or when it fails) X posts are read from X's public embed endpoint. */
+  /** Optional X reading key; provider behavior and Article limits are documented in ./README.md. */
   twitterApiKey?: string;
   /** Nimble key; without it Substack posts fail with a clear error. */
   nimbleKey?: string;
@@ -60,6 +60,7 @@ async function extractXPostUnit(unit: IngestedUnit, o: IngestOptions): Promise<I
     try {
       if (!o.twitterApiKey) throw new Error("TWITTERAPI_IO_KEY is not configured");
       read = await extractXPost({ apiKey: o.twitterApiKey, postId, fetchImpl: o.fetchImpl });
+      if (!read.articleLookupComplete) out.extractionMethod = "twitterapi.io:tweets";
     } catch (e) {
       try {
         read = await extractXPostPublic({ postId, fetchImpl: o.fetchImpl });

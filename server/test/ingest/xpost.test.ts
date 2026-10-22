@@ -3,11 +3,15 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { processUnits } from "../../src/ingest/processor.js";
-import { MemoryStore } from "../../src/ingest/store.js";
+import { D1Store, MemoryStore } from "../../src/ingest/store.js";
+import { testDatabase } from "../db/helpers.js";
+import { createUnits } from "../../../web/src/imports.js";
+import { connect } from "../../../web/src/db.js";
 import { mockFetch } from "./helpers.js";
 import { DEFAULT_CATEGORIZATION_REQUEST } from "../../src/ingest/digest/prompt.js";
 import { runDigestion } from "../../src/ingest/digest/run.js";
 import { extractXPostPublic } from "../../src/ingest/extract/xpost.js";
+import { extractUnit } from "../../src/ingest/pipeline.js";
 import type { IngestedUnit } from "../../src/ingest/types.js";
 
 process.env.TWITTERAPI_MIN_INTERVAL_MS = "0"; // no pacing in tests
@@ -61,6 +65,7 @@ test("an X post is read from twitterapi.io, then digested like any other unit, w
 
   const saved = (await store.getUnits([unit.id]))[0];
   assert.equal(saved.status, "ready");
+  assert.equal(saved.extractionMethod, "twitterapi.io:tweets");
   assert.equal(x.auth, "tok");
   assert.equal(calls.gemini, 0);
   assert.equal(saved.title, "@someone: Use evals before you ship an agent. Seriously.");
@@ -131,7 +136,7 @@ test("an X post link is read from X's public embed route when there is no twitte
   const saved = (await store.getUnits([unit.id]))[0];
   assert.equal(saved.status, "ready");
   assert.equal(saved.error, null);
-  assert.equal(saved.extractionMethod, "x-embed:tweet-result");
+  assert.equal(saved.extractionMethod, "x-embed:tweet-result:v2");
   assert.equal(saved.title, "@someone: Everyone's selling guides on how to grow on X. Here's mine, for free.");
   assert.match(saved.transcript?.overview ?? "", /Some One \(@someone\) on 2026-10-17/);
   assert.equal(x.calls + calls.gemini, 0); // no twitterapi.io call and nothing sent to Gemini
@@ -162,10 +167,20 @@ test("an X Article read through the embed route keeps its title and preview", as
   assert.equal(saved.transcript?.evidence_items[0].observed_spoken_content, "Article: 0 to 5,000 followers\n\nWhat I did and what failed.");
 });
 
-test("the captured pfernan95dev post retains its introduction and supplied article preview without keys", async () => {
+test("the captured pfernan95dev post retains its introduction and article preview with and without a key", async () => {
   const post = JSON.parse(readFileSync(new URL("./fixtures/xpost-2111437891322745223.json", import.meta.url), "utf8"));
+  let keyedCalls = 0;
+  let publicCalls = 0;
   const fetchImpl: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
+    if (url.origin + url.pathname === "https://api.twitterapi.io/twitter/tweets") {
+      keyedCalls++;
+      assert.equal(url.searchParams.get("tweet_ids"), post.id_str);
+      assert.equal(new Headers(init?.headers).get("x-api-key"), "tok");
+      return Response.json({ status: "success", tweets: [{ id: post.id_str, text: post.text, createdAt: post.created_at,
+        author: { userName: post.user.screen_name, name: post.user.name } }] });
+    }
+    publicCalls++;
     assert.equal(url.origin + url.pathname, "https://cdn.syndication.twimg.com/tweet-result");
     assert.equal(url.searchParams.get("id"), "2111437891322745223");
     assert.equal(init?.headers, undefined);
@@ -176,6 +191,69 @@ test("the captured pfernan95dev post retains its introduction and supplied artic
   assert.equal(read.transcript.evidence_items[0].observed_spoken_content,
     `${post.text}\n\nArticle: ${post.article.title}\n\n${post.article.preview_text}`);
   assert.deepEqual(read.transcript.window, [0, 0]);
+  for (const twitterApiKey of [undefined, "tok"]) {
+    const store = new MemoryStore();
+    const saved = await extractUnit({ ...xUnit(), sourceUrl: `https://x.com/i/status/${post.id_str}`, status: "running" }, { geminiKey: "", twitterApiKey, store, fetchImpl });
+    assert.equal(saved.status, "ready");
+    assert.equal(saved.error, null);
+    assert.equal(saved.extractionMethod, twitterApiKey ? "twitterapi.io:tweets:v2" : "x-embed:tweet-result:v2");
+    assert.equal(saved.title, read.title);
+    assert.deepEqual(saved.transcript, read.transcript);
+    assert.deepEqual((await store.getUnits([saved.id]))[0].transcript, read.transcript);
+  }
+  assert.equal(keyedCalls, 1);
+  assert.equal(publicCalls, 3);
+});
+
+test("the captured post is replaced after a failed article lookup and reused after recovery", async () => {
+  const post = JSON.parse(readFileSync(new URL("./fixtures/xpost-2111437891322745223.json", import.meta.url), "utf8"));
+  for (const failure of [
+    () => new Response("temporarily unavailable", { status: 503 }),
+    () => { throw new DOMException("lookup timed out", "TimeoutError"); },
+    () => new Response("{invalid JSON"),
+    () => new Response("", { status: 404 }),
+  ]) {
+    const { db, sqlite } = testDatabase();
+    try {
+      const store = new D1Store(db);
+      const sql = connect({ DB: { prepare(query: string) { return { bind(...params: (string | number | null)[]) {
+        return { async all() { return { results: sqlite.prepare(query).all(...params) }; } };
+      } }; } } });
+      const source = `https://x.com/i/status/${post.id_str}`;
+      const submit = () => createUnits(sql, [{ submitted_url: `https://x.com/pfernan95dev/status/${post.id_str}`, source_url: source, start_seconds: null, content_type: "x_post" }]);
+      let recovered = false;
+      const fetchImpl: typeof fetch = async (input) => {
+        const url = new URL(String(input));
+        if (url.origin + url.pathname === "https://api.twitterapi.io/twitter/tweets") {
+          return Response.json({ status: "success", tweets: [{ id: post.id_str, text: post.text, createdAt: post.created_at,
+            author: { userName: post.user.screen_name, name: post.user.name } }] });
+        }
+        assert.equal(url.origin + url.pathname, "https://cdn.syndication.twimg.com/tweet-result");
+        return recovered ? Response.json(post) : failure();
+      };
+      const options = { geminiKey: "", twitterApiKey: "tok", store, fetchImpl };
+      const [first] = await submit();
+      const partial = await extractUnit((await store.claimPendingUnits([first.id]))[0], options);
+      assert.equal(partial.status, "ready");
+      assert.equal(partial.error, null);
+      assert.equal(partial.extractionMethod, "twitterapi.io:tweets");
+      assert.equal(partial.transcript?.evidence_items[0].observed_spoken_content, post.text);
+      const [replacement] = await submit();
+      assert.notEqual(replacement.id, partial.id);
+      assert.equal(replacement.reused, false);
+      assert.equal((await submit())[0].id, replacement.id);
+      recovered = true;
+      const complete = await extractUnit((await store.claimPendingUnits([replacement.id]))[0], options);
+      assert.equal(complete.status, "ready");
+      assert.equal(complete.extractionMethod, "twitterapi.io:tweets:v2");
+      assert.equal(complete.transcript?.evidence_items[0].observed_spoken_content,
+        `${post.text}\n\nArticle: ${post.article.title}\n\n${post.article.preview_text}`);
+      const [reused] = await submit();
+      assert.equal(reused.id, complete.id);
+      assert.equal(reused.reused, true);
+      assert.equal((await store.getUnits([partial.id]))[0].transcript?.evidence_items[0].observed_spoken_content, post.text);
+    } finally { sqlite.close(); }
+  }
 });
 
 test("twitterapi.io failures and empty results both allow the public route to read the post", async () => {
@@ -187,7 +265,7 @@ test("twitterapi.io failures and empty results both allow the public route to re
     await processUnits([unit.id], opts(store, fetchImpl, "tok"));
     const saved = (await store.getUnits([unit.id]))[0];
     assert.equal(saved.status, "ready");
-    assert.equal(saved.extractionMethod, "x-embed:tweet-result");
+    assert.equal(saved.extractionMethod, "x-embed:tweet-result:v2");
     assert.equal(saved.transcript?.evidence_items[0].observed_spoken_content, "Everyone's selling guides on how to grow on X. Here's mine, for free.");
     assert.equal(x.embed, 1);
   }

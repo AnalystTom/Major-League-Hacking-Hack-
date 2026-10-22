@@ -1,8 +1,9 @@
 import { httpError } from "../../httpError.js";
 import type { EvidenceItem, IngestedUnit } from "../types.js";
 
-export const X_POST_METHOD = "twitterapi.io:tweets";
-export const X_PUBLIC_METHOD = "x-embed:tweet-result";
+// Keep these versioned methods in sync with web/src/imports.js's cache reuse check.
+export const X_POST_METHOD = "twitterapi.io:tweets:v2";
+export const X_PUBLIC_METHOD = "x-embed:tweet-result:v2";
 export const UNAVAILABLE = "X post unavailable: not found, deleted or protected";
 
 interface TwitterApiTweet {
@@ -91,8 +92,9 @@ export interface XPostOptions {
  * Reads one post from twitterapi.io (GET /twitter/tweets) and returns the stored transcript plus a title.
  * Posts have no timeline, so the single evidence item sits at second 0 and the window is [0, 0].
  * Throws with the actual failure (deleted, protected, bad key, rate limited) so the unit shows it.
+ * articleLookupComplete prevents reuse when an unavailable supplementary lookup leaves article presence unknown.
  */
-export async function extractXPost(o: XPostOptions): Promise<{ title: string; transcript: NonNullable<IngestedUnit["transcript"]> }> {
+export async function extractXPost(o: XPostOptions): Promise<{ title: string; transcript: NonNullable<IngestedUnit["transcript"]>; articleLookupComplete: boolean }> {
   const fetchUrl = (url: string) => (o.fetchImpl ?? fetch)(url, { headers: { "x-api-key": o.apiKey }, signal: AbortSignal.timeout(o.timeoutMs ?? 15_000) });
   const get = () => fetchUrl(`https://api.twitterapi.io/twitter/tweets?tweet_ids=${encodeURIComponent(o.postId)}`);
   const res = await pacedGet(get);
@@ -109,10 +111,12 @@ export async function extractXPost(o: XPostOptions): Promise<{ title: string; tr
   if (!post) throw new Error(UNAVAILABLE);
 
   const own = (post.text ?? "").trim();
-  // An X Article's post is just a link; its body is what the bookmark is for.
-  const article = onlyLinks(own) ? await readArticle(o, fetchUrl) : null;
+  let article = onlyLinks(own) ? await readArticle(o, fetchUrl) : null;
+  const publicPost = article ? null : await readPublicPost(o).catch(() => null);
+  article ??= publicPost?.article ?? null;
   const quoted = post.quoted_tweet?.text?.trim();
-  return shape({ own, article, quoted, quotedHandle: post.quoted_tweet?.author?.userName, author: post.author, createdAt: post.createdAt });
+  return { ...shape({ own, article, quoted, quotedHandle: post.quoted_tweet?.author?.userName, author: post.author, createdAt: post.createdAt }),
+    articleLookupComplete: article !== null || publicPost !== null };
 }
 
 interface PostParts {
@@ -157,6 +161,10 @@ const syndicationToken = (id: string) => ((Number(id) / 1e15) * Math.PI).toStrin
  * An X Article comes back as its title and preview only; the full body needs twitterapi.io.
  */
 export async function extractXPostPublic(o: Pick<XPostOptions, "postId" | "fetchImpl" | "timeoutMs">): Promise<{ title: string; transcript: NonNullable<IngestedUnit["transcript"]> }> {
+  return shape(await readPublicPost(o));
+}
+
+async function readPublicPost(o: Pick<XPostOptions, "postId" | "fetchImpl" | "timeoutMs">): Promise<PostParts> {
   const res = await (o.fetchImpl ?? fetch)(`https://cdn.syndication.twimg.com/tweet-result?id=${o.postId}&token=${syndicationToken(o.postId)}`, { signal: AbortSignal.timeout(o.timeoutMs ?? 15_000) });
   const text = await res.text();
   if (res.status === 404) throw new Error(UNAVAILABLE);
@@ -169,5 +177,5 @@ export async function extractXPostPublic(o: Pick<XPostOptions, "postId" | "fetch
   const preview = [a?.title?.trim() && `Article: ${a.title.trim()}`, a?.preview_text?.trim()].filter(Boolean).join("\n\n");
   const article = a && preview ? { title: a.title?.trim() || null, text: preview } : null;
   const quoted = post.quoted_tweet?.text?.trim();
-  return shape({ own, article, quoted, quotedHandle: post.quoted_tweet?.user?.screen_name, author: { userName: post.user?.screen_name, name: post.user?.name }, createdAt: post.created_at });
+  return { own, article, quoted, quotedHandle: post.quoted_tweet?.user?.screen_name, author: { userName: post.user?.screen_name, name: post.user?.name }, createdAt: post.created_at };
 }

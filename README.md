@@ -64,3 +64,4 @@ npm test --prefix server
 ```
 
 Getting started is free: create an account at the live site.
+For import reuse and refreshing older X reads, see the [import rules](docs/project-actions-spec.md#http-api).
