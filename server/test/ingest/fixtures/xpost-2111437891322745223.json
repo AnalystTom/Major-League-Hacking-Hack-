@@ -1,0 +1,62 @@
+{
+  "__typename": "Tweet",
+  "favorite_count": 112,
+  "lang": "en",
+  "possibly_sensitive": false,
+  "created_at": "2026-10-17T12:43:16.000Z",
+  "display_text_range": [
+    0,
+    210
+  ],
+  "entities": {
+    "urls": [
+      {
+        "display_url": "x.com/i/article/2111…",
+        "expanded_url": "https://x.com/i/article/2111374081140338688",
+        "indices": [
+          187,
+          210
+        ],
+        "url": "https://t.co/KNHf3MA3is"
+      }
+    ]
+  },
+  "id_str": "2111437891322745223",
+  "text": "Everyone's selling guides on how to grow on X.\n\nHere's mine, for free: 0 to 5,000 followers and creator rewards in 76 days. No tools, no tricks, just what I actually did and what failed. https://t.co/KNHf3MA3is",
+  "user": {
+    "id_str": "2082574833519390720",
+    "name": "Pablo",
+    "screen_name": "pfernan95dev",
+    "is_blue_verified": true,
+    "profile_image_shape": "Circle",
+    "verified": false,
+    "profile_image_url_https": "https://pbs.twimg.com/profile_images/2082579170077429760/XLQb8iSf_normal.jpg"
+  },
+  "edit_control": {
+    "edit_tweet_ids": [
+      "2111437891322745223"
+    ],
+    "editable_until_msecs": "1792244596000",
+    "edits_remaining": "5",
+    "is_edit_eligible": false
+  },
+  "conversation_count": 36,
+  "news_action_type": "conversation",
+  "article": {
+    "cover_media": {
+      "id": "QXBpTWVkaWE6DAAFCgABHU0cAJwXwAAKAAIc5srG8hdwAAAA",
+      "media_info": {
+        "__typename": "ApiImage",
+        "original_img_height": 819,
+        "original_img_url": "https://pbs.twimg.com/media/HU0cAJwXwAAc74g.jpg",
+        "original_img_width": 2048
+      }
+    },
+    "id": "QXJ0aWNsZUVudGl0eToyMTExMzc0MDgxMTQwMzM4Njg4",
+    "preview_text": "With 0 followers, nobody sees your posts. So for the first weeks I barely posted. I replied.\nOn day 1 I wrote about 15 replies and pinned one post, and woke up with 17 followers. The replies did that,",
+    "rest_id": "2111374081140338688",
+    "title": "0 to 5,000 followers and X creator rewards in 76 days. no tools, no tricks"
+  },
+  "isEdited": false,
+  "isStaleEdit": false
+}

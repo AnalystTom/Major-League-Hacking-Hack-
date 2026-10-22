@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { isXUrl, parseSourceUrl, parseXPostUrl } from "./urls.js";
+import { isXUrl, parseSourceUrl, parseXPostUrl, parseYouTubeUrl } from "./urls.js";
 import { extractWithNimble } from "./extract/nimble.js";
-import { extractXPost, X_POST_METHOD } from "./extract/xpost.js";
+import { extractXPost, extractXPostPublic, X_POST_METHOD, X_PUBLIC_METHOD } from "./extract/xpost.js";
 import { extractWithGemini, windowFor, GEMINI_MODEL } from "./extract/gemini.js";
 import { applyValidation, validateExtraction } from "./extract/validate.js";
 import { fetchTitle } from "./extract/title.js";
@@ -12,7 +12,7 @@ import type { IngestedUnit, StoredArtifact } from "./types.js";
 
 export interface IngestOptions {
   geminiKey: string;
-  /** twitterapi.io key; without it X posts fail with a clear error instead of being skipped. */
+  /** twitterapi.io key: reads X Articles in full. Without it (or when it fails) X posts are read from X's public embed endpoint. */
   twitterApiKey?: string;
   /** Nimble key; without it Substack posts fail with a clear error. */
   nimbleKey?: string;
@@ -32,6 +32,8 @@ export async function extractUnit(unit: IngestedUnit, o: IngestOptions): Promise
   if (unit.contentType === "substack_post") return extractSubstackUnit(unit, o);
   let out: IngestedUnit = { ...unit, extractionMethod: `gemini:${o.geminiModel ?? GEMINI_MODEL}` };
   try {
+    // Gemini is handed a YouTube link as a video; any other page would be fetched as HTML and rejected.
+    parseYouTubeUrl(unit.sourceUrl);
     const window = windowFor(unit.startSeconds, o.windowSeconds);
     const [extracted, title] = await Promise.all([
       extractWithGemini({ apiKey: o.geminiKey, sourceUrl: unit.sourceUrl, window, model: o.geminiModel, fetchImpl: o.fetchImpl, retries: o.retries })
@@ -48,15 +50,25 @@ export async function extractUnit(unit: IngestedUnit, o: IngestOptions): Promise
   return out;
 }
 
-/** X posts are read from twitterapi.io as text; no model is involved in extraction. */
+/** X posts are read as text, never by a model: from twitterapi.io when it has a key and answers, else from X's public embed endpoint. */
 async function extractXPostUnit(unit: IngestedUnit, o: IngestOptions): Promise<IngestedUnit> {
   let out: IngestedUnit = { ...unit, extractionMethod: X_POST_METHOD, extractedAt: new Date() };
   try {
-    if (!o.twitterApiKey) throw new Error("TWITTERAPI_IO_KEY is not configured");
     const postId = /\/status\/(\d+)$/.exec(unit.sourceUrl)?.[1];
     if (!postId) throw new Error("stored source_url is not an X post");
-    const { title, transcript } = await extractXPost({ apiKey: o.twitterApiKey, postId, fetchImpl: o.fetchImpl });
-    out = { ...out, title, transcript, status: "ready", error: null, rejectedItems: [] };
+    let read;
+    try {
+      if (!o.twitterApiKey) throw new Error("TWITTERAPI_IO_KEY is not configured");
+      read = await extractXPost({ apiKey: o.twitterApiKey, postId, fetchImpl: o.fetchImpl });
+    } catch (e) {
+      try {
+        read = await extractXPostPublic({ postId, fetchImpl: o.fetchImpl });
+        out.extractionMethod = X_PUBLIC_METHOD;
+      } catch (e2) {
+        throw o.twitterApiKey ? e : e2;
+      }
+    }
+    out = { ...out, title: read.title, transcript: read.transcript, status: "ready", error: null, rejectedItems: [] };
   } catch (e) {
     out = { ...out, status: "failed", error: (e as Error).message };
   }

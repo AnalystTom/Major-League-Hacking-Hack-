@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "wrangler deploy --dry-run",
+    "check": "npm test && wrangler deploy --dry-run",
+    "test": "node --experimental-test-module-mocks --test test-*.mjs",
     "deploy": "wrangler deploy"
   },
   "dependencies": {

@@ -96,3 +96,48 @@ test('D1 JSON output reads preserve source order, real errors, private digests a
     assert.equal((await createHandoff(sql,{},user,sources,[s.id])).brief.status,'pending');
   }finally{sqlite.close();}
 });
+
+test('processor outages do not block saved progress, ready shorts or new imports',async()=>{
+  const {sqlite,env,sql}=database();
+  const call=(path,body,cookie)=>app.fetch(new Request(`http://localhost${path}`,{method:body?'POST':'GET',headers:{'content-type':'application/json',...(cookie?{cookie}:{})},...(body?{body:JSON.stringify(body)}:{})}),env,{});
+  try {
+    const signup=await call('/api/auth/signup',{email:'outage@example.com',password:'correct horse battery'});
+    assert.equal(signup.status,201);
+    const cookie=signup.headers.get('set-cookie').split(';')[0];
+    const url='https://x.com/pfernan95dev/status/2111437891322745223';
+    const imported=await (await call('/api/imports',{links:[url]},cookie)).json();
+    const unit=imported.units[0];
+    await sql`UPDATE ingested_units SET status='ready',transcript='{}' WHERE id=${unit.id}`;
+    const [artifact]=await sql`INSERT INTO artifacts(name,source_url,source_ids,processed_text,ingestion_status)
+      VALUES('Growing an audience',${url},${JSON.stringify([unit.id])},'Source-grounded narration','ready') RETURNING id`;
+    await sql`INSERT INTO video_results(artifact_id,artifact_version,status,media_ref,caption_ref,narration_ref,duration_seconds)
+      VALUES(${artifact.id},1,'ready','r2:videos/outage/1/short.mp4','r2:captions/outage/1/short.vtt','r2:audio/outage/1/narration.m4a',30)`;
+    env.PROCESSOR_URL='https://processor/api/ingest/process';
+    env.PROCESSOR_TOKEN='test-token';
+    const videos=['VQy50fuxI34','V-EDrhIhHzQ','dQw4w9WgXcQ'];
+    for (const [i,status] of [401,502,null].entries()) {
+      const calls=[];
+      env.PROCESSOR={async fetch(url,init){
+        calls.push({url:String(url),method:init?.method});
+        if(status===null)throw new DOMException('Timed out','TimeoutError');
+        return new Response(null,{status});
+      }};
+      const progress=await call('/api/imports',null,cookie);
+      assert.equal(progress.status,200);
+      const saved=(await progress.json()).units.find(u=>u.id===unit.id);
+      assert.deepEqual([saved.stage,saved.settled,saved.error],['ready',true,null]);
+      const feed=await call('/api/feed?scope=mine',null,cookie);
+      assert.equal(feed.status,200);
+      assert.deepEqual((await feed.json()).items.map(item=>item.id),[artifact.id]);
+      assert.equal(calls.length,0);
+
+      const response=await call('/api/imports',{links:[`https://youtu.be/${videos[i]}`]},cookie);
+      assert.equal(response.status,201);
+      const queued=await response.json();
+      assert.equal(queued.processor,'unavailable');
+      assert.deepEqual([queued.units[0].stage,queued.units[0].settled],['queued',false]);
+      assert.deepEqual(calls,[{url:env.PROCESSOR_URL,method:'POST'}]);
+      assert.equal((await sql`SELECT count(*) AS n FROM user_imports WHERE unit_id=${queued.units[0].id}`)[0].n,1);
+    }
+  }finally{sqlite.close();}
+});

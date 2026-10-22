@@ -14,7 +14,7 @@ Combine related saves, match them to what an AI engineer is building, and turn t
 
 - V0 accepts individual public YouTube links and X post links through a simple import UI, plus public (non-paywalled) Substack post links read with Nimble (digests cite numbered text sections instead of timestamps). No automatic Watch Later, X bookmark-list or Substack sync, and no other source formats yet.
 - Use one real project supplied beforehand. Visitors can supply video links; project onboarding remains outside v0.
-- Combine related tutorials when they address the same problem; do not force unrelated videos into one short.
+- Group related sources according to the [Digestion Prompt rules](#filtering-and-digestion-prompt).
 - Match ideas to the project's goal, stack, current work, and available resources.
 - Core v0 journey: import links → see processing/results → browse shorts. The separate skills stream supports short → checklist → agent handoff; its delivery integration remains to be chosen.
 - The LLM uses a named **Digestion Prompt** to choose useful material, group it, and produce the shared schema. Categories are dynamic and guided by the user's prompt.
@@ -71,14 +71,14 @@ Workflows 2 and 3 consume the same ingestion output independently. Workflow 3 ne
 Digests don't see a project. Fit with the user's project is decided at the end, by their coding agent, which the handoff prompt tells to review the repository and recent work before judging each action. Unknowns stay unknown.
 
 1. Retrieve actual content or a usable transcript. A URL alone is insufficient. Extraction reads up to an hour from the link's start time; every cited moment must overlap evidence that was actually extracted.
-2. Identify techniques and group sources addressing the same problem; remove duplicates. A digest only combines one person's videos from one batch; lessons from separate batches are combined by the handoff.
-3. State each lesson in a form that transfers to an ordinary codebase (for example, evaluate your own prompts on fixed real inputs, rather than build a training pipeline).
-4. Preserve disagreements and missing prerequisites. V0 uses only the supplied videos; it does not fetch supporting sources. Specific-gap research belongs to V1.
-5. Propose a concrete action with a check of behaviour, never of wording, plus when it doesn't apply and when it's already done.
+2. Keep substantive content on any topic that can be explained in a short clip. Being non-technical, an opinion or outside engineering is not an exclusion reason. Group only sources covering the same subject; remove duplicates without merging unrelated material. A digest only combines one person's sources from one batch; lessons from separate batches are combined by the handoff.
+3. Synthesize the supplied evidence into narration-ready takeaways with source references.
+4. Preserve disagreements and missing prerequisites. V0 uses only the supplied sources; it does not fetch supporting sources. Specific-gap research belongs to V1.
+5. Exclude only sources with nothing to explain: no usable evidence, unreadable content, a bare link or greeting, or promotion without substance. Give every unused unit a one-sentence, plain-English reason.
 
-Do not invent relevance scores, revenue, traffic uplift, effort estimates, repository paths, or implementation results. Expected benefits remain expectations until observed. If nothing fits, show an empty actionable feed and actual exclusion reasons.
+Do not invent relevance scores, revenue, traffic uplift, effort estimates, repository paths, or implementation results. Expected benefits remain expectations until observed. If no source has enough substance, show an empty feed and the exclusion reasons.
 
-**Digestion Prompt input:** successfully extracted units, their source IDs and passages/timestamps, the supplied categorization request, the prepared project context, and reviewed few-shot examples when available. One unit is one source artifact; one final artifact may combine several units.
+**Digestion Prompt input:** successfully extracted units, their source IDs and passages/timestamps, the supplied categorization request, and reviewed few-shot examples when available. One unit is one source artifact; one final artifact may combine several units.
 
 **Digestion Prompt output:** an `artifacts` list containing schema-valid final artifacts with `name`, contributing `source_ids`/URLs, dynamic `category`, source-grounded `processed_text`, evidence references, and a `selection_reason`; plus an `exclusions` list of usable-but-unselected source IDs and reasons, tied to the same prompt revision. Return no artifact when the evidence is insufficient. Failed retrievals retain their extraction errors outside the LLM. Validate both the shape and referenced source IDs before storing; a user's prompt cannot change the output contract or override grounding rules.
 
@@ -260,6 +260,10 @@ Signed-out requests to session routes get `401`. Rate limits: sign-up and sign-i
 
 **Unit shape.** `{ id, source_url, start_seconds, title, stage, settled, error }`. A user counts an artifact only when they imported every video it was built from (`a.source_ids <@` their imports), so a digest never shows one person's videos to another. The feed and `/api/skills` apply the same rule. **Open decision:** this replaces the earlier rule that "everyone who imported a video sees the same artifacts for it". The processor now re-digests a shared video for anyone who can't see a digest of it, which can produce a second short covering the same video. `stage` collapses the unit's records into one state. `settled` means nothing more happens without a person. When a unit feeds several artifacts, the one furthest along is reported.
 
+`error` is a user-facing reason: plain stored failures pass through, while long or technical provider/tool failures become a short sentence for the failed stage (`plainReason` in `web/src/imports.js`). Stored exclusion reasons pass through unchanged. Original failures remain in the database and processor diagnostics; a missing reason stays unknown.
+
+**Deferred prompt-revision consistency (R5/R10/R11).** Processing ignores exclusions from other prompt revisions, but progress still reads all stored exclusions. Aligning these when `DIGESTION_REQUEST` changes remains a follow-up. Progress reads persisted D1 records without a processor RPC dependency.
+
 | `stage` | Derived from | `settled` |
 | --- | --- | --- |
 | `queued` | unit `pending` | no |
@@ -280,7 +284,7 @@ Signed-out requests to session routes get `401`. Rate limits: sign-up and sign-i
 
 The web Worker sends `POST PROCESSOR_URL` with `authorization: Bearer PROCESSOR_TOKEN` and `{ "unit_ids": [...] }` in batches of at most 10 ids, waiting at most 8 seconds per batch. The Node processor serves it at `/api/ingest/process` (bearer `INGEST_TOKEN`), replies `202` and works in the background:
 
-1. Claims pending units atomically and extracts them with Gemini. A unit that's already `ready` isn't read again. A claim older than 60 minutes (`server/src/claims.ts`) can be taken over.
+1. Claims pending units atomically and extracts them with the [configured source provider](../server/src/ingest/README.md). A unit that's already `ready` isn't read again. A claim older than 60 minutes (`server/src/claims.ts`) can be taken over.
 2. Runs the Digestion Prompt for units an importer can't see a digest of yet. It writes artifacts and exclusions, and records a failed digest per unit with its error, retrying up to 3 times.
 3. For each ready artifact, writes a skill with up to three tasks, and a short: script, Gemini TTS narration per scene, measured timeline, WebVTT captions, ffmpeg render, then upload to `videos/`, `captions/` and `audio/` under `<artifact_id>/<version>/` in R2. Each video and skill result is claimed with a token, so a worker whose claim was taken over can't overwrite the one that took over.
 4. Timed sweeps pick up pending units, missing digests, and missing outputs.
@@ -289,7 +293,7 @@ Details, configuration and hosting (PR #5: a Cloudflare Container that sleeps wh
 
 ### Page behaviour
 
-`/start` sends a signed-in visitor straight to `/app`. On `/app` the page polls `/api/imports`, `/api/feed?scope=mine` and `/api/skills` every 4 seconds while a unit is unsettled or a skill is being written. When a short is ready but its skill hasn't started, it checks every 20 seconds, at most 15 times. A failing `/api/skills` doesn't stop links and shorts from updating. Each link shows its title or URL, its stage, and its actual error, or "Reason unknown." Ready clips go straight to the reel. Errors show where the user is looking: the loading line, the reel's frame for a new account, or the status list. During the waitlist launch, the landing page shows **Join the waitlist** for all visitors. Product onboarding remains available in the development configuration.
+`/start` sends a signed-in visitor straight to `/app`. On `/app` the page polls `/api/imports`, `/api/feed?scope=mine` and `/api/skills` every 4 seconds while a unit is unsettled or a skill is being written. When a short is ready but its skill hasn't started, it checks every 20 seconds, at most 15 times. A failing `/api/skills` doesn't stop links and shorts from updating. Each link shows its title or URL, its stage, and the reason defined by the [unit progress contract](#http-api), or "Reason unknown." Ready clips go straight to the reel. The [onboarding journey](proceed-and-media.md#the-journey) describes where progress appears. During the waitlist launch, the landing page shows **Join the waitlist** for all visitors. Product onboarding remains available in the development configuration.
 
 ### API Worker `resurface-api` (`server/`, Hono; runs on Node or Workers)
 

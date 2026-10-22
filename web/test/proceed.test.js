@@ -56,6 +56,21 @@ test("parseUnitIds accepts only uuid lists", () => {
   assert.equal(parseUnitIds(`${ID};drop table`), null);
 });
 
+test("describeUnit never shows a raw provider error", () => {
+  const raw = 'Gemini HTTP 400: {\n  "error": {\n    "code": 400,\n    "message": "Unsupported MIME type: text/html; charset=UTF-8",\n    "status": "INVALID_ARGUMENT"\n  }\n}';
+  const unit = { id: ID, source_url: "https://x.com/i/status/2104216919033192746", content_type: "x_post", status: "failed", error: raw, artifacts: [], exclusions: [] };
+  const failed = describeUnit(unit);
+  assert.equal(failed.error, "Resurface couldn't turn this into a short.");
+  assert.doesNotMatch(JSON.stringify(failed), /Gemini|MIME|INVALID_ARGUMENT|HTTP/);
+  // Reasons already written in plain English pass through, including a short that isn't worth making.
+  assert.equal(describeUnit({ ...unit, error: "X post unavailable: not found, deleted or protected" }).error, "X post unavailable: not found, deleted or protected");
+  assert.equal(describeUnit({ ...unit, status: "ready", exclusions: ["The post is a greeting with nothing to explain."] }).error, "The post is a greeting with nothing to explain.");
+  assert.equal(describeUnit({ ...unit, status: "ready", exclusions: ["A post about API pricing with no detail."] }).error, "A post about API pricing with no detail.");
+  for (const e of ["twitterapi.io HTTP 429: Too Many Requests", "TWITTERAPI_IO_KEY is not configured", "Digestion hit the 40000-token output cap"]) {
+    assert.doesNotMatch(describeUnit({ ...unit, error: e }).error, /HTTP|KEY|Digestion|token/);
+  }
+});
+
 test("describeUnit reports the furthest real stage", () => {
   const unit = (over) => ({ id: ID, source_url: "u", status: "ready", artifacts: [], exclusions: [], ...over });
   const art = (over) => ({ ingestion_status: "ready", video: null, ...over });
@@ -69,9 +84,10 @@ test("describeUnit reports the furthest real stage", () => {
   assert.equal(describeUnit(unit({})).stage, "digesting");
   assert.equal(describeUnit(unit({ exclusions: ["Off topic."] })).stage, "not_selected");
   assert.equal(describeUnit(unit({ artifacts: [art({})] })).stage, "rendering");
-  assert.equal(describeUnit(unit({ artifacts: [art({ video: { status: "failed", error: "ffmpeg exit 1" } })] })).error, "ffmpeg exit 1");
+  assert.equal(describeUnit(unit({ artifacts: [art({ ingestion_status: "failed", error: "Digestion HTTP 500" })] })).error, "Resurface couldn't turn this into a short.");
+  assert.equal(describeUnit(unit({ artifacts: [art({ video: { status: "failed", error: "ffmpeg exit 1", attempts: 3 } })] })).error, "The short couldn't be finished.");
   const retrying = describeUnit(unit({ artifacts: [art({ video: { status: "failed", error: "Gemini HTTP 503", attempts: 1 } })] }));
-  assert.deepEqual([retrying.stage, retrying.settled, retrying.error], ["render_retrying", false, "Gemini HTTP 503"]);
+  assert.deepEqual([retrying.stage, retrying.settled, retrying.error], ["render_retrying", false, "The short hit a snag and is being tried again."]);
   assert.equal(describeUnit(unit({ artifacts: [art({ video: { status: "failed", error: "x", attempts: 3 } })] })).stage, "render_failed");
   for (const artifactReview of [undefined, "pending", "approved", "rejected"]) {
     for (const videoReview of [undefined, "pending", "approved", "rejected"]) {

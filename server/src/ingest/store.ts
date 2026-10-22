@@ -34,13 +34,13 @@ export interface Store {
   listPendingUnitIds(limit: number): Promise<string[]>;
   /**
    * Ready imported units, each with an importer who can't see a digest of it yet (none exists, or every one also
-   * uses videos that person didn't import), after fewer than MAX_DIGEST_ATTEMPTS failed digests.
+   * uses videos that person didn't import), with no exclusion for this prompt and fewer than MAX_DIGEST_ATTEMPTS failed digests.
    */
-  listUnitsNeedingDigest(limit: number): Promise<{ unitId: string; userId: string | null }[]>;
+  listUnitsNeedingDigest(limit: number, promptId: string): Promise<{ unitId: string; userId: string | null }[]>;
   /** The user behind each unit's newest import, so the sweep never digests different people's videos together. */
   newestImporters(unitIds: string[]): Promise<Map<string, string>>;
-  /** Of these ready units, the ones with no non-failed artifact and no exclusion yet. Digests are shared by everyone. */
-  unitsNeedingDigest(unitIds: string[]): Promise<string[]>;
+  /** Ready units with no exclusion for this prompt and no non-failed digest visible to an importer (or none when unimported). */
+  unitsNeedingDigest(unitIds: string[], promptId: string): Promise<string[]>;
   /** Returns the id of the digestion_prompts revision for this exact text + few-shot set, creating the next revision if new. */
   registerPrompt(promptText: string, fewShot: unknown[]): Promise<string>;
   saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null): Promise<StoredArtifact[]>;
@@ -111,17 +111,17 @@ export class MemoryStore implements Store {
   async listPendingUnitIds(limit: number) {
     return [...this.units.values()].filter((u) => u.status === "pending" && this.imported.has(u.id)).slice(0, limit).map((u) => u.id);
   }
-  async listUnitsNeedingDigest(limit: number) {
+  async listUnitsNeedingDigest(limit: number, promptId: string) {
     const ids = [...this.units.values()].filter((u) => this.imported.has(u.id)).map((u) => u.id);
     const failures = (id: string) => this.artifacts.filter((a) => a.source_ids.includes(id) && a.ingestion_status === "failed").length;
-    return (await this.unitsNeedingDigest(ids)).filter((id) => failures(id) < MAX_DIGEST_ATTEMPTS).slice(0, limit)
+    return (await this.unitsNeedingDigest(ids, promptId)).filter((id) => failures(id) < MAX_DIGEST_ATTEMPTS).slice(0, limit)
       .map((unitId) => ({ unitId, userId: null }));
   }
   async newestImporters() { return new Map<string, string>(); }
-  async unitsNeedingDigest(unitIds: string[]) {
+  async unitsNeedingDigest(unitIds: string[], promptId: string) {
     return unitIds.filter((id) => this.units.get(id)?.status === "ready"
       && !this.artifacts.some((a) => a.source_ids.includes(id) && a.ingestion_status !== "failed")
-      && !this.exclusions.some((e) => e.unit_id === id));
+      && !this.exclusions.some((e) => e.unit_id === id && e.promptId === promptId));
   }
   async registerPrompt(promptText: string, fewShot: unknown[]) {
     const found = this.prompts.find((p) => p.promptText === promptText && JSON.stringify(p.fewShot) === JSON.stringify(fewShot));
@@ -238,14 +238,14 @@ export class D1Store implements Store {
       AND EXISTS(SELECT 1 FROM user_imports ui WHERE ui.unit_id=u.id) ORDER BY u.created_at LIMIT ?1`, [limit]);
     return rows.map((r) => r.id as string);
   }
-  async listUnitsNeedingDigest(limit: number) {
+  async listUnitsNeedingDigest(limit: number, promptId: string) {
     const { rows } = await this.db.query(`SELECT id,user_id FROM (
       SELECT u.id,ui.user_id,row_number() OVER(PARTITION BY u.id ORDER BY ui.created_at DESC,ui.user_id) AS n
       FROM ingested_units u JOIN user_imports ui ON ui.unit_id=u.id
       WHERE u.status='ready' AND ${UNSEEN_BY('ui.user_id')}
-      AND NOT EXISTS(SELECT 1 FROM artifact_exclusions e WHERE e.unit_id=u.id)
+      AND NOT EXISTS(SELECT 1 FROM artifact_exclusions e WHERE e.unit_id=u.id AND e.digestion_prompt_id=?3)
       AND (SELECT count(*) FROM artifacts a WHERE EXISTS(SELECT 1 FROM json_each(a.source_ids) WHERE value=u.id)
-        AND a.ingestion_status='failed') < ?2) WHERE n=1 ORDER BY id LIMIT ?1`, [limit,MAX_DIGEST_ATTEMPTS]);
+        AND a.ingestion_status='failed') < ?2) WHERE n=1 ORDER BY id LIMIT ?1`, [limit,MAX_DIGEST_ATTEMPTS,promptId]);
     return rows.map((r) => ({ unitId: r.id as string,userId: r.user_id as string }));
   }
   async newestImporters(ids: string[]) {
@@ -254,14 +254,14 @@ export class D1Store implements Store {
       FROM user_imports WHERE unit_id IN (SELECT value FROM json_each(?1))) WHERE n=1`, [JSON.stringify(ids)]);
     return new Map(rows.map((r) => [r.unit_id as string,r.user_id as string]));
   }
-  async unitsNeedingDigest(ids: string[]) {
+  async unitsNeedingDigest(ids: string[], promptId: string) {
     const { rows } = await this.db.query(`SELECT u.id FROM ingested_units u
       WHERE u.id IN (SELECT value FROM json_each(?1)) AND u.status='ready'
-      AND NOT EXISTS(SELECT 1 FROM artifact_exclusions e WHERE e.unit_id=u.id)
+      AND NOT EXISTS(SELECT 1 FROM artifact_exclusions e WHERE e.unit_id=u.id AND e.digestion_prompt_id=?2)
       AND (EXISTS(SELECT 1 FROM user_imports ui WHERE ui.unit_id=u.id AND ${UNSEEN_BY('ui.user_id')})
         OR (NOT EXISTS(SELECT 1 FROM user_imports ui WHERE ui.unit_id=u.id)
           AND NOT EXISTS(SELECT 1 FROM artifacts a WHERE EXISTS(SELECT 1 FROM json_each(a.source_ids) WHERE value=u.id)
-            AND a.ingestion_status<>'failed')))`, [JSON.stringify(ids)]);
+            AND a.ingestion_status<>'failed')))`, [JSON.stringify(ids),promptId]);
     return rows.map((r) => r.id as string);
   }
   async registerPrompt(promptText: string, fewShot: unknown[]) {

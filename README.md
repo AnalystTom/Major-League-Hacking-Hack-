@@ -17,7 +17,7 @@ Built at AI Engineer NYC 2026.
 
 ## Features
 
-- **Shorts**: each save becomes a short of the part worth keeping.
+- **Shorts**: each save becomes a short of the part worth keeping; see the [content selection rules](docs/project-actions-spec.md#filtering-and-digestion-prompt).
 - **Keep**: mark items worth keeping. Keeps become skills, linked to their source (coming at launch).
 - **Skills**: every short becomes a skill your coding agent can install.
 - **Agent tasks**: turn what you keep into tasks for your coding agent (coming at launch).
