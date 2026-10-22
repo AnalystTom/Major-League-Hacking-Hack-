@@ -1,5 +1,5 @@
-// OPENAI_REASONING_EFFORT: how hard a reasoning model thinks on every OpenAI call (digest, skills, scripts, handoffs).
-// Unset sends nothing, so the model's own default applies. Hidden reasoning counts against the output cap.
+// OPENAI_REASONING_EFFORT is the shared default; shorts supply their own script/judge effort overrides.
+// Without either, the model's default applies. Hidden reasoning counts against the output cap.
 
 export const REASONING_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh"] as const;
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];

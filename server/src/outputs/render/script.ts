@@ -88,7 +88,7 @@ export const statesNumber = (text: string, n: string) =>
 
 /**
  * A move the template can't draw faithfully, or a count of a number the source never states, falls back to
- * slam (or strike, for a roll that's too long to roll), so a slightly off script still renders honestly.
+ * slam, so a slightly off script still renders honestly.
  */
 function settleMove(s: RawScene, sourceText: string): Pick<DraftScene, "move" | "swap"> {
   const swap = s.swap.replace(/\s+/g, " ");

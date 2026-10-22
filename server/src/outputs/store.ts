@@ -40,7 +40,7 @@ export class LostClaim extends Error {
 }
 
 export interface OutputStore {
-  /** Ready digests of imported units with no result of this kind yet, a stale claim, or a failure with attempts left. */
+  /** Eligible ready digests, including versioned legacy refreshes, stale claims and retryable failures. */
   artifactsNeeding(kind: Kind, limit: number): Promise<ReadyArtifact[]>;
   /** Claims generation; an approved video stays ready during its refresh. Null if already held or settled. */
   claim(kind: Kind, a: ReadyArtifact): Promise<Claim | null>;
