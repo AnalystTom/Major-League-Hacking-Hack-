@@ -34,12 +34,12 @@ export interface Store {
   listPendingUnitIds(limit: number): Promise<string[]>;
   /**
    * Ready imported units, each with an importer who can't see a digest of it yet (none exists, or every one also
-   * uses videos that person didn't import), after fewer than MAX_DIGEST_ATTEMPTS failed digests.
+   * uses videos that person didn't import), with no exclusion for this prompt and fewer than MAX_DIGEST_ATTEMPTS failed digests.
    */
   listUnitsNeedingDigest(limit: number, promptId: string): Promise<{ unitId: string; userId: string | null }[]>;
   /** The user behind each unit's newest import, so the sweep never digests different people's videos together. */
   newestImporters(unitIds: string[]): Promise<Map<string, string>>;
-  /** Of these ready units, the ones with no non-failed artifact and no exclusion yet. Digests are shared by everyone. */
+  /** Ready units with no exclusion for this prompt and no non-failed digest visible to an importer (or none when unimported). */
   unitsNeedingDigest(unitIds: string[], promptId: string): Promise<string[]>;
   /** Returns the id of the digestion_prompts revision for this exact text + few-shot set, creating the next revision if new. */
   registerPrompt(promptText: string, fewShot: unknown[]): Promise<string>;

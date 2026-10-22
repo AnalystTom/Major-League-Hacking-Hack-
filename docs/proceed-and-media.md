@@ -9,10 +9,11 @@ dev. The processor's hosting is PR #5. Shorts reach production only when that's 
 1. **Sign up** at `/start`: email and password, nothing else (`users`, `sessions`; `db/migrations/002_accounts.sql`).
    Signing up or in goes straight to `/app`.
 2. **Paste links** on `/app`. A new account lands on the reel's 9:16 frame with the paste box in it, focused.
-   Up to 20 YouTube videos, 100 X post links (`x.com/<user>/status/<id>`, stored with `content_type = 'x_post'`) and 20 public Substack posts (`<publication>.substack.com/p/<slug>`, stored with `content_type = 'substack_post'`) become `ingested_units`, linked to the user in `user_imports`. X posts are read as text from twitterapi.io (`TWITTERAPI_IO_KEY` on the processor), or from X's public embed endpoint when that key is missing or twitterapi.io fails; no model is involved in reading them. Substack posts are read through Nimble (`NIMBLE_API_KEY` on the processor); paywalled posts fail with that reason.
+   Up to 20 YouTube videos, 100 X post links (`x.com/<user>/status/<id>`, stored with `content_type = 'x_post'`) and 20 public Substack posts (`<publication>.substack.com/p/<slug>`, stored with `content_type = 'substack_post'`) become `ingested_units`, linked to the user in `user_imports`. Source-reading providers, the optional X key and Article preview limits are documented in the [ingestion README](../server/src/ingest/README.md).
 3. **Watch them process.** Until the first short is ready, the frame shows "Making your shorts" with each link's
-   real stage. After that, a top-bar status chip ("2 ready · 1 couldn't be made") opens the same list with the
-   actual errors.
+   real stage; the top-bar status chip stays hidden so the results appear only once and the paste box stays clear.
+   Once a short is ready, the chip ("2 ready · 1 couldn't be made") opens the list. Failure reasons follow the
+   [unit progress contract](project-actions-spec.md#http-api).
 4. **Watch the reel**, full screen at 9:16 below the top bar, edge to edge on phones. **Add videos** opens a sheet
    with the paste box.
 5. **Skills and Tasks** open as a sheet over the reel, from top-bar buttons with counts or a short's
@@ -52,7 +53,7 @@ Every mutation must be `application/json`; with the `SameSite=Lax` session cooki
 | `POST /api/auth/logout` | Ends the session. |
 | `GET /api/me` | `{ user, imports }`; `{ user: null }` when signed out. |
 | `POST /api/imports` `{ links }` | Canonicalises links, reuses a non-failed unit for the same video and start time, links each to the user, and sends units new to this user to the processor. Returns `{ units, processor }`. |
-| `GET /api/imports` | The user's links with their stage: `queued`, `fetching`, `digesting`, `rendering`, `ready`, `failed`, `render_failed`, `not_selected`, plus the actual error. |
+| `GET /api/imports` | The user's links with their stage and reason; see the [unit progress contract](project-actions-spec.md#http-api). |
 | `GET /api/feed?scope=mine` | The user's shorts: artifacts they can see (below) whose artifact and video are both `ready`. |
 | `GET /api/skills` | The newest skill per visible ready artifact: `{ id, status, error, artifact, name, description, markdown, videos, action_items }`. Tasks carry `task`, `prerequisites`, `steps`, `completion_check` and `evidence`. |
 | `GET /api/feed` | The public curated feed (needs `feed_order`); no account. |
@@ -92,7 +93,7 @@ Node, in `server/src`. `POST /api/ingest/process` takes `{ "unit_ids": [...] }` 
 `Authorization: Bearer <INGEST_TOKEN>`, replies `202`, and works in the background. The web Worker calls it with
 `PROCESSOR_URL` and `PROCESSOR_TOKEN` (equal to `INGEST_TOKEN`). Timed sweeps pick up anything a request missed.
 
-1. **Extract** (`ingest/`): claim pending units, read each video's window with Gemini, then `ready` with the
+1. **Extract** (`ingest/`): claim pending units, read each source with its [configured provider](../server/src/ingest/README.md), then `ready` with the
    evidence, or `failed` with the actual error. A unit that's already `ready` isn't read again.
 2. **Digest**: the Digestion Prompt (OpenAI) writes `artifacts` (`project_context_id` null) and
    `artifact_exclusions` with reasons. A digest that fails is stored as a failed artifact with its error and is

@@ -1,6 +1,6 @@
 # Ingestion (workflow 1)
 
-Node-only. Extracts supplied YouTube videos with Gemini and X posts (bookmarked post links) from twitterapi.io and public Substack posts with Nimble, then digests them with the Digestion Prompt. There is no
+Node-only. Extracts supplied YouTube videos, X posts (bookmarked post links) and public Substack posts using the providers configured below, then digests them with the Digestion Prompt. There is no
 project: extraction is shared. Digest sharing and per-user visibility follow [Who sees what](../../../docs/proceed-and-media.md#who-sees-what).
 Mounted by `src/index.ts` at `/api/ingest` when `GEMINI_API_KEY` is set (and then `INGEST_TOKEN` is required, or startup fails).
 
@@ -14,7 +14,7 @@ Every route needs `Authorization: Bearer $INGEST_TOKEN`. The web Worker sends it
 | Env | Meaning |
 | --- | --- |
 | `INGEST_TOKEN` | Bearer token callers must send. Required when ingestion is enabled. |
-| `TWITTERAPI_IO_KEY` | [twitterapi.io](https://twitterapi.io) API key, used to read X posts (`ingested_units.content_type = 'x_post'`) and the full body of X Articles. Optional: without it, or when twitterapi.io fails, posts are read from X's public embed endpoint (`cdn.syndication.twimg.com`, no key; an Article comes back as its title and preview only). |
+| `TWITTERAPI_IO_KEY` | [twitterapi.io](https://twitterapi.io) API key, used to read X posts (`ingested_units.content_type = 'x_post'`) as text without a model, including the full body of X Articles. Optional: without it, or when twitterapi.io fails, posts are read from X's public embed endpoint (`cdn.syndication.twimg.com`, no key; an Article comes back as its title and preview only). |
 | `NIMBLE_API_KEY` | [Nimble](https://docs.nimbleway.com) key, used to read public Substack posts (`ingested_units.content_type = 'substack_post'`). Without it Substack units fail with "NIMBLE_API_KEY is not configured". |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | Extraction. Model defaults to `gemini-3.5-flash-lite`. |
 | `WINDOW_SECONDS` | Seconds extracted from each unit's start time (30-3600, default 3600, i.e. 1 hour). |
@@ -28,6 +28,7 @@ Every route needs `Authorization: Bearer $INGEST_TOKEN`. The web Worker sends it
 Behavior: pending units are claimed atomically (`UPDATE ... WHERE status = 'pending'`); a `ready` unit is never re-extracted;
 artifacts are written with
 `project_context_id` null; a failed digest is stored as a failed artifact with its error and retried by the next request.
+Content selection follows the [Digestion Prompt rules](../../../docs/project-actions-spec.md#filtering-and-digestion-prompt).
 The D1 schema in `web/migrations/0002_application.sql` makes `(id, version)` the artifact key and freezes a ready revision.
 
 ## Substack posts

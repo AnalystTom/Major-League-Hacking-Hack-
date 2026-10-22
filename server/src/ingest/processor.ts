@@ -1,5 +1,5 @@
 // The processing service from the spec's "Processor contract": claim pending units, extract them, then digest
-// ready units. Extraction and digests are shared: a video imported twice is read and digested once.
+// ready units. Extraction is shared; digest reuse follows the store's per-importer eligibility rules.
 
 import { digestAndStore, extractUnit, type IngestOptions } from "./pipeline.js";
 import { recordError } from "../activity.js";
@@ -51,7 +51,7 @@ async function waitForSettled(ids: string[], o: ProcessorOptions): Promise<Inges
 
 /**
  * Processes units. Safe to call twice with the same ids: pending units are claimed atomically, ready units are
- * not re-extracted, and a unit that already has a digest (or was excluded) is skipped.
+ * not re-extracted, and digest eligibility follows the store's visibility and prompt-revision rules.
  */
 export function processUnits(unitIds: string[], o: ProcessorOptions): Promise<ProcessSummary> {
   return tracked(() => processNow(unitIds, o));
