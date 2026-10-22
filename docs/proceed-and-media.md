@@ -60,7 +60,9 @@ Node, in `server/src`. `POST /api/ingest/process` takes `{ "unit_ids": [...] }` 
    1080×1920 H.264 + AAC with `+faststart` and burn high-contrast narration captions into the central safe area
    before review. The player fits the whole frame and omits the duplicate WebVTT overlay for burned subtitles.
 5. **Checks before upload and `ready`.** The renderer probes dimensions, codecs and duration. An independent
-   one-pass model judge checks the artifact, timed narration and a sampled subtitled frame from each scene.
+   one-pass model judge checks the artifact, timed narration, a sampled subtitled frame from each scene and
+   an additional settled end-card frame. The ready skill's actual name and full description are supplied as
+   evidence for the end card only; lesson claims and repository paths still need artifact evidence.
    Grounding, clarity, usefulness, visuals and subtitles must each score at least 4/5 with no recorded defects
    ([judge implementation](../server/src/outputs/render/judge.ts)). A rejection prevents upload and exhausts
    automatic attempts; the internal receipt is retained in the stored failure, while progress shows a bounded
@@ -131,9 +133,7 @@ and the page reports that state; no simulated clips or processing records are cr
 
 - The proposed Opus-generated animation-code step isn't built; the processor uses the vendored motion template
   described above.
-- **Length isn't held to 30–45 s.** Only the script's word count (40–160) is checked, so roughly 15–65 s passes.
-- **Scene citations are optional.** Script scenes may carry no `source_ids`, though the spec requires traceable
-  evidence for factual claims and the judge checks grounding.
+- **Length isn't held to 30–45 s.** See the [timed-script contract's implementation limits](project-actions-spec.md#generation-and-timed-script-contract).
 - **Upload checks are size only.** "Playable" is checked on the local file before upload; after upload, only the
   size is compared.
 - **Skills only appear once a `skill_results` row exists.** A ready short whose skill was never started shows no

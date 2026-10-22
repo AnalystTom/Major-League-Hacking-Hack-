@@ -59,7 +59,7 @@ function sourceOf(a: ReadyArtifact): MotionSpec["source"] {
   return { kind, platform, title: clip(text, 110), byline: m ? m[1] : "", tag: `${platform.toUpperCase()}${more}` };
 }
 
-/** What the template needs from a script scene; aside, move, swap and ground come from script-v2. */
+/** Optional visual direction preserves compatibility with older scripts. */
 export interface SpecScene { on_screen_text: string; narration_text: string; aside?: string; move?: string; swap?: string; ground?: string }
 
 /** One ground per scene: night first, paper last, the script's choice between, and never the same twice in a row. */
@@ -84,7 +84,7 @@ export function motionSpec(a: ReadyArtifact, scenes: SpecScene[], slots: Slot[],
     category: oneLine(a.category ?? a.name),
     source: sourceOf(a),
     scenes: scenes.map((s, i) => {
-      // script-v2 writes its own aside; an older script's aside was the narration's first sentence.
+      // Older scripts without an aside use the narration's first sentence.
       const text = clip(oneLine(s.on_screen_text), 90);
       const sub = s.aside !== undefined ? clip(oneLine(s.aside), 90) : clip(firstSentence(s.narration_text), 140);
       const move = i === last ? "slam" : s.move ?? "slam";

@@ -158,7 +158,7 @@ The backend resolves references and verifies readiness before generation. Model 
 4. Render in an isolated environment; store the actual animation code, video, captions, narration, and music files.
 5. Follow the [processor checks](proceed-and-media.md#the-processor), including burned subtitles and a passing automated quality judgment, before upload and processing `ready`. Eligible clips reach the reel automatically.
 
-`script` is JSON with a nonempty `scenes` array. Each scene contains `start_seconds`, `end_seconds`, `narration_text`, `on_screen_text`, `visual_instruction`, and `source_ids`. Speech or screen text may be empty when the scene does not use it; factual claims still require traceable source evidence. Scene times must be finite, nonnegative, ordered, and nonoverlapping, with `end_seconds > start_seconds`. Every `source_id` must belong to the input artifact. Final scene timing and caption cues must fit the measured render duration. Unsupported claims, unknown source IDs, or invalid timing cause a failure rather than publication.
+`script` is JSON with a nonempty `scenes` array. Each scene contains `start_seconds`, `end_seconds`, `narration_text`, `on_screen_text`, `visual_instruction`, and `source_ids`. Speech or screen text may be empty when the scene does not use it; factual claims still require traceable source evidence. Scene times must be finite, nonnegative, ordered, and nonoverlapping, with `end_seconds > start_seconds`. Every scene, including the opening and closing scenes, must cite at least one supporting `source_id` belonging to the input artifact. Final scene timing and caption cues must fit the measured render duration. Unsupported claims, missing or unknown source IDs, or invalid timing cause a failure rather than publication.
 
 ### Output: `video_results`
 
@@ -188,8 +188,7 @@ Processing `ready` requires valid script, prompt revision, nonempty code/media/a
 **Implementation (v0):** migration 005 enforces one result per artifact revision, adds claim tokens, and rejects a `ready` video with empty references or a non-positive duration. Migration 004 keys artifacts on immutable `(id, version)` revisions. The basic renderer differs from the contract above in these ways:
 - Script generation follows the [processor flow](proceed-and-media.md#the-processor).
 - The renderer uses the vendored motion template by default, with basic ffmpeg cards as a fallback; see the processor flow above. There is no generated `animation_code_ref` column.
-- Length is bounded by the script's word count (40–160 words, roughly 15–65 s), not held to 30–45 s.
-- Scenes may carry no `source_ids`.
+- Duration follows the script's [word-count validation](../server/src/outputs/render/script.ts) and measured narration, rather than being held to 30–45 s.
 - The result row is created `running`, not `pending`.
 - "Verified playable" is checked on the rendered file before upload; after upload, the size is compared.
 

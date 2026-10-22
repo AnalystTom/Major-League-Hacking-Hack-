@@ -339,7 +339,7 @@ function wrapLines(s, f, w, z, width, maxLines = 4){
 const S = {};
 // @@scenes
 // Scenes read DATA (written per short by server/src/outputs/render/motion-skill.ts): the source, one entry per narration scene, and the skill it became.
-// Each narrated scene lands its headline with one of the reel's moves (script-v2 picks it; REFERENCE.md describes them).
+// Each narrated scene lands its headline with one of the reel's moves (the script picks it; REFERENCE.md describes them).
 const dataOf = t => DATA.scenes[sceneAt(t).i];
 const HX = 90, HY = 470, HW = W - 2 * HX;
 

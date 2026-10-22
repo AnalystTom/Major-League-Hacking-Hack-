@@ -1,5 +1,5 @@
 // The short's narration script, written from the artifact alone. Timing comes later, from the measured narration.
-// script-v2 also directs the picture: each scene picks one of the Resurface reel's moves and grounds, which
+// The script also directs the picture: each scene picks one of the Resurface reel's moves and grounds, which
 // motion-skill.ts hands to the template (assets/motion-graphic-skill/REFERENCE.md describes the reel and its sources).
 
 import { z } from "zod";
