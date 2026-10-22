@@ -9,6 +9,7 @@ import { processUnits, sweepOnce } from '../../src/ingest/processor.js';
 import { mockFetch } from '../ingest/helpers.js';
 import { UNLIMITED } from '../../src/ingest/limits.js';
 import { DEFAULT_CATEGORIZATION_REQUEST, promptRevisionText } from '../../src/ingest/digest/prompt.js';
+import { SKILL_PROMPT_REVISION } from '../../src/outputs/skills.js';
 
 async function setup() {
   const { db,sqlite }=testDatabase();
@@ -183,5 +184,38 @@ test('artifact creation reuses an identical source set and a quality rejection c
     assert.equal(await s.outputs.claim('video',a),null);
     assert.deepEqual(await s.outputs.artifactsNeeding('video',10),[]);
     assert.match((await s.db.query('SELECT error FROM video_results')).rows[0].error,/unsupported claim/);
+  } finally {s.sqlite.close();}
+});
+
+test('legacy skills regenerate once without exposing old text or retrying a failed refresh',async()=>{
+  const s=await setup();
+  try {
+    const artifacts=await Promise.all([s.unit('ready'),s.unit('ready')].map(async id=>s.artifact([await id])));
+    const old='---\nname: legacy-skill\n---\nOld procedure';
+    for (const a of artifacts) await s.db.query("INSERT INTO skill_results(artifact_id,artifact_version,status,skill_markdown,attempts,review_feedback) VALUES(?1,1,'ready',?2,1,?3)",[a.id,old,JSON.stringify({prompt_revision:'skill-v3'})]);
+    const needing=await s.outputs.artifactsNeeding('skill',10);
+    assert.equal(needing.length,2);
+    const [a,b]=needing;
+    assert.deepEqual(await s.outputs.skillCard(a),{status:'pending',card:null});
+    const ids=(await s.db.query('SELECT id FROM skill_results')).rows.map(r=>r.id);
+    assert.deepEqual(await s.handoffs.loadSkills(ids),[]);
+    const claims=await Promise.all([s.outputs.claim('skill',a),s.outputs.claim('skill',a)]);
+    assert.equal(claims.filter(Boolean).length,1);
+    const claim=claims.find(Boolean)!;
+    await s.db.query("UPDATE skill_results SET updated_at='2000-01-01T00:00:00Z' WHERE id=?1",[claim.id]);
+    assert.equal(await s.outputs.claim('skill',a),null);
+    await s.outputs.finishSkill(claim,{skill_markdown:'---\nname: concise-skill\n---\nInspect the source.',supporting_refs:[],action_items:[]});
+    assert.equal(await s.outputs.claim('skill',a),null);
+    assert.deepEqual(await s.outputs.skillCard(a),{status:'ready',card:{name:'concise-skill',tasks:0}});
+    assert.equal((await s.handoffs.loadSkills(ids)).length,1);
+    assert.deepEqual(JSON.parse((await s.db.query('SELECT review_feedback FROM skill_results WHERE id=?1',[claim.id])).rows[0].review_feedback),{prompt_revision:SKILL_PROMPT_REVISION});
+    const failed=(await s.outputs.claim('skill',b))!;
+    await s.outputs.fail('skill',failed,'provider unavailable');
+    await s.db.query("UPDATE skill_results SET updated_at='2000-01-01T00:00:00Z' WHERE id=?1",[failed.id]);
+    assert.equal(await s.outputs.claim('skill',b),null);
+    assert.deepEqual(await s.outputs.artifactsNeeding('skill',10),[]);
+    assert.deepEqual(await s.outputs.skillCard(b),{status:'failed',card:null});
+    assert.equal((await s.db.query('SELECT skill_markdown FROM skill_results WHERE id=?1',[failed.id])).rows[0].skill_markdown,old);
+    assert.equal((await s.db.query('SELECT count(*) AS n FROM skill_results')).rows[0].n,2);
   } finally {s.sqlite.close();}
 });

@@ -2,6 +2,7 @@
 
 import { dedupeContent } from "./content.js";
 import { resolveMediaRef } from "./media.js";
+import { skillStatus } from "./skill-policy.js";
 
 /**
  * One row per artifact revision whose processing is ready and whose video is rendered. With unit ids, only artifacts built from those units; without, the curated demo feed,
@@ -11,9 +12,9 @@ export async function readFeed(sql, unitIds = null) {
   if (unitIds && unitIds.length === 0) return [];
   const rows = await sql`
     SELECT a.id, a.version, a.name, a.category, a.source_url, a.sources, a.selection_reason, a.created_at,
-      (SELECT json_group_array(u.source_url) FROM json_each(a.source_ids) src JOIN ingested_units u ON u.id=src.value) AS source_urls,
+      (SELECT json_group_array(json_object('source_url',u.source_url,'start_seconds',u.start_seconds)) FROM json_each(a.source_ids) src JOIN ingested_units u ON u.id=src.value) AS source_units,
       v.id AS video_id, v.media_ref, v.caption_ref, v.duration_seconds, v.feed_order,
-      s.id AS skill_id, s.status AS skill_status
+      s.id AS skill_id, s.status AS skill_status, s.review_feedback AS skill_review_feedback
     FROM artifacts a
     JOIN video_results v ON v.artifact_id = a.id AND v.artifact_version = a.version AND v.status = 'ready'
       AND v.review_status = 'approved' AND json_extract(iif(json_valid(v.review_feedback),v.review_feedback,'{}'), '$.judge') = 'short-judge-v1'
@@ -47,7 +48,7 @@ export function serializeItem(row) {
       duration_seconds: row.duration_seconds === null ? null : Number(row.duration_seconds),
       feed_order: row.feed_order ?? null,
     },
-    skill: row.skill_id ? { id: row.skill_id, status: row.skill_status } : null,
+    skill: row.skill_id ? { id: row.skill_id, status: skillStatus(row.skill_status, row.skill_review_feedback) } : null,
   };
 }
 

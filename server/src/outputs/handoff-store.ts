@@ -6,6 +6,7 @@ import type { Database } from "../db.js";
 import { NOW } from "../ingest/ledger.js";
 import type { HandoffBrief, HandoffSkill } from "./handoff.js";
 import type { ActionItem } from "./types.js";
+import { SKILL_PROMPT_REVISION } from "./skills.js";
 
 /** A claimed `running` brief older than this belongs to a processor that died. It outlasts two 10-minute model calls. */
 export const STALE_BRIEF_MINUTES = 25;
@@ -87,7 +88,9 @@ export class D1HandoffStore implements HandoffStore {
         FROM action_items i WHERE i.skill_result_id=s.id ORDER BY i.position)) AS action_items
       FROM json_each(?1) picked JOIN skill_results s ON s.id=picked.value
       JOIN artifacts a ON a.id=s.artifact_id AND a.version=s.artifact_version
-      WHERE s.status='ready' AND a.ingestion_status='ready' ORDER BY CAST(picked.key AS INTEGER)`,[JSON.stringify(ids)]);
+      WHERE s.status='ready' AND a.ingestion_status='ready'
+        AND json_extract(iif(json_valid(s.review_feedback),s.review_feedback,'{}'),'$.prompt_revision')=?2
+      ORDER BY CAST(picked.key AS INTEGER)`,[JSON.stringify(ids),SKILL_PROMPT_REVISION]);
     return uniqueSlugs(rows.map(rowToSkill));
   }
   async finish(c: BriefClaim, brief: HandoffBrief, prompts: unknown, revision: string) {

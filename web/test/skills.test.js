@@ -3,12 +3,13 @@ import assert from "node:assert/strict";
 import { frontmatter, serializeSkill } from "../src/skills.js";
 import { evidenceLink, skillFile, skillSlug, taskPrompt } from "../public/agents.js";
 import { followImports } from "../public/units.js";
+import { SKILL_PROMPT_REVISION } from "../src/skill-policy.js";
 
 const UNIT = "6f1c2a52-8d0e-4f3b-9a51-0c6d2e7b9a10";
 const MD = `---\nname: verify-before-done\ndescription: "Make the agent prove a change: \\"red\\" first."\n---\n\n# Verify before done\n\n## Sources\n\n- [Evals](https://www.youtube.com/watch?v=VQy50fuxI34)\n`;
 
 const row = (over = {}) => ({
-  id: "s1", status: "ready", error: null, skill_markdown: MD,
+  id: "s1", status: "ready", error: null, skill_markdown: MD, review_feedback: JSON.stringify({ prompt_revision: SKILL_PROMPT_REVISION }),
   artifact_id: "a1", artifact_version: 2, artifact_name: "Write the check first", category: "Evals",
   videos: [{ id: UNIT, url: "https://www.youtube.com/watch?v=VQy50fuxI34", title: "Evals talk" }, { id: "x", url: "javascript:alert(1)", title: "bad" }],
   action_items: [{
@@ -128,7 +129,8 @@ test("a ready short without a skill yet keeps a slow, bounded check going", asyn
 test("shared skill helpers: anchor ids, writing states, and one front-matter pattern", async () => {
   const { skillAnchor, skillWriting, FRONTMATTER } = await import("../public/agents.js");
   assert.equal(skillAnchor("a1", 2), "skill-a1-2");
-  assert.deepEqual(["pending", "running", "ready", "failed"].map((status) => skillWriting({ status })), [true, true, false, false]);
+  assert.deepEqual(["pending", "running", "regenerating", "ready", "failed"].map((status) => skillWriting({ status })), [true, true, true, false, false]);
+  assert.equal(skillWriting({ status: "regenerating", error: "Regeneration failed" }), false);
   assert.equal(skillWriting({ status: "failed", retrying: true }), true, "a skill being retried keeps the page polling");
   const md = "---\nname: x\ndescription: y\n---\nBody";
   assert.equal(md.replace(FRONTMATTER, ""), "Body");

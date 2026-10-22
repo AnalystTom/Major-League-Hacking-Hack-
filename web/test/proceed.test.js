@@ -69,6 +69,13 @@ test("describeUnit never shows a raw provider error", () => {
   for (const e of ["twitterapi.io HTTP 429: Too Many Requests", "TWITTERAPI_IO_KEY is not configured", "Digestion hit the 40000-token output cap"]) {
     assert.doesNotMatch(describeUnit({ ...unit, error: e }).error, /HTTP|KEY|Digestion|token/);
   }
+  const receipt = { judge: "short-judge-v1", passed: false, captions_burned: true, scores: { grounding: 4, clarity: 4, usefulness: 4, visuals: 4, subtitles: 2 }, reasons: ["Subtitles overlap the lesson title.", "The final caption is clipped. ".repeat(8)] };
+  const rejected = `Quality judge rejected: ${JSON.stringify(receipt)}`;
+  for (const attempts of [1, 3]) {
+    const result = describeUnit({ ...unit, status: "ready", artifacts: [{ ingestion_status: "ready", video: { status: "failed", error: rejected, attempts } }] });
+    assert.match(result.error, /^Quality check: Subtitles overlap the lesson title\./);
+    assert.ok(result.error.length <= 185);
+  }
 });
 
 test("describeUnit reports the furthest real stage", () => {

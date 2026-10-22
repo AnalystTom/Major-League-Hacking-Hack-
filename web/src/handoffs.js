@@ -4,6 +4,7 @@
 // a delivery receipt.
 
 import { processorFetch } from "./processor.js";
+import { SKILL_PROMPT_REVISION } from "./skill-policy.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_SKILLS = 12;
@@ -65,6 +66,7 @@ export async function createHandoff(sql, env, user, unitIds, skillIds, fetchImpl
     SELECT s.id, s.updated_at FROM skill_results s
     JOIN artifacts a ON a.id = s.artifact_id AND a.version = s.artifact_version
     WHERE s.id IN (SELECT value FROM json_each(${picked})) AND s.status = 'ready' AND a.ingestion_status = 'ready'
+      AND json_extract(iif(json_valid(s.review_feedback),s.review_feedback,'{}'),'$.prompt_revision')=${SKILL_PROMPT_REVISION}
       AND NOT EXISTS (SELECT 1 FROM json_each(a.source_ids) WHERE value NOT IN (SELECT value FROM json_each(${list})))`;
   if (skills.length !== skillIds.length) return { status: 400, error: "Some of those skills aren't ready, or aren't from your videos." };
 

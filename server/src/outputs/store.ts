@@ -8,6 +8,7 @@ import { NOW } from "../ingest/ledger.js";
 import { STALE_CLAIM_MINUTES } from "../claims.js";
 import { sourceRefs, type GeneratedSkill, type ReadyArtifact, type RenderedVideo } from "./types.js";
 import type { SkillCard } from "./render/motion-skill.js";
+import { SKILL_PROMPT_REVISION } from "./skills.js";
 
 export type Kind = "skill" | "video";
 
@@ -18,8 +19,9 @@ export const RETRY_AFTER_MINUTES = 5;
 
 /** A result row a worker may take: never started, abandoned by a crashed worker, or failed with attempts left. */
 const CLAIMABLE = (r: string, kind: Kind) => `(${r}.status = 'pending'
-  ${kind === 'video' ? `OR (${r}.status='ready' AND coalesce(json_extract(iif(json_valid(${r}.review_feedback),${r}.review_feedback,'{}'),'$.judge'),'') <> 'short-judge-v1')` : ''}
-  OR (${r}.status = 'running' AND julianday(${r}.updated_at) < julianday('now', '-${STALE_CLAIM_MINUTES} minutes'))
+  OR (${r}.status='ready' AND coalesce(json_extract(iif(json_valid(${r}.review_feedback),${r}.review_feedback,'{}'),'$.${kind === 'video' ? 'judge' : 'prompt_revision'}'),'') <> '${kind === 'video' ? 'short-judge-v1' : SKILL_PROMPT_REVISION}')
+  OR (${r}.status = 'running' ${kind === 'skill' ? `AND coalesce(json_extract(iif(json_valid(${r}.review_feedback),${r}.review_feedback,'{}'),'$.regenerating'),0)=0` : ''}
+      AND julianday(${r}.updated_at) < julianday('now', '-${STALE_CLAIM_MINUTES} minutes'))
   OR (${r}.status = 'failed' AND ${r}.attempts < ${MAX_OUTPUT_ATTEMPTS}
       AND julianday(${r}.updated_at) < julianday('now', '-' || (${RETRY_AFTER_MINUTES} * ${r}.attempts) || ' minutes')))`;
 
@@ -75,18 +77,21 @@ export class D1OutputStore implements OutputStore {
     const { rows } = await this.db.query(`INSERT INTO ${t}(artifact_id,artifact_version,status,updated_at,claim_token,attempts)
       VALUES(?1,?2,'running',${NOW},?3,1)
       ON CONFLICT(artifact_id,artifact_version) DO UPDATE SET status='running',error=NULL,updated_at=${NOW},
+        ${kind === 'skill' ? `review_feedback=CASE WHEN ${t}.status='ready' THEN '{"regenerating":true}' ELSE ${t}.review_feedback END,` : ''}
         claim_token=excluded.claim_token,attempts=${t}.attempts+1
       WHERE ${CLAIMABLE(t,kind)} RETURNING id,claim_token`,[a.id,a.version,randomUUID()]);
     return rows[0] ? { id: rows[0].id as string,token: rows[0].claim_token as string } : null;
   }
   async fail(kind: Kind, c: Claim, error: string) {
-    const { rowCount } = await this.db.query(`UPDATE ${TABLE[kind]} SET status='failed',error=?3,attempts=CASE WHEN ?3 LIKE 'Quality judge rejected:%' THEN 3 ELSE attempts END,updated_at=${NOW}
+    const { rowCount } = await this.db.query(`UPDATE ${TABLE[kind]} SET status='failed',error=?3,attempts=CASE WHEN ?3 LIKE 'Quality judge rejected:%'
+      ${kind === 'skill' ? `OR json_extract(iif(json_valid(review_feedback),review_feedback,'{}'),'$.regenerating')=1` : ''}
+      THEN ${MAX_OUTPUT_ATTEMPTS} ELSE attempts END,updated_at=${NOW}
       WHERE id=?1 AND claim_token=?2 AND status='running'`,[c.id,c.token,error.slice(0,2000)]);
     return rowCount===1;
   }
   async finishSkill(c: Claim, s: GeneratedSkill) {
-    const { rowCount } = await this.db.query(`UPDATE skill_results SET status='ready',skill_markdown=?3,supporting_refs=?4,error=NULL,updated_at=${NOW}
-      WHERE id=?1 AND claim_token=?2 AND status='running'`, [c.id,c.token,s.skill_markdown,JSON.stringify(s.supporting_refs)]);
+    const { rowCount } = await this.db.query(`UPDATE skill_results SET status='ready',skill_markdown=?3,supporting_refs=?4,review_feedback=?5,error=NULL,updated_at=${NOW}
+      WHERE id=?1 AND claim_token=?2 AND status='running'`, [c.id,c.token,s.skill_markdown,JSON.stringify(s.supporting_refs),JSON.stringify({prompt_revision:SKILL_PROMPT_REVISION})]);
     if (rowCount!==1) throw new LostClaim('skill');
   }
 
@@ -101,18 +106,21 @@ export class D1OutputStore implements OutputStore {
 
   async skillCard(a: ReadyArtifact): Promise<SkillState> {
     const { rows } = await this.db.query(
-      `SELECT s.status, s.skill_markdown, (SELECT count(*) FROM action_items i WHERE i.skill_result_id = s.id) AS tasks
+      `SELECT s.status, s.skill_markdown,
+        json_extract(iif(json_valid(s.review_feedback),s.review_feedback,'{}'),'$.prompt_revision') AS prompt_revision,
+        (SELECT count(*) FROM action_items i WHERE i.skill_result_id = s.id) AS tasks
        FROM skill_results s WHERE s.artifact_id = ?1 AND s.artifact_version = ?2`, [a.id, a.version]);
     const r = rows[0];
     if (!r) return { status: "none", card: null };
-    const name = r.status === "ready" ? skillNameOf(r.skill_markdown ?? "") : null;
-    return { status: r.status, card: name ? { name, tasks: r.tasks } : null };
+    const status = r.status === "ready" && r.prompt_revision !== SKILL_PROMPT_REVISION ? "pending" : r.status;
+    const name = status === "ready" ? skillNameOf(r.skill_markdown ?? "") : null;
+    return { status, card: name ? { name, tasks: r.tasks } : null };
   }
 }
 
 type Row = {
   id: string; token: string; artifact: ReadyArtifact; status: "running" | "ready" | "failed"; error: string | null; value?: unknown;
-  attempts: number; failedAt?: number;
+  attempts: number; failedAt?: number; promptRevision?: string; regenerating?: boolean;
 };
 
 /** In-memory stand-in for tests and runs without D1_URL. */
@@ -122,16 +130,18 @@ export class MemoryOutputStore implements OutputStore {
   /** RETRY_AFTER_MINUTES in milliseconds; tests set 0. */
   constructor(private retryAfterMs = RETRY_AFTER_MINUTES * 60_000) {}
   private key = (a: ReadyArtifact) => `${a.id}:${a.version}`;
-  private claimable = (r: Row | undefined) =>
-    !r || (r.status === "failed" && r.attempts < MAX_OUTPUT_ATTEMPTS && Date.now() >= (r.failedAt ?? 0) + this.retryAfterMs * r.attempts);
+  private claimable = (r: Row | undefined, kind: Kind) =>
+    !r || (kind === "skill" && r.status === "ready" && r.promptRevision !== SKILL_PROMPT_REVISION)
+      || (r.status === "failed" && r.attempts < MAX_OUTPUT_ATTEMPTS && Date.now() >= (r.failedAt ?? 0) + this.retryAfterMs * r.attempts);
 
   async artifactsNeeding(kind: Kind, limit: number) {
-    return this.artifacts.filter((a) => this.claimable(this.rows[kind].get(this.key(a)))).slice(0, limit);
+    return this.artifacts.filter((a) => this.claimable(this.rows[kind].get(this.key(a)), kind)).slice(0, limit);
   }
   async claim(kind: Kind, a: ReadyArtifact) {
     const before = this.rows[kind].get(this.key(a));
-    if (!this.claimable(before)) return null;
-    const row: Row = { id: before?.id ?? randomUUID(), token: randomUUID(), artifact: a, status: "running", error: null, attempts: (before?.attempts ?? 0) + 1 };
+    if (!this.claimable(before, kind)) return null;
+    const row: Row = { id: before?.id ?? randomUUID(), token: randomUUID(), artifact: a, status: "running", error: null, attempts: (before?.attempts ?? 0) + 1,
+      regenerating: kind === "skill" && before?.status === "ready" };
     this.rows[kind].set(this.key(a), row);
     return { id: row.id, token: row.token };
   }
@@ -140,13 +150,13 @@ export class MemoryOutputStore implements OutputStore {
   }
   async fail(kind: Kind, c: Claim, error: string) {
     const row = this.held(kind, c);
-    if (row) Object.assign(row, { status: "failed", error, failedAt: Date.now(), ...(error.startsWith("Quality judge rejected:") ? { attempts: MAX_OUTPUT_ATTEMPTS } : {}) });
+    if (row) Object.assign(row, { status: "failed", error, failedAt: Date.now(), ...(row.regenerating || error.startsWith("Quality judge rejected:") ? { attempts: MAX_OUTPUT_ATTEMPTS } : {}) });
     return !!row;
   }
   async finishSkill(c: Claim, s: GeneratedSkill) {
     const row = this.held("skill", c);
     if (!row) throw new LostClaim("skill");
-    Object.assign(row, { status: "ready", value: s });
+    Object.assign(row, { status: "ready", value: s, promptRevision: SKILL_PROMPT_REVISION, regenerating: false });
   }
   async finishVideo(c: Claim, v: RenderedVideo) {
     const row = this.held("video", c);
@@ -157,7 +167,8 @@ export class MemoryOutputStore implements OutputStore {
   async skillCard(a: ReadyArtifact): Promise<SkillState> {
     const row = this.rows.skill.get(this.key(a));
     if (!row) return { status: "none", card: null };
-    const s = row.value as GeneratedSkill | undefined, name = row.status === "ready" && s ? skillNameOf(s.skill_markdown) : null;
-    return { status: row.status, card: name ? { name, tasks: s!.action_items.length } : null };
+    const status = row.status === "ready" && row.promptRevision !== SKILL_PROMPT_REVISION ? "pending" : row.status;
+    const s = row.value as GeneratedSkill | undefined, name = status === "ready" && s ? skillNameOf(s.skill_markdown) : null;
+    return { status, card: name ? { name, tasks: s!.action_items.length } : null };
   }
 }

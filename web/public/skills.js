@@ -34,6 +34,7 @@ export function download(name, text) {
 const SKILL_STATE = {
   pending: "Queued to become a skill.",
   running: "Writing the skill…",
+  regenerating: "This skill is being regenerated.",
 };
 
 export function createSkills({ skillsList, picker, skillsStatus }) {
@@ -67,7 +68,8 @@ export function createSkills({ skillsList, picker, skillsStatus }) {
     const li = el("li", { class: "skill", id: skillAnchor(s.artifact.id, s.artifact.version), "data-status": s.status }, head);
     if (s.status !== "ready") {
       const failed = s.retrying ? `Couldn't write this skill yet; trying again in a few minutes. ${s.error || ""}` : `Couldn't write this skill. ${s.error || "Reason unknown."}`;
-      li.append(el("p", { class: "skill-state", text: s.status === "failed" ? failed.trim() : SKILL_STATE[s.status] ?? s.status }));
+      const message = s.status === "regenerating" && s.error ? "Regeneration couldn't finish; the old skill is unavailable." : SKILL_STATE[s.status] ?? s.status;
+      li.append(el("p", { class: "skill-state", text: s.status === "failed" ? failed.trim() : message }));
       return li;
     }
     const file = skillFile(s, agent);

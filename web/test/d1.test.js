@@ -8,6 +8,7 @@ import { readFeed } from '../src/feed.js';
 import { readSkills } from '../src/skills.js';
 import { readUnits } from '../src/imports.js';
 import { createHandoff, readHandoff } from '../src/handoffs.js';
+import { SKILL_PROMPT_REVISION } from '../src/skill-policy.js';
 
 function database() {
   const sqlite=new DatabaseSync(':memory:');
@@ -100,6 +101,7 @@ test('D1 JSON output reads preserve source order, real errors, private digests a
       VALUES('Artifact','https://www.youtube.com/watch?v=VQy50fuxI34',${JSON.stringify(sources)},'[]','text','ready') RETURNING id`;
     const [s]=await sql`INSERT INTO skill_results(artifact_id,artifact_version,status,skill_markdown)
       VALUES(${a.id},1,'ready','---\nname: check\ndescription: "Check"\n---\nbody') RETURNING id`;
+    await sql`UPDATE skill_results SET review_feedback=${JSON.stringify({prompt_revision:SKILL_PROMPT_REVISION})} WHERE id=${s.id}`;
     await sql`INSERT INTO action_items(skill_result_id,task,prerequisites,steps,completion_check)
       VALUES(${s.id},'Inspect','["Repo"]','["Read"]','Checked')`;
     await sql`INSERT INTO video_results(artifact_id,artifact_version,status,media_ref,caption_ref,narration_ref,duration_seconds,feed_order)
@@ -188,13 +190,14 @@ test('public catalogue, private media, legacy duplicates and failed judges obey 
     const second=await call('/api/auth/signup',{email:'other@example.com',password:'correct horse battery'});
     const otherCookie=second.headers.get('set-cookie').split(';')[0];
     const imported=await (await call('/api/imports',{links:['https://youtu.be/VQy50fuxI34','https://www.youtube.com/watch?v=VQy50fuxI34&t=30']},cookie)).json();
-    assert.equal(imported.units.length,1,'one source, despite different link/time shapes');
-    assert.equal((await (await call('/api/imports',{links:['https://youtu.be/VQy50fuxI34?t=60']},cookie)).json()).units[0].id,imported.units[0].id);
+    assert.equal(imported.units.length,2,'distinct start times remain separate imports');
+    assert.notEqual((await (await call('/api/imports',{links:['https://youtu.be/VQy50fuxI34?t=60']},cookie)).json()).units[0].id,imported.units[0].id);
+    assert.equal((await (await call('/api/imports',{links:['https://www.youtube.com/watch?v=VQy50fuxI34&t=30s']},cookie)).json()).units[0].id,imported.units[1].id);
     const u=imported.units[0];
-    const concurrent=await Promise.all([30,60].map(t=>call('/api/imports',{links:[`https://youtu.be/V-EDrhIhHzQ?t=${t}`]},cookie)));
+    const concurrent=await Promise.all([30,30].map(t=>call('/api/imports',{links:[`https://youtu.be/V-EDrhIhHzQ?t=${t}`]},cookie)));
     const concurrentIds=await Promise.all(concurrent.map(async r=>(await r.json()).units[0].id));
-    assert.equal(new Set(concurrentIds).size,1,'parallel submissions of the same source at different times link once');
-    assert.equal((await sql`SELECT count(*) AS n FROM user_imports`)[0].n,2);
+    assert.equal(new Set(concurrentIds).size,1,'parallel submissions of the same URL and start time link once');
+    assert.equal((await sql`SELECT count(*) AS n FROM user_imports`)[0].n,4);
     for (const n of [1,2]) {
       const [a]=await sql`INSERT INTO artifacts(name,source_url,source_ids,sources,processed_text,ingestion_status)
         VALUES('Source-backed lesson',${u.source_url},${JSON.stringify([u.id])},${JSON.stringify([{url:u.source_url,title:'Source'}])},'Content','ready') RETURNING id`;
@@ -202,6 +205,7 @@ test('public catalogue, private media, legacy duplicates and failed judges obey 
         VALUES(${a.id},1,'ready',${`r2:videos/${n}/1/short.mp4`},${`r2:captions/${n}/1/short.vtt`},'audio',30,'approved',${receipt})`;
       await sql`INSERT INTO skill_results(artifact_id,artifact_version,status,skill_markdown) VALUES(${a.id},1,'ready','---\nname: check\ndescription: "Check when changing code"\n---\nInspect the source.')`;
     }
+    await sql`UPDATE skill_results SET review_feedback=${JSON.stringify({prompt_revision:SKILL_PROMPT_REVISION})}`;
     assert.equal((await (await call('/api/feed',null,cookie)).json()).items.length,1,'historical duplicate shorts hidden');
     assert.equal((await (await call('/api/skills',null,cookie)).json()).skills.length,1,'historical duplicate skills hidden');
     assert.deepEqual(await (await call('/api/feed',null,otherCookie)).json(),{items:[]});
@@ -227,5 +231,67 @@ test('public catalogue, private media, legacy duplicates and failed judges obey 
     assert.deepEqual(await (await call('/api/feed',null,cookie)).json(),{items:[]});
     assert.equal((await call('/api/handoffs',{skill_ids:['unused']},cookie)).status,410);
     assert.equal((await sql`SELECT count(*) AS n FROM artifacts`)[0].n,2,'no production-style rows deleted');
+  } finally {sqlite.close();}
+});
+
+test('exact canonical source sets keep segments and combined lessons, with matching reel skill cards',async()=>{
+  const {sqlite,sql}=database();
+  try {
+    const url='https://www.youtube.com/watch?v=VQy50fuxI34';
+    const units=[];
+    for (const [source,start] of [[url,null],[url,null],[url,3600],['https://www.youtube.com/watch?v=V-EDrhIhHzQ',null]]) {
+      const [unit]=await sql`INSERT INTO ingested_units(submitted_url,source_url,start_seconds,status,transcript) VALUES(${source},${source},${start},'ready','{}') RETURNING id`;
+      units.push(unit.id);
+    }
+    const artifacts=[];
+    const receipt={judge:'short-judge-v1',passed:true,captions_burned:true};
+    for (const [i,sources] of [[units[0]],[units[1]],[units[2]],[units[0],units[3]],[units[3],units[1]]].entries()) {
+      const [a]=await sql`INSERT INTO artifacts(name,source_url,source_ids,processed_text,ingestion_status,created_at)
+        VALUES('Saved lesson',${url},${JSON.stringify(sources)},'Source-backed procedure','ready',${`2026-10-${10+i}T00:00:00Z`}) RETURNING id`;
+      artifacts.push(a.id);
+      await sql`INSERT INTO video_results(artifact_id,artifact_version,status,media_ref,caption_ref,narration_ref,duration_seconds,feed_order,review_status,review_feedback)
+        VALUES(${a.id},1,'ready',${`r2:videos/${a.id}/1/short.mp4`},'captions','audio',30,${i+1},'approved',${JSON.stringify({...receipt,passed:i!==1})})`;
+      await sql`INSERT INTO skill_results(artifact_id,artifact_version,status,skill_markdown,review_feedback)
+        VALUES(${a.id},1,'ready','---\nname: saved-lesson\ndescription: "Use when inspecting source material"\n---\nInspect the source.',${JSON.stringify({prompt_revision:SKILL_PROMPT_REVISION})})`;
+    }
+    for (const scope of [null,units]) {
+      const feed=await readFeed(sql,scope),skills=await readSkills(sql,scope);
+      assert.deepEqual(feed.map(item=>item.id),[artifacts[0],artifacts[2],artifacts[3]]);
+      assert.equal(skills.length,3);
+      for (const item of feed) assert.ok(skills.some(s=>s.artifact.id===item.id && s.artifact.version===item.version && s.status==='ready'));
+    }
+    assert.equal((await readUnits(sql,units)).length,3,'only identical URL and start pairs collapse in progress');
+  } finally {sqlite.close();}
+});
+
+test('legacy skill text stays withheld in both projections until a successful regeneration',async()=>{
+  const {sqlite,sql}=database();
+  try {
+    const [unit]=await sql`INSERT INTO ingested_units(submitted_url,source_url,status,transcript) VALUES('https://youtu.be/VQy50fuxI34','https://www.youtube.com/watch?v=VQy50fuxI34','ready','{}') RETURNING id`;
+    const [a]=await sql`INSERT INTO artifacts(name,source_url,source_ids,processed_text,ingestion_status) VALUES('Saved lesson','https://www.youtube.com/watch?v=VQy50fuxI34',${JSON.stringify([unit.id])},'Source text','ready') RETURNING id`;
+    const old='---\nname: old-skill\n---\nOld procedure';
+    await sql`INSERT INTO skill_results(artifact_id,artifact_version,status,skill_markdown) VALUES(${a.id},1,'ready',${old})`;
+    await sql`INSERT INTO video_results(artifact_id,artifact_version,status,media_ref,caption_ref,narration_ref,duration_seconds,feed_order,review_status,review_feedback)
+      VALUES(${a.id},1,'ready','r2:videos/legacy/1/short.mp4','captions','audio',30,1,'approved',${JSON.stringify({judge:'short-judge-v1',passed:true,captions_burned:true})})`;
+    for (const scope of [null,[unit.id]]) {
+      const [skill]=await readSkills(sql,scope);
+      assert.deepEqual([skill.status,skill.name,skill.description,skill.markdown],['regenerating',null,null,null]);
+      assert.equal((await readFeed(sql,scope))[0].skill.status,'regenerating');
+    }
+    for (const status of ['running','failed']) {
+      await sql`UPDATE skill_results SET status=${status},review_feedback='{"regenerating":true}',attempts=3,error=${status==='failed'?'provider unavailable':null}`;
+      const [skill]=await readSkills(sql,[unit.id]);
+      assert.equal(skill.status,'regenerating');
+      assert.equal(skill.markdown,null);
+      assert.equal(skill.retrying,false);
+      assert.equal((await readFeed(sql,[unit.id]))[0].skill.status,'regenerating');
+    }
+    assert.equal((await sql`SELECT skill_markdown FROM skill_results`)[0].skill_markdown,old);
+    const updated='---\nname: concise-skill\n---\nInspect the source.';
+    await sql`UPDATE skill_results SET status='ready',skill_markdown=${updated},review_feedback=${JSON.stringify({prompt_revision:SKILL_PROMPT_REVISION})},error=NULL`;
+    for (const scope of [null,[unit.id]]) {
+      assert.equal((await readSkills(sql,scope))[0].markdown,updated);
+      assert.equal((await readFeed(sql,scope))[0].skill.status,'ready');
+    }
   } finally {sqlite.close();}
 });

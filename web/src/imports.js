@@ -1,7 +1,7 @@
 // Proceed: pasted YouTube and X post links become ingested units in D1, and their progress is read back
 // from the units, artifacts and video results the processor writes. Nothing here invents progress.
 
-import { dedupeContent } from "./content.js";
+import { dedupeContent, sourceKey } from "./content.js";
 import { isSubstackHost, parseSubstackLink } from "./substack.js";
 import { isXLink, parseXLink } from "./xpost.js";
 import { parseYouTubeLink } from "./youtube.js";
@@ -44,10 +44,9 @@ export function parseImport(body) {
   }
   if (invalid.length) return { ok: false, status: 400, error: "Some links can't be imported.", invalid };
 
-  // One source per submission, even when its URL appears with different start times.
   const seen = new Set();
   const unique = links.filter((l) => {
-    const key = l.source_url;
+    const key = sourceKey(l.source_url, l.start_seconds);
     return seen.has(key) ? false : (seen.add(key), true);
   });
   const count = (type) => unique.filter((l) => (l.content_type ?? "youtube_video") === type).length;
@@ -68,6 +67,7 @@ async function ownedUnit(sql, userId, link) {
   if (!userId) return null;
   return (await sql`SELECT u.id,u.status FROM user_imports ui JOIN ingested_units u ON u.id=ui.unit_id
     WHERE ui.user_id=${userId} AND u.source_url=${link.source_url} AND u.status<>'failed'
+      AND u.start_seconds IS ${link.start_seconds}
       AND (${link.content_type ?? "youtube_video"}<>'x_post' OR u.status IN ('pending','running')
         OR u.extraction_method IN ('twitterapi.io:tweets:v2','x-embed:tweet-result:v2'))
     ORDER BY ui.created_at DESC LIMIT 1`)[0] ?? null;
@@ -108,6 +108,7 @@ export async function createUnits(sql, links, { userId = null } = {}) {
         SELECT ${userId}, ${resolved.id}
         WHERE NOT EXISTS (SELECT 1 FROM user_imports ui JOIN ingested_units u ON u.id=ui.unit_id
           WHERE ui.user_id=${userId} AND u.source_url=${link.source_url} AND u.status<>'failed'
+            AND u.start_seconds IS ${link.start_seconds}
             AND (${link.content_type ?? "youtube_video"}<>'x_post' OR u.status IN ('pending','running')
               OR u.extraction_method IN ('twitterapi.io:tweets:v2','x-embed:tweet-result:v2')))
         ON CONFLICT (user_id, unit_id) DO NOTHING
@@ -168,7 +169,18 @@ const PLAIN_FAILURE = {
  * The reason a person sees: the stored one when it is already plain, otherwise a short sentence for the stage.
  * Not-selected reasons are written by the digest for people, so they are never replaced.
  */
-export const plainReason = (error, stage) => (stage !== "not_selected" && error && (error.length > 200 || TECHNICAL.test(error)) ? PLAIN_FAILURE[stage] ?? PLAIN_FAILURE.failed : error);
+export function plainReason(error, stage) {
+  if (stage !== "not_selected" && error?.startsWith("Quality judge rejected: ")) {
+    try {
+      const receipt = JSON.parse(error.slice("Quality judge rejected: ".length));
+      if (receipt.judge === "short-judge-v1" && receipt.passed === false && Array.isArray(receipt.reasons)) {
+        const reason = receipt.reasons.filter((r) => typeof r === "string").join(" ").replace(/\s+/g, " ").trim().slice(0, 170);
+        if (reason) return `Quality check: ${reason}`;
+      }
+    } catch {}
+  }
+  return stage !== "not_selected" && error && (error.length > 200 || TECHNICAL.test(error)) ? PLAIN_FAILURE[stage] ?? PLAIN_FAILURE.failed : error;
+}
 
 /**
  * Collapses a unit's records into the one stage the page shows. `settled` means nothing more will

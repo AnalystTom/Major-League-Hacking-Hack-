@@ -10,6 +10,7 @@ const SKILL_LABEL = {
   pending: "Skill queued",
   running: "Skill being written",
   failed: "Skill failed",
+  regenerating: "Skill being regenerated",
 };
 
 function skillChip(skill) {
@@ -47,7 +48,7 @@ export function createReel(root) {
 
   const observer = new IntersectionObserver(
     (entries) => {
-      for (const e of entries) if (e.isIntersecting) activate(Number(e.target.dataset.index));
+      for (const e of entries) if (e.isIntersecting && e.target.parentElement === track) activate(Number(e.target.dataset.index));
     },
     { root: track, threshold: 0.6 }
   );
@@ -78,7 +79,7 @@ export function createReel(root) {
     const progress = el("i");
     const failed = el("div", { class: "reel-failed", hidden: true },
       el("p", { text: "This clip couldn't play." }),
-      el("button", { type: "button", class: "reel-btn", text: "Try again", onclick: () => { failed.hidden = true; video.load(); if (index === active) play(video); } })
+      el("button", { type: "button", class: "reel-btn", text: "Try again", onclick: () => { failed.hidden = true; video.load(); if (Number(slide.dataset.index) === active) play(video); } })
     );
     video.addEventListener("error", () => (failed.hidden = false));
     video.addEventListener("timeupdate", () => {
@@ -103,20 +104,13 @@ export function createReel(root) {
       caption,
       failed,
       el("div", { class: "reel-overlay" },
-        el("div", { class: "reel-tags" },
-          item.category ? el("span", { class: "reel-chip", text: item.category }) : null,
-          skillChip(item.skill)
-        ),
+        el("div", { class: "reel-tags" }),
         el("h3", { class: "reel-title", text: item.name }),
         sheet,
         el("div", { class: "reel-actions" },
           soundBtn,
           el("button", { type: "button", class: "reel-btn", "aria-expanded": "false", text: "View sources",
             onclick: (e) => { sheet.hidden = !sheet.hidden; e.currentTarget.setAttribute("aria-expanded", String(!sheet.hidden)); } }),
-          // The skill opens in a sheet over the reel; only a ready skill gets a way there.
-          item.skill?.status === "ready"
-            ? el("a", { class: "reel-btn", href: `#${skillAnchor(item.id, item.version)}`, text: "View skill" })
-            : null,
           el("button", { type: "button", class: "reel-btn", text: "Skip", onclick: () => go(1) })
         )
       )
@@ -126,6 +120,19 @@ export function createReel(root) {
     video.addEventListener("click", () => (video.paused ? play(video) : video.pause()));
     soundBtn.addEventListener("click", () => setSound(!soundOn));
     return slide;
+  }
+
+  function updateSkill(slide, item) {
+    slide.querySelector(".reel-tags").replaceChildren(
+      ...(item.category ? [el("span", { class: "reel-chip", text: item.category })] : []),
+      ...[skillChip(item.skill)].filter(Boolean)
+    );
+    const link = slide.querySelector(".reel-skill");
+    if (item.skill?.status !== "ready") link?.remove();
+    else if (!link) {
+      const actions = slide.querySelector(".reel-actions");
+      actions.insertBefore(el("a", { class: "reel-btn reel-skill", href: `#${skillAnchor(item.id, item.version)}`, text: "View skill" }), actions.lastElementChild);
+    }
   }
 
   function play(video) {
@@ -176,26 +183,55 @@ export function createReel(root) {
     /** Reconcile revisions as well as additions, so polling cannot retain a hidden duplicate. */
     render(next) {
       const keyOf = (item) => `${item.id}:${item.version}`;
-      if (next.map(keyOf).join(",") === items.map(keyOf).join(",")) return;
+      if (JSON.stringify(next) === JSON.stringify(items)) return;
       const current = items[active] && keyOf(items[active]);
+      const currentSlide = shown.get(current);
+      const previous = new Map(items.map((item) => [keyOf(item), item]));
+      const offset = track.scrollTop - Math.max(0, active) * track.clientHeight;
       observer.disconnect();
-      for (const slide of shown.values()) slide.querySelector("video")?.pause();
-      shown.clear();
+      const keys = new Set(next.map(keyOf));
+      for (const [key, slide] of shown) if (!keys.has(key)) {
+        slide.querySelector("video")?.pause();
+        slide.remove();
+        shown.delete(key);
+      }
       items = next;
       const slides = items.map((item, index) => {
-        const slide = slideFor(item, index);
+        let slide = shown.get(keyOf(item));
+        const video = previous.get(keyOf(item))?.video;
+        if (slide && (video.url !== item.video.url || video.captions_url !== item.video.captions_url || video.subtitles_burned !== item.video.subtitles_burned)) {
+          slide.querySelector("video")?.pause();
+          slide.remove();
+          slide = null;
+        }
+        slide ??= slideFor(item, index);
+        slide.dataset.index = String(index);
+        updateSkill(slide, item);
         shown.set(keyOf(item), slide);
         return slide;
       });
-      track.replaceChildren(...slides);
+      let before = null;
+      for (const slide of [...slides].reverse()) {
+        if (slide !== currentSlide && (slide.parentElement !== track || slide.nextSibling !== before)) track.insertBefore(slide, before);
+        before = slide;
+      }
       slides.forEach((slide) => observer.observe(slide));
       root.hidden = items.length === 0;
-      active = -1;
       if (items.length) {
-        const index = Math.max(0, items.findIndex((item) => keyOf(item) === current));
-        activate(index);
-        track.scrollTop = index * track.clientHeight;
-      } else counter.textContent = "";
+        const index = items.findIndex((item) => keyOf(item) === current);
+        if (index >= 0 && slides[index] === currentSlide) {
+          active = index;
+          counter.textContent = `${index + 1} of ${items.length}`;
+          track.scrollTop = index * track.clientHeight + offset;
+        } else {
+          active = -1;
+          activate(Math.max(0, index));
+          track.scrollTop = Math.max(0, index) * track.clientHeight;
+        }
+      } else {
+        active = -1;
+        counter.textContent = "";
+      }
     },
     get count() {
       return items.length;
