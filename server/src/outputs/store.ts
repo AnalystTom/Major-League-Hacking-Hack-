@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import type { Database } from "../db.js";
 import { NOW } from "../ingest/ledger.js";
 import { STALE_CLAIM_MINUTES } from "../claims.js";
-import { sourceRefs, type GeneratedSkill, type ReadyArtifact, type RenderedVideo } from "./types.js";
+import { sourceRefs, type GeneratedSkill, type ReadyArtifact, type RenderedVideo, type ShortJudgment } from "./types.js";
 import type { SkillCard } from "./render/motion-skill.js";
 import { SKILL_PROMPT_REVISION } from "./skills.js";
 import { VIDEO_GENERATOR_REVISION } from "./render/revision.js";
@@ -45,7 +45,7 @@ export interface OutputStore {
   /** Claims generation; an approved video stays ready during its refresh. Null if already held or settled. */
   claim(kind: Kind, a: ReadyArtifact): Promise<Claim | null>;
   /** Records a failure while the claim is still held; returns false when it was taken over. */
-  fail(kind: Kind, c: Claim, error: string): Promise<boolean>;
+  fail(kind: Kind, c: Claim, error: string, review?: ShortJudgment): Promise<boolean>;
   /** Save the result; throw LostClaim if the claim was taken over. */
   finishSkill(c: Claim, s: GeneratedSkill): Promise<void>;
   finishVideo(c: Claim, v: RenderedVideo): Promise<void>;
@@ -98,12 +98,13 @@ export class D1OutputStore implements OutputStore {
       WHERE ${CLAIMABLE(t,kind)} RETURNING id,claim_token`,[a.id,a.version,randomUUID()]);
     return rows[0] ? { id: rows[0].id as string,token: rows[0].claim_token as string } : null;
   }
-  async fail(kind: Kind, c: Claim, error: string) {
+  async fail(kind: Kind, c: Claim, error: string, review?: ShortJudgment) {
     const t = TABLE[kind];
     const { rowCount } = await this.db.query(`UPDATE ${t} SET status=CASE WHEN status='ready' THEN 'ready' ELSE 'failed' END,
-      error=?3,claim_token=NULL,attempts=CASE WHEN ?3 LIKE 'Quality judge rejected:%' OR ${regenerating(t)}
+      error=?3,claim_token=NULL,
+      review_feedback=CASE WHEN ?4 IS NULL THEN review_feedback ELSE json_set(${feedback(t)},'$.last_rejected_review',json(?4)) END,attempts=CASE WHEN ?3 LIKE 'Quality judge rejected:%' OR ${regenerating(t)}
       THEN max(attempts,${MAX_OUTPUT_ATTEMPTS}) ELSE attempts END,updated_at=${NOW}
-      WHERE id=?1 AND claim_token=?2 AND (status='running' ${kind === 'video' ? `OR (status='ready' AND ${regenerating(t)})` : ''})`,[c.id,c.token,error.slice(0,2000)]);
+      WHERE id=?1 AND claim_token=?2 AND (status='running' ${kind === 'video' ? `OR (status='ready' AND ${regenerating(t)})` : ''})`,[c.id,c.token,error.slice(0,2000),review ? JSON.stringify(review) : null]);
     return rowCount===1;
   }
   async finishSkill(c: Claim, s: GeneratedSkill) {
@@ -135,7 +136,7 @@ export class D1OutputStore implements OutputStore {
 
 type Row = {
   id: string; token: string | null; artifact: ReadyArtifact; status: "running" | "ready" | "failed"; error: string | null; value?: unknown;
-  attempts: number; failedAt?: number; promptRevision?: string; generatorRevision?: string; regenerating?: boolean;
+  rejectedReview?: ShortJudgment; attempts: number; failedAt?: number; promptRevision?: string; generatorRevision?: string; regenerating?: boolean;
 };
 
 /** In-memory stand-in for tests and runs without D1_URL. */
@@ -169,9 +170,9 @@ export class MemoryOutputStore implements OutputStore {
     return [...this.rows[kind].values()].find((r) => r.id === c.id && r.token !== null && r.token === c.token
       && (r.status === "running" || (kind === "video" && r.status === "ready" && r.regenerating)));
   }
-  async fail(kind: Kind, c: Claim, error: string) {
+  async fail(kind: Kind, c: Claim, error: string, review?: ShortJudgment) {
     const row = this.held(kind, c);
-    if (row) Object.assign(row, { status: row.status === "ready" ? "ready" : "failed", token: null, error, failedAt: Date.now(), ...(row.regenerating || error.startsWith("Quality judge rejected:") ? { attempts: Math.max(row.attempts,MAX_OUTPUT_ATTEMPTS) } : {}) });
+    if (row) Object.assign(row, { status: row.status === "ready" ? "ready" : "failed", token: null, error, ...(review ? { rejectedReview: review } : {}), failedAt: Date.now(), ...(row.regenerating || error.startsWith("Quality judge rejected:") ? { attempts: Math.max(row.attempts,MAX_OUTPUT_ATTEMPTS) } : {}) });
     return !!row;
   }
   async finishSkill(c: Claim, s: GeneratedSkill) {

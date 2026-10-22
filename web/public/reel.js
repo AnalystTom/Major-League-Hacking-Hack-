@@ -64,8 +64,6 @@ export function createReel(root) {
     });
     video.muted = true;
     // Legacy caption tracks only: new judged shorts already contain visible burned subtitles.
-    // The browser times the WebVTT cues; the reel draws them itself, above the title and buttons and
-    // wrapped to the frame, which native cue rendering won't reliably do in a 9:16 crop.
     const caption = el("p", { class: "reel-caption", "aria-hidden": "true" });
     if (item.video.captions_url && !item.video.subtitles_burned) {
       const track = el("track", { kind: "captions", srclang: "en", label: "English", src: item.video.captions_url, default: true });
@@ -99,11 +97,12 @@ export function createReel(root) {
 
     const soundBtn = el("button", { type: "button", class: "reel-btn reel-sound", "data-sound": true, "aria-pressed": String(soundOn), text: soundOn ? "Sound on" : "Tap for sound" });
     const slide = el("article", { class: "reel-item", "data-index": String(index), "aria-label": item.name },
-      el("div", { class: "reel-progress" }, progress),
-      video,
-      caption,
-      failed,
-      el("div", { class: "reel-overlay" },
+      el("div", { class: "reel-stage" },
+        el("div", { class: "reel-picture" },
+          el("div", { class: "reel-progress" }, progress), video, caption, failed
+        )
+      ),
+      el("div", { class: "reel-details" },
         el("div", { class: "reel-tags" }),
         el("h3", { class: "reel-title", text: item.name }),
         sheet,

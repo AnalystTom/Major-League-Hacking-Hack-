@@ -3,6 +3,7 @@
 
 import { generateSkill } from "./skills.js";
 import { recordError } from "../activity.js";
+import { QualityRejected } from "./render/judge.js";
 import { renderArtifact } from "./render/render.js";
 import type { MediaStore } from "./render/media.js";
 import { LostClaim, type Kind, type OutputStore } from "./store.js";
@@ -52,7 +53,7 @@ async function produceNow(kind: Kind, a: ReadyArtifact, o: OutputOptions) {
       o.log?.(`${kind} ready for artifact ${a.id} v${a.version}`);
     } catch (e) {
       // A worker whose claim was taken over leaves the row to the one that took it.
-      const recorded = !(e instanceof LostClaim) && (await o.outputs.fail(kind, claim, (e as Error).message));
+      const recorded = !(e instanceof LostClaim) && (await o.outputs.fail(kind, claim, (e as Error).message, e instanceof QualityRejected ? e.judgment : undefined));
       recordError(`${kind} failed`, e);
       o.log?.(`${kind} ${recorded ? "failed" : "not recorded"} for artifact ${a.id} v${a.version}: ${(e as Error).message}`);
     }

@@ -3,6 +3,7 @@
 // The skill's record.js paints every frame of the template in headless Chromium with the engine's own soundtrack;
 // ffmpeg then lays the narration over it, ducking the music under the voice.
 
+import { runInNewContext } from "node:vm";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
@@ -189,4 +190,28 @@ function runWithEnv(cmd: string, args: string[], env: NodeJS.ProcessEnv, script 
       else reject(new Error(`motion-graphic-skill ${script} failed (exit ${code}): ${tail.trim().split("\n").slice(-3).join(" ").slice(0, 400)}`));
     });
   });
+}
+
+export async function cueCheck(spec: MotionSpec, round: number): Promise<string> {
+  const source = await readFile(join(SKILL_DIR, "resurface", "scenes.js"), "utf8");
+  const rows: { cues: [number, string, ...unknown[]][]; moments: number[] }[] = JSON.parse(runInNewContext(`${source}
+    JSON.stringify(DATA.scenes.map((s, i, all) => {
+      const id = i === 0 ? 'open' : i === all.length - 1 ? 'skill' : 'say';
+      const t0 = i === 0 ? .12 : .25;
+      return { cues: S[id].cues(s.d, { i }), moments: id === 'skill' ? [.35] :
+        [...(i === 0 ? [0, .05] : [.25]), ...Object.values(moveTimes(s, t0, s.d))] };
+    }))`, { DATA: spec, W: 1080, S: {} }, { timeout: 1000 }));
+  let start = 0, impacts = 0;
+  const lines = [`Round ${round}`, "B = 0.5s (120 BPM); beat multiples include the measured scene start."];
+  rows.forEach((row, i) => {
+    for (const [at, name] of row.cues) {
+      if (name === "impact") impacts++;
+      const motion = row.moments.find(time => Math.abs(time - at) < .0001);
+      const passed = motion !== undefined && at >= 0 && at < spec.scenes[i].d;
+      lines.push(`Scene ${i}: ${name} cue ${(start + at) / .5}B; motion ${motion === undefined ? "missing" : (start + motion) / .5}B: ${passed ? "PASS" : "FAIL"}`);
+    }
+    start += spec.scenes[i].d;
+  });
+  lines.push(`impact cues: ${impacts} ${impacts <= 2 ? "PASS" : "FAIL"}`);
+  return lines.join("\n");
 }

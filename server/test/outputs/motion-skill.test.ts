@@ -83,7 +83,7 @@ test("text that's too long is cut at a word, and an X post cut at ingest says so
 const chrome = process.env.CHROME ?? ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/usr/bin/chromium", "/usr/bin/google-chrome"].find((p) => existsSync(p));
 const hasFfmpeg = (() => { try { execFileSync("ffmpeg", ["-version"]); return true; } catch { return false; } })();
 
-test("renders a motion short with the narration over the engine's music", { skip: !(chrome && hasFfmpeg) && "needs ffmpeg and Chrome", timeout: 600_000 }, async () => {
+test("renders a motion short with the narration over the engine's music", { skip: !(chrome && hasFfmpeg) && "needs ffmpeg and Chrome", timeout: 1_200_000 }, async () => {
   const out = await mkdtemp(join(tmpdir(), "resurface-motion-test-"));
   try {
     const a = artifact();
@@ -99,7 +99,7 @@ test("renders a motion short with the narration over the engine's music", { skip
       if (request.messages?.[0]?.content === SCRIPT_SYSTEM_PROMPT) {
         const script = scriptReply(a);
         script.scenes.at(-1)!.narration_text = "Check first.";
-        return Response.json({ choices: [{ message: { content: JSON.stringify(script) } }] });
+        return Response.json({ choices: [{ message: { content: JSON.stringify({ ...script, fixes: [] }) } }] });
       }
       if (request.input?.[0]?.content?.[0]?.text === "Check first.") {
         return Response.json({ steps: [{ type: "model_output", content: [{ type: "audio", data: toneWav(closingSpeechSeconds).toString("base64") }] }] });
@@ -110,7 +110,7 @@ test("renders a motion short with the narration over the engine's music", { skip
         assert.deepEqual(evidence.verification_report.failures, [], "the skill's own full check ran before judging");
         assert.ok(evidence.verification_report.langs.en.audio.startsWith("peak="));
         assert.equal(Object.keys(evidence.verification_report.langs.en.layout).length, 7);
-        assert.ok(evidence.scenes.every((s: { source_ids: string[] }) => s.source_ids.length > 0));
+        assert.ok(evidence.timed_narration.every((s: { source_ids: string[] }) => s.source_ids.length > 0));
         const images = request.messages[1].content.filter((c: { type: string }) => c.type === "image_url");
         endCardFrame = Buffer.from(images.at(-1).image_url.url.split(",")[1], "base64");
         judged = true;

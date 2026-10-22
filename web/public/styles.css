@@ -453,26 +453,26 @@ button { font: inherit; color: inherit; }
 .reel-track::-webkit-scrollbar { display: none; }
 .reel-item {
   position: relative; height: 100%; scroll-snap-align: start; scroll-snap-stop: always;
+  display: grid; grid-template-rows: minmax(0, 1fr) auto;
   container-type: inline-size; color: var(--on-night); overflow: hidden;
 }
+.reel-stage { min-height: 0; display: grid; place-items: center; }
+.reel-picture { position: relative; height: 100%; aspect-ratio: 9 / 16; max-width: 100%; container-type: inline-size; }
 .reel-item video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
 .reel-caption {
-  position: absolute; z-index: 2; top: 50%; left: 7%; right: 7%;
+  position: absolute; z-index: 2; top: 73.9583%; bottom: 10.4167%; left: 10%; right: 10%;
+  display: grid; place-content: center; background: rgba(0, 0, 0, .92);
   text-align: center; white-space: pre-line; pointer-events: none;
-  font-family: var(--display); font-weight: 800; font-size: clamp(1rem, 5.4cqi, 1.375rem); line-height: 1.25;
+  font-family: var(--display); font-weight: 800; font-size: clamp(.65rem, 5.4cqi, 1.375rem); line-height: 1.25; overflow-wrap: anywhere;
   color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .9), 0 0 14px rgba(0, 0, 0, .6);
 }
 .reel-caption:empty { display: none; }
-.reel-item:has(.reel-sources:not([hidden])) .reel-caption { display: none; }
 .reel-progress { position: absolute; z-index: 2; top: 12px; left: 14px; right: 14px; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, .22); overflow: hidden; }
 .reel-progress i { display: block; height: 100%; background: var(--accent); transform: scaleX(0); transform-origin: left; }
-.reel-overlay {
-  position: absolute; z-index: 2; left: 0; right: 0; bottom: 0;
-  padding: 64px 18px 18px; display: grid; gap: 10px;
-  background: linear-gradient(transparent, rgba(0, 0, 0, .78) 45%);
-  pointer-events: none;
+.reel-details {
+  padding: 12px 18px 18px; display: grid; gap: 10px;
+  max-height: calc(var(--h) * .5); overflow-y: auto; background: var(--night);
 }
-.reel-overlay :is(a, button) { pointer-events: auto; }
 .reel-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .reel-chip { font-size: .75rem; font-weight: 700; padding: 4px 9px; border-radius: 999px; background: rgba(255, 255, 255, .16); }
 .reel-chip[data-ready] { background: var(--sh-signal); color: #0d1f16; }

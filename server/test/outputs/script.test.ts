@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { SCRIPT_SYSTEM_PROMPT, validateScript, writeScript } from "../../src/outputs/render/script.js";
-import { groundsFor, motionSpec } from "../../src/outputs/render/motion-skill.js";
-import { artifact } from "./helpers.js";
+import { SCRIPT_SYSTEM_PROMPT, validateScript, writeScript, reviseScript } from "../../src/outputs/render/script.js";
+import { cueCheck, groundsFor, motionSpec } from "../../src/outputs/render/motion-skill.js";
+import { assertJudged, publicationJudgment } from "../../src/outputs/render/judge.js";
+import { artifact, approvedJudgment, reviewReply, scriptReply } from "./helpers.js";
 
 const narration = (n: number) => Array.from({ length: n }, (_, i) => `word${i}`).join(" ");
 const reply = (a: ReturnType<typeof artifact>, scenes: Record<string, unknown>[]) => ({
@@ -130,4 +131,39 @@ test("opening and closing scenes require known source IDs", () => {
     assert.throws(() => validateScript(raw, a), /source_ids/);
   }
   assert.throws(() => validateScript(reply(a, [{ source_ids: ["unknown-source"] }, {}]), a), /isn't a source/);
+});
+
+test("the builder's cue receipt checks every move against the actual template timing", async () => {
+  const directions = ["slam", "strike", "roll", "stamp", "count", "slam"];
+  const scenes = directions.map(move => ({ narration_text: "Write a failing check first.", on_screen_text: "3 checks", move, swap: "proof" }));
+  const slots = directions.map((_, i) => ({ start: i * 4, speechEnd: i * 4 + 3.65, end: i * 4 + 4 }));
+  const receipt = await cueCheck(motionSpec(artifact(), scenes, slots, null), 2);
+  assert.ok(receipt.startsWith("Round 2\n"));
+  assert.doesNotMatch(receipt, /FAIL/);
+  assert.match(receipt, /Scene 5: slam/);
+  assert.match(receipt, /impact cues: 0 PASS/);
+});
+
+test("a revision cannot log fixes for unchanged scenes", async () => {
+  const a = artifact(), raw = scriptReply(a), scenes = validateScript(raw, a);
+  await assert.rejects(reviseScript(a, scenes, reviewReply(), { apiKey: "test", fetchImpl: async () =>
+    Response.json({ choices: [{ message: { content: JSON.stringify({ ...raw, fixes: [{ axes: ["hook"], scenes: [0], description: "No actual change" }] }) } }] }) }), /unchanged scene/);
+});
+
+test("publication enforces both reviews, defect caps and logged score improvements", () => {
+  const cues = approvedJudgment().cue_checks;
+  const first = reviewReply(), second = reviewReply();
+  first.axes.motion.score = 7;
+  const unearned = publicationJudgment([first, second], [], cues);
+  assert.equal(unearned.passed, false);
+  assert.match(unearned.review_log, /Builder adjustment: motion 8 → 7/);
+  assert.throws(() => assertJudged(unearned), /quality judge/);
+  assert.throws(() => assertJudged(publicationJudgment([second], [], cues.slice(0, 1))), /quality judge/);
+  const capped = reviewReply();
+  capped.defects[0].result = "FAIL";
+  const rejected = publicationJudgment([second, capped], [], cues);
+  assert.equal(rejected.passed, false);
+  assert.ok(rejected.reasons.some(reason => reason.includes("motion scored 6")));
+  const missing = { ...approvedJudgment(), reviews: [reviewReply(), { ...reviewReply(), defects: [] }] };
+  assert.throws(() => assertJudged(missing), /quality judge/);
 });

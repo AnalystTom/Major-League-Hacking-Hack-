@@ -145,7 +145,7 @@ const moveCues = (s, t0, d) => {
   if (mv === 'roll') return [[at.hit, 'roll', .5, 10], [at.after, 'whoosh', .2, .1]];
   if (mv === 'stamp') return [[at.hit, 'stamp', .7]];
   if (mv === 'count') return [[at.hit, 'roll', 1.1, 16], [at.after, 'hit', .5]];
-  return [[t0 + .02, 'slam', .35]];
+  return [[t0, 'slam', .35]];
 };
 
 // the platform tile from the demo film: a cream rounded square with the source's mark
@@ -191,5 +191,5 @@ S.skill = {
     const h = headline(sk ? sk.name.replace(/-/g, ' ') : dataOf(t).text, 90, 400, lt, .35, th, W - 180, 88, 1);
     if (sk) aside(sk.description, 90, h.bottom + 85, lt, h.tEnd + .1, th);
   },
-  cues: d => [[.1, 'blip', 990, .06], [d - .9, 'correct']]
+  cues: d => [[.35, 'slam', .35]]
 };

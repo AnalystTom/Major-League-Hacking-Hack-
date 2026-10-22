@@ -1,3 +1,5 @@
+import { publicationJudgment } from "../../src/outputs/render/judge.js";
+import { approvedJudgment } from "../outputs/helpers.js";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -134,7 +136,7 @@ test('D1 outputs retain claim ownership, bounded retries and skills-only writes 
     await assert.rejects(s.db.query("UPDATE video_results SET status='ready' WHERE id=?1",[v.id]),/CHECK|positive duration/);
     await s.db.query("UPDATE video_results SET updated_at='2000-01-01T00:00:00Z' WHERE id=?1",[v.id]);
     const v2=(await s.outputs.claim('video',art))!;
-    const rendered={judgment:{judge:'short-judge-v1' as const,passed:true,captions_burned:true as const,scores:{grounding:4,clarity:4,usefulness:4,visuals:4,subtitles:4, caption_overlap: 4},reasons:[]},script:{scenes:[]},prompt_revision:'script-v1',media_ref:`r2:videos/${a.id}/1/short.mp4`,caption_ref:`r2:captions/${a.id}/1/short.vtt`,narration_ref:`r2:audio/${a.id}/1/narration.m4a`,duration_seconds:34.5,music_provenance:'Licensed test provenance'};
+    const rendered={judgment:approvedJudgment(),script:{scenes:[]},prompt_revision:'script-v1',media_ref:`r2:videos/${a.id}/1/short.mp4`,caption_ref:`r2:captions/${a.id}/1/short.vtt`,narration_ref:`r2:audio/${a.id}/1/narration.m4a`,duration_seconds:34.5,music_provenance:'Licensed test provenance'};
     await assert.rejects(s.outputs.finishVideo(v,rendered),/taken over/);
     assert.equal(await s.outputs.fail('video',v,'late'),false);
     await s.outputs.finishVideo(v2,rendered);
@@ -237,7 +239,7 @@ for (const status of ['ready', 'failed']) for (const outcome of ['approved', 'pr
         duration_seconds,feed_order,review_status,review_feedback,opus_prompt_revision)
         VALUES(?1,1,?2,3,?3,'r2:captions/old.vtt','r2:audio/old.m4a',30,1,?4,?5,'script-v2')`,
         [a.id,status,`r2:${old}`,status === 'ready' ? 'approved' : 'rejected',JSON.stringify(receipt)]);
-      const replacement: RenderedVideo = { judgment: { ...receipt, judge: 'short-judge-v1', passed: true, captions_burned: true },
+      const replacement: RenderedVideo = { judgment: approvedJudgment(),
         script: { scenes: [] }, prompt_revision: 'script-v3-cited-scenes', media_ref: `r2:videos/${a.id}/1/replacement/short.mp4`,
         caption_ref: 'r2:captions/replacement/short.vtt', narration_ref: 'r2:audio/replacement/narration.m4a', duration_seconds: 31 };
       assert.equal((await s.outputs.artifactsNeeding('video',10)).length,1);
@@ -264,11 +266,20 @@ for (const status of ['ready', 'failed']) for (const outcome of ['approved', 'pr
       } else {
         await assert.rejects(s.outputs.finishVideo(claim,{...replacement,judgment:{...replacement.judgment,passed:false}}),/quality judge/);
         const error = outcome === 'judge rejection' ? 'Quality judge rejected: unsupported claim' : 'R2 upload failed';
-        assert.equal(await s.outputs.fail('video',claim,error),true);
+        const reviewed = approvedJudgment();
+        reviewed.reviews[1].scores.grounding = 2;
+        const rejected = publicationJudgment(reviewed.reviews, [], reviewed.cue_checks);
+        assert.equal(await s.outputs.fail('video',claim,error, outcome === 'judge rejection' ? rejected : undefined),true);
         const row = (await s.db.query('SELECT * FROM video_results')).rows[0];
         assert.equal(row.status,status);
         assert.equal(row.media_ref,`r2:${old}`);
         assert.equal(row.error,error);
+        if (outcome === 'judge rejection') {
+          const saved = JSON.parse(row.review_feedback);
+          assert.deepEqual(saved.last_rejected_review, rejected);
+          assert.equal(saved.passed, receipt.passed, "prior publication receipt is retained");
+          assert.ok(saved.last_rejected_review.review_log.length > 2000, "full receipts survive beyond the error limit");
+        }
         assert.equal(row.attempts,4,'attempt count never resets');
         for (const scope of [null,[unit]]) assert.equal((await readFeed(sql,scope)).length,visible ? 1 : 0);
         assert.equal(await canReadMedia(sql,old,[unit]),visible);

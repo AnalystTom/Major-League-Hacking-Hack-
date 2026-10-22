@@ -1,10 +1,11 @@
+import { publicationJudgment } from "../../src/outputs/render/judge.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { LostClaim, MemoryOutputStore } from "../../src/outputs/store.js";
 import { produceOutputs, sweepOutputs } from "../../src/outputs/run.js";
 import type { MediaStore } from "../../src/outputs/render/media.js";
-import { artifact, outputsFetch, takeOver } from "./helpers.js";
+import { artifact, outputsFetch, takeOver, approvedJudgment } from "./helpers.js";
 import type { RenderedVideo } from "../../src/outputs/types.js";
 
 const hasFfmpeg = (() => { try { execFileSync("ffmpeg", ["-version"]); return true; } catch { return false; } })();
@@ -13,7 +14,7 @@ process.env.RENDER_STYLE = "basic";
 
 const media: MediaStore = { put: async (key) => `r2:${key}` };
 
-test("an artifact gets a ready skill and a ready short, once", { skip: !hasFfmpeg && "ffmpeg not installed", timeout: 120_000 }, async () => {
+test("an artifact gets a ready skill and a ready short, once", { skip: !hasFfmpeg && "ffmpeg not installed", timeout: 360_000 }, async () => {
   const a = artifact();
   const outputs = new MemoryOutputStore();
   const { impl, calls } = outputsFetch(a);
@@ -26,7 +27,7 @@ test("an artifact gets a ready skill and a ready short, once", { skip: !hasFfmpe
   assert.equal(video.length, 1);
   assert.equal(video[0].status, "ready", String(video[0].error));
   assert.equal(calls.skill, 1, "duplicate requests don't pay twice");
-  assert.equal(calls.script, 1);
+  assert.equal(calls.script, 2);
 });
 
 test("without media storage the short fails with that reason, and the skill still lands", async () => {
@@ -110,8 +111,7 @@ for (const status of ["ready", "failed"] as const) for (const success of [true, 
   test(`memory ${status} video refresh retains publication and settles once (${success ? "pass" : "fail"})`, async () => {
     const a = artifact(), outputs = new MemoryOutputStore(0);
     outputs.artifacts.push(a);
-    const old: RenderedVideo = { judgment: { judge: "short-judge-v1", passed: true, captions_burned: true,
-      scores: { grounding: 4, clarity: 4, usefulness: 4, visuals: 4, subtitles: 4, caption_overlap: 4 }, reasons: [] },
+    const old: RenderedVideo = { judgment: approvedJudgment(),
       script: { scenes: [] }, prompt_revision: "script-v2", media_ref: "r2:videos/old/short.mp4",
       caption_ref: "r2:captions/old/short.vtt", narration_ref: "r2:audio/old/narration.m4a", duration_seconds: 30 };
     await outputs.finishVideo((await outputs.claim("video",a))!,old);
@@ -131,7 +131,11 @@ for (const status of ["ready", "failed"] as const) for (const success of [true, 
       assert.equal(held.value,replacement);
     } else {
       await assert.rejects(outputs.finishVideo(claim,{...replacement,judgment:{...old.judgment,passed:false}}),/quality judge/);
-      assert.equal(await outputs.fail("video",claim,"Quality judge rejected: unsupported claim"),true);
+      const reviewed = approvedJudgment();
+      reviewed.reviews[1].scores.grounding = 2;
+      const rejected = publicationJudgment(reviewed.reviews, [], reviewed.cue_checks);
+      assert.equal(await outputs.fail("video",claim,"Quality judge rejected: unsupported claim",rejected),true);
+      assert.deepEqual(held.rejectedReview, rejected);
       assert.equal(held.status,status);
       assert.equal(held.value,old);
       assert.equal(held.attempts,4);

@@ -12,7 +12,7 @@ import { validateScript } from "../../src/outputs/render/script.js";
 import { judgeShort } from "../../src/outputs/render/judge.js";
 import { composeShort, probe } from "../../src/outputs/render/ffmpeg.js";
 import { timeline } from "../../src/outputs/render/timeline.js";
-import { toneWav } from "./helpers.js";
+import { toneWav, reviewReply } from "./helpers.js";
 import type { ReadyArtifact } from "../../src/outputs/types.js";
 import { CAPTION_BAND, CONTENT_BOTTOM } from "../../src/outputs/render/layout.js";
 
@@ -59,7 +59,7 @@ test("the basic renderer pads closing audio to the extended scene end", { skip: 
 test("both rejected cases supply skill evidence, narration samples and a late end-card sample", { skip: !hasFfmpeg && "ffmpeg not installed" }, async () => {
   const dir = await mkdtemp(join(tmpdir(), "resurface-judge-evidence-")), mp4 = join(dir, "frames.mp4");
   try {
-    execFileSync("ffmpeg", ["-y", "-v", "error", "-f", "lavfi", "-i", "color=c=black:s=1080x1920:r=1:d=7", "-vf", "drawbox=color=white:t=fill:enable=gte(t\\,4)", "-c:v", "libx264", "-pix_fmt", "yuv420p", mp4]);
+    execFileSync("ffmpeg", ["-y", "-v", "error", "-f", "lavfi", "-i", "color=c=black:s=1080x1920:r=1:d=7", "-f", "lavfi", "-i", "sine=frequency=440:duration=7", "-vf", "drawbox=color=white:t=fill:enable=gte(t\\,4)", "-c:v", "libx264", "-pix_fmt", "yuv420p", mp4]);
     for (const { artifact, skill } of cases) {
       const scenes = scriptFor(artifact).map((scene, i) => ({
         start_seconds: i, end_seconds: i === slots.length - 1 ? 6 : i + 1, narration_text: scene.narration_text,
@@ -71,7 +71,7 @@ test("both rejected cases supply skill evidence, narration samples and a late en
         const request = JSON.parse(String(init?.body)), content = request.messages[1].content;
         const supplied = JSON.parse(content[0].text);
         assert.deepEqual(supplied.artifact, artifact);
-        assert.deepEqual(supplied.scenes, scenes);
+        assert.deepEqual(supplied.timed_narration, scenes.map(({ visual_instruction, on_screen_text, ...scene }) => scene));
         assert.deepEqual(supplied.generated_skill, skill);
         assert.deepEqual(supplied.safe_area,CAPTION_BAND);
         assert.equal(supplied.content_bottom,CONTENT_BOTTOM);
@@ -79,15 +79,16 @@ test("both rejected cases supply skill evidence, narration samples and a late en
         assert.equal(request.model, "gpt-6.1-sol");
         assert.ok(request.messages[0].content.includes(readFileSync(new URL("../../assets/motion-graphic-skill/references/critique.md", import.meta.url), "utf8")));
         const images = content.filter((c: { type: string }) => c.type === "image_url");
-        assert.equal(images.length, scenes.length * 2 + 1);
+        assert.ok(images.length > scenes.length * 2 + 1);
+        const narrationImages = images.slice(-(scenes.length * 2 + 1));
         assert.ok(images.every((image: { image_url: { detail: string } }) => image.image_url.detail === "high"));
         const pixel = (image: { image_url: { url: string } }) => execFileSync("ffmpeg", ["-v", "error", "-i", "pipe:0", "-vf", "scale=1:1", "-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"], { input: Buffer.from(image.image_url.url.split(",")[1], "base64") });
-        assert.ok(pixel(images[2 * (scenes.length - 1)]).every(value => value < 15), "the early narration sample precedes the delayed content");
-        assert.ok(pixel(images[2 * scenes.length - 1]).every(value => value > 240), "the second scene sample sees later content");
-        assert.ok(pixel(images.at(-1)).every(value => value > 240), "the additional sample includes the delayed content");
-        return Response.json({ choices: [{ message: { content: JSON.stringify({ scores: { grounding: 4, clarity: 4, usefulness: 4, visuals: 4, subtitles: 4, caption_overlap: 4 }, reasons: [] }) } }] });
+        assert.ok(pixel(narrationImages[2 * (scenes.length - 1)]).every(value => value < 15), "the early narration sample precedes the delayed content");
+        assert.ok(pixel(narrationImages[2 * scenes.length - 1]).every(value => value > 240), "the second scene sample sees later content");
+        assert.ok(pixel(narrationImages.at(-1)).every(value => value > 240), "the additional sample includes the delayed content");
+        return Response.json({ choices: [{ message: { content: JSON.stringify(reviewReply()) } }] });
       };
-      assert.ok((await judgeShort(artifact, scenes, mp4, dir, { apiKey: "test", fetchImpl }, skill)).passed);
+      assert.ok((await judgeShort(artifact, scenes, mp4, dir, { apiKey: "test", fetchImpl }, skill, null, "Round 1\nScene 0: no cues PASS\nimpact cues: 0 PASS", 1)).axes.hook.score >= 8);
       assert.equal(calls, 1);
     }
   } finally {

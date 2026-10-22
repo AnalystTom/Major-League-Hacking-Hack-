@@ -5,9 +5,7 @@ vendored from upstream commit `21e875e` (v0.4.0). `server/src/outputs/render/mot
 
 - `SKILL.md`, `references/story.md`, `references/styles.md`, `references/scene-patterns.md`: included verbatim in
   every script-model system prompt, followed by the Resurface portrait/JSON/source-grounding contract.
-- `references/critique.md`: included verbatim in every judge-model system prompt, adapted to one independent
-  publication pass with six 1–5 criteria (all ≥4, no defects); interactive approval and multi-round agent work
-  are replaced by the authorized automated pipeline.
+- `references/critique.md`: included verbatim in each fresh judge request. Two reviewed rounds surround one bounded storyboard revision and rebuild, with all eleven defect rows, seven 1–10 axes (all ≥8), evidence, caps and no unearned score increases. The six source/caption criteria additionally require ≥4/5. Each round has a builder cue check; both reviews, fixes, `review_log` and `cue_checks` persist in the publication receipt. Round 2 must pass; there is no third round.
 - `agents/openai.yaml`: upstream agent-host metadata, retained for the complete distribution; it does not
   configure Resurface’s model. Deployment uses `OPENAI_MODEL`, script medium and judge high reasoning.
 - `assets/engine.html`: the complete upstream source, retained unchanged as the base for the portrait parts.
@@ -36,4 +34,4 @@ canvas; use its full-size stills and actual portrait-player screenshots to asses
 
 Resurface’s composition keeps key content above y=1340. Timed captions occupy only x=108..972,
 y=1420..1720 over a solid dark panel. Both script and judge receive these bounds; the judge explicitly rejects
-caption overlap. The opening’s lesson starts at 0.12 seconds, with compact source context above it.
+caption overlap. Player metadata, controls and source details occupy a separate row outside the complete video frame. The opening’s lesson starts at 0.12 seconds, with compact source context above it.

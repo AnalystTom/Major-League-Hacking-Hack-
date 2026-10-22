@@ -3,18 +3,18 @@
 // ffmpeg text cards; both use the same script, narration and captions.
 
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { judgeShort } from "./judge.js";
+import { assertJudged, judgeShort, publicationJudgment, QualityRejected } from "./judge.js";
 import { burnSubtitles, composeShort, probe } from "./ffmpeg.js";
 import type { MediaStore } from "./media.js";
-import { SCRIPT_PROMPT_REVISION, scriptEffort, shortModel, writeScript } from "./script.js";
+import { SCRIPT_PROMPT_REVISION, scriptEffort, shortModel, writeScript, reviseScript, type DraftScene } from "./script.js";
 import { captionCues, timeline, toVtt } from "./timeline.js";
 import { synthesize, TTS_MODEL } from "./tts.js";
-import { MOTION_MUSIC_PROVENANCE, MOTION_SKILL_REVISION, motionSpec, narrationTrack, renderMotion, type SkillCard } from "./motion-skill.js";
+import { MOTION_MUSIC_PROVENANCE, MOTION_SKILL_REVISION, cueCheck, motionSpec, narrationTrack, renderMotion, type SkillCard } from "./motion-skill.js";
 import type { SkillState } from "../store.js";
-import type { ProviderOptions, ReadyArtifact, RenderedVideo, ScriptScene } from "../types.js";
+import type { ProviderOptions, ReadyArtifact, RenderedVideo, ReviewFix, ScriptScene, ShortReview } from "../types.js";
 
 /** The provider settings, with the two keys a render can't run without, and where the files go. */
 export interface RenderOptions extends ProviderOptions {
@@ -40,57 +40,84 @@ async function readySkill(a: ReadyArtifact, o: RenderOptions): Promise<SkillCard
   }
 }
 
-export async function renderArtifact(a: ReadyArtifact, o: RenderOptions): Promise<RenderedVideo> {
-  const draft = await writeScript(a, { apiKey: o.openaiKey, model: o.openaiModel, fetchImpl: o.fetchImpl });
-  const dir = await mkdtemp(join(tmpdir(), "resurface-render-"));
-  try {
-    // One clip per scene, so each scene's time comes from its own measured speech.
-    const wavs: string[] = [];
-    for (const [i, s] of draft.entries()) {
-      const wav = join(dir, `scene-${i}.wav`);
-      await writeFile(wav, await synthesize(s.narration_text, { apiKey: o.geminiKey, model: o.ttsModel, voice: o.ttsVoice, fetchImpl: o.fetchImpl }));
-      wavs.push(wav);
-    }
-    const lengths = await Promise.all(wavs.map(async (w) => (await probe(w)).duration));
-    const slots = timeline(lengths);
+async function renderRound(a: ReadyArtifact, draft: DraftScene[], dir: string, round: number, o: RenderOptions, skill: SkillCard | null) {
+  await mkdir(dir, { recursive: true });
+  const wavs: string[] = [];
+  for (const [i, scene] of draft.entries()) {
+    const wav = join(dir, `scene-${i}.wav`);
+    await writeFile(wav, await synthesize(scene.narration_text, { apiKey: o.geminiKey, model: o.ttsModel, voice: o.ttsVoice, fetchImpl: o.fetchImpl }));
+    wavs.push(wav);
+  }
+  const slots = timeline(await Promise.all(wavs.map(async wav => (await probe(wav)).duration)));
+  const cues = captionCues(draft.map(scene => scene.narration_text), slots, 32);
+  const vtt = join(dir, "short.vtt");
+  await writeFile(vtt, toVtt(cues));
+  let verification: unknown = null;
+  let out: { mp4: string; narration: string; duration: number };
+  let cue_check: string;
+  if (renderStyle() === "motion-skill") {
+    const spec = motionSpec(a, draft, slots, skill);
+    cue_check = await cueCheck(spec, round);
+    const track = await narrationTrack(dir, wavs, slots);
+    const film = await renderMotion(dir, spec, track.wav);
+    verification = film.verification;
+    out = { mp4: film.mp4, narration: track.m4a, duration: film.duration };
+  } else {
+    cue_check = [`Round ${round}`, ...slots.map((_, i) => `Scene ${i}: no cues; narration only; no motion sound cue to synchronize. PASS`), "impact cues: 0 PASS"].join("\n");
+    out = await composeShort({ dir, narration: wavs, onScreen: draft.map(scene => scene.on_screen_text), slots, category: a.category });
+  }
+  await mkdir(join(dir, "motion-check"), { recursive: true });
+  await writeFile(join(dir, "motion-check", "cue-check.md"), cue_check);
+  const scenes: ScriptScene[] = draft.map((scene, i) => ({
+    start_seconds: slots[i].start, end_seconds: slots[i].end, narration_text: scene.narration_text,
+    on_screen_text: scene.on_screen_text, visual_instruction: scene.visual_instruction, source_ids: scene.source_ids,
+  }));
+  out.mp4 = await burnSubtitles(dir, out.mp4, cues);
+  const review = await judgeShort(a, scenes, out.mp4, dir,
+    { apiKey: o.openaiKey, model: o.openaiModel, fetchImpl: o.fetchImpl }, skill, verification, cue_check, round);
+  return { out, scenes, vtt, review, cue_check };
+}
 
-    const vtt = join(dir, "short.vtt");
-    const cues = captionCues(draft.map((s) => s.narration_text), slots, 32);
-    await writeFile(vtt, toVtt(cues));
+export async function renderArtifact(a: ReadyArtifact, o: RenderOptions): Promise<RenderedVideo> {
+  const model = { apiKey: o.openaiKey, model: o.openaiModel, fetchImpl: o.fetchImpl };
+  const draft = await writeScript(a, model);
+  const dir = await mkdtemp(join(tmpdir(), "resurface-render-"));
+  const reviews: ShortReview[] = [], cue_checks: string[] = [];
+  let fixes: ReviewFix[] = [];
+  try {
     const motion = renderStyle() === "motion-skill";
     const skill = motion ? await readySkill(a, o) : null;
-    let verification: unknown = null;
-    let out: { mp4: string; narration: string; duration: number };
-    if (motion) {
-      const track = await narrationTrack(dir, wavs, slots);
-      const film = await renderMotion(dir, motionSpec(a, draft, slots, skill), track.wav);
-      verification = film.verification;
-      out = { mp4: film.mp4, narration: track.m4a, duration: film.duration };
-    } else {
-      out = await composeShort({ dir, narration: wavs, onScreen: draft.map((s) => s.on_screen_text), slots, category: a.category });
-    }
-
-    const scenes: ScriptScene[] = draft.map((s, i) => ({
-      start_seconds: slots[i].start, end_seconds: slots[i].end,
-      narration_text: s.narration_text, on_screen_text: s.on_screen_text, visual_instruction: s.visual_instruction, source_ids: s.source_ids,
-    }));
-    out.mp4 = await burnSubtitles(dir, out.mp4, cues);
-    const judgment = await judgeShort(a, scenes, out.mp4, dir, { apiKey: o.openaiKey, model: o.openaiModel, fetchImpl: o.fetchImpl }, skill, verification);
-
-    // A failed upload or lost claim must never overwrite the video still being served.
+    const first = await renderRound(a, draft, join(dir, "round-1"), 1, o, skill);
+    reviews.push(first.review);
+    cue_checks.push(first.cue_check);
+    const revised = await reviseScript(a, draft, first.review, model);
+    fixes = revised.fixes;
+    const second = await renderRound(a, revised.scenes, join(dir, "round-2"), 2, o, skill);
+    reviews.push(second.review);
+    cue_checks.push(second.cue_check);
+    const judgment = publicationJudgment(reviews, fixes, cue_checks);
+    await writeFile(join(dir, "review_log.md"), judgment.review_log);
+    if (!judgment.passed) throw new QualityRejected(judgment);
+    assertJudged(judgment);
     const base = `${a.id}/${a.version}/${randomUUID()}`;
-    const media_ref = await o.media.put(`videos/${base}/short.mp4`, out.mp4, "video/mp4");
-    const caption_ref = await o.media.put(`captions/${base}/short.vtt`, vtt, "text/vtt; charset=utf-8");
-    const narration_ref = await o.media.put(`audio/${base}/narration.m4a`, out.narration, "audio/mp4");
-
+    const media_ref = await o.media.put(`videos/${base}/short.mp4`, second.out.mp4, "video/mp4");
+    const caption_ref = await o.media.put(`captions/${base}/short.vtt`, second.vtt, "text/vtt; charset=utf-8");
+    const narration_ref = await o.media.put(`audio/${base}/narration.m4a`, second.out.narration, "audio/mp4");
     return {
-      judgment,
-      script: { scenes },
-      // The model and reasoning effort that wrote the script, so a render shows how it was made.
+      judgment, script: { scenes: second.scenes },
       prompt_revision: `${SCRIPT_PROMPT_REVISION}; openai:${shortModel(o.openaiModel)}/${scriptEffort()}; tts:${o.ttsModel ?? TTS_MODEL}${motion ? `; ${MOTION_SKILL_REVISION}` : ""}`,
-      media_ref, caption_ref, narration_ref, duration_seconds: out.duration,
+      media_ref, caption_ref, narration_ref, duration_seconds: second.out.duration,
       music_provenance: motion ? MOTION_MUSIC_PROVENANCE : null,
     };
+  } catch (error) {
+    if (reviews.length && !(error instanceof QualityRejected)) {
+      const judgment = publicationJudgment(reviews, fixes, cue_checks);
+      judgment.passed = false;
+      judgment.reasons.push((error as Error).message);
+      judgment.review_log += `\nUnresolved: ${(error as Error).message}`;
+      throw new QualityRejected(judgment);
+    }
+    throw error;
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

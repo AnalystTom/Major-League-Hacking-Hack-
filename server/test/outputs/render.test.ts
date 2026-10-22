@@ -7,8 +7,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fontFile, probe } from "../../src/outputs/render/ffmpeg.js";
 import type { MediaStore } from "../../src/outputs/render/media.js";
+import { assertJudged } from "../../src/outputs/render/judge.js";
 import { renderArtifact } from "../../src/outputs/render/render.js";
-import { artifact, outputsFetch } from "./helpers.js";
+import { artifact, outputsFetch, reviewReply, scriptReply } from "./helpers.js";
 
 // These cover the plain ffmpeg renderer; motion-skill.test.ts covers the motion-graphic-skill path.
 process.env.RENDER_STYLE = "basic";
@@ -25,20 +26,33 @@ class DirMedia implements MediaStore {
   }
 }
 
-test("renders a 1080x1920 H.264/AAC short with captions timed to the narration", { skip: !hasFfmpeg && "ffmpeg not installed", timeout: 120_000 }, async () => {
+test("renders a 1080x1920 H.264/AAC short with captions timed to the narration", { skip: !hasFfmpeg && "ffmpeg not installed", timeout: 360_000 }, async () => {
   const out = await mkdtemp(join(tmpdir(), "resurface-render-test-"));
   try {
     const a = artifact();
-    const { impl, calls } = outputsFetch(a);
+    const first = reviewReply();
+    first.axes.hook.score = 6;
+    first.defects[2] = { id: "D3", result: "FAIL", evidence: "finished-opening.jpg @ 2s: hook too slow" };
+    first.worst_three = [{ timestamp: 0, scene: 0, problem: "Put the source-supported hook first" }];
+    const revised = scriptReply(a);
+    revised.scenes[0].on_screen_text = "Write the check first";
+    const { impl, calls } = outputsFetch(a, { judge: [first, reviewReply()], revisedScript: { ...revised,
+      fixes: [{ axes: ["hook"], scenes: [0], description: "Put the source-supported failing-check hook first" }] } });
     const media = new DirMedia(out);
     const previous = join(out, `videos_${a.id}_1_short.mp4`);
     await writeFile(previous, "previous approved video");
     const v = await renderArtifact(a, { openaiKey: "o", geminiKey: "g", media, fetchImpl: impl });
 
-    assert.equal(calls.script, 1);
-    assert.equal(calls.judge, 1);
+    assert.equal(calls.script, 2);
+    assert.equal(calls.judge, 2);
     assert.equal(v.judgment.passed, true);
-    assert.equal(calls.tts, 4, "one narration clip per scene");
+    assert.equal(v.judgment.reviews.length, 2);
+    assert.equal(v.script.scenes[0].on_screen_text, "Write the check first");
+    assert.equal(v.judgment.reviews[0].defects[2].result, "FAIL");
+    assertJudged(v.judgment);
+    assert.equal(v.judgment.cue_checks.length, 2);
+    assert.match(v.judgment.review_log, /## Round 2/);
+    assert.equal(calls.tts, 8, "one narration clip per scene in each round");
     assert.deepEqual(media.keys, [v.media_ref, v.caption_ref, v.narration_ref].map(ref => ref.slice(3)));
     assert.notEqual(v.media_ref, `r2:videos/${a.id}/1/short.mp4`);
     assert.equal(await readFile(previous, "utf8"), "previous approved video", "a replacement cannot overwrite published bytes");
@@ -67,7 +81,7 @@ test("a TTS failure fails the render with the provider's status", { skip: !hasFf
   await assert.rejects(renderArtifact(a, { openaiKey: "o", geminiKey: "g", media: new DirMedia(tmpdir()), fetchImpl: impl }), /TTS HTTP 403/);
 });
 
-test("a RENDER_FONT path with ':' or quotes still renders", { skip: !hasFfmpeg && "ffmpeg not installed", timeout: 120_000 }, async () => {
+test("a RENDER_FONT path with ':' or quotes still renders", { skip: !hasFfmpeg && "ffmpeg not installed", timeout: 360_000 }, async () => {
   const font = fontFile(undefined);
   if (!font) return; // no bold system font to copy on this host
   const out = await mkdtemp(join(tmpdir(), "resurface-font-test-"));
@@ -86,16 +100,16 @@ test("a RENDER_FONT path with ':' or quotes still renders", { skip: !hasFfmpeg &
   }
 });
 
-test("a rejected or malformed quality judgment uploads nothing", { skip: !hasFfmpeg && "ffmpeg not installed", timeout: 120_000 }, async () => {
+test("a rejected or malformed quality judgment uploads nothing", { skip: !hasFfmpeg && "ffmpeg not installed", timeout: 360_000 }, async () => {
   const a = artifact(), media = new DirMedia(tmpdir());
-  const result = { scores: { grounding: 2, clarity: 4, usefulness: 4, visuals: 4, subtitles: 4, caption_overlap: 4 }, reasons: ["The narration invents a result."] };
+  const result = { ...reviewReply(), scores: { grounding: 2, clarity: 4, usefulness: 4, visuals: 4, subtitles: 4, caption_overlap: 4 }, reasons: ["The narration invents a result."] };
   const { impl, calls } = outputsFetch(a, { judge: result });
   await assert.rejects(renderArtifact(a, { openaiKey: "o", geminiKey: "g", media, fetchImpl: impl }), /Quality judge rejected:.*invents a result/);
-  assert.equal(calls.judge, 1, "one independent judging pass");
+  assert.equal(calls.judge, 2, "two fresh independent judging passes");
   assert.deepEqual(media.keys, [], "rejected clips never reach publication storage");
-  const overlap = outputsFetch(a, { judge: { scores: { grounding: 5, clarity: 5, usefulness: 5, visuals: 5, subtitles: 5, caption_overlap: 3 }, reasons: [] } });
+  const overlap = outputsFetch(a, { judge: { ...reviewReply(), scores: { grounding: 5, clarity: 5, usefulness: 5, visuals: 5, subtitles: 5, caption_overlap: 3 }, reasons: [] } });
   await assert.rejects(renderArtifact(a, { openaiKey: "o", geminiKey: "g", media, fetchImpl: overlap.impl }), /Quality judge rejected:.*caption_overlap scored 3/);
-  assert.equal(overlap.calls.judge, 1);
+  assert.equal(overlap.calls.judge, 2);
   assert.deepEqual(media.keys, [], "an otherwise excellent clip with caption overlap is withheld");
 });
 
