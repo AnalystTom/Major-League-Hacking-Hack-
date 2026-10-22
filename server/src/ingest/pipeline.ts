@@ -12,7 +12,7 @@ import type { IngestedUnit, StoredArtifact } from "./types.js";
 
 export interface IngestOptions {
   geminiKey: string;
-  /** twitterapi.io key: reads X Articles in full. Without it (or when it fails) X posts are read from X's public embed endpoint. */
+  /** Optional X reading key; provider behavior and Article limits are documented in ./README.md. */
   twitterApiKey?: string;
   /** Nimble key; without it Substack posts fail with a clear error. */
   nimbleKey?: string;

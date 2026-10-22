@@ -5,7 +5,7 @@ import { isSubstackHost, parseSubstackLink } from "./substack.js";
 import { isXLink, parseXLink } from "./xpost.js";
 import { parseYouTubeLink } from "./youtube.js";
 
-// Per source type: a video costs a long Gemini read, an X post one cheap API read.
+// Per source type: a video costs a long Gemini read; X posts use text-reading endpoints.
 export const MAX_YOUTUBE_LINKS = 20;
 export const MAX_X_LINKS = 100;
 export const MAX_SUBSTACK_LINKS = 20; // a post is one Nimble read plus a long digest input
@@ -64,8 +64,7 @@ export function parseUnitIds(value) {
 }
 
 /**
- * Reuses the newest unit for the same source and start time unless it failed or its X extractor is outdated,
- * otherwise inserts a pending one. Pending/running X reads are shared until their extraction finishes.
+ * Import reuse and X refresh rules: docs/project-actions-spec.md#http-api.
  * Only ids and status come back: a reused unit's submitted_url is another visitor's original link,
  * which can carry their share or playlist parameters, so it never leaves the database.
  */

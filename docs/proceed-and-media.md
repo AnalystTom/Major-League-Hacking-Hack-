@@ -52,7 +52,7 @@ Every mutation must be `application/json`; with the `SameSite=Lax` session cooki
 | `POST /api/auth/login` `{ email, password }` | Signs in. Wrong password and unknown email get the same `401`. |
 | `POST /api/auth/logout` | Ends the session. |
 | `GET /api/me` | `{ user, imports }`; `{ user: null }` when signed out. |
-| `POST /api/imports` `{ links }` | Canonicalises links, reuses a non-failed unit for the same video and start time, links each to the user, and sends units new to this user to the processor. Returns `{ units, processor }`. |
+| `POST /api/imports` `{ links }` | Returns `{ units, processor }`; see the [import rules](project-actions-spec.md#http-api) for reuse, X refreshes and processor requests. |
 | `GET /api/imports` | The user's links with their stage and reason; see the [unit progress contract](project-actions-spec.md#http-api). |
 | `GET /api/feed?scope=mine` | The user's shorts: artifacts they can see (below) whose artifact and video are both `ready`. |
 | `GET /api/skills` | The newest skill per visible ready artifact: `{ id, status, error, artifact, name, description, markdown, videos, action_items }`. Tasks carry `task`, `prerequisites`, `steps`, `completion_check` and `evidence`. |

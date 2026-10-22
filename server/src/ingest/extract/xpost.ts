@@ -92,6 +92,7 @@ export interface XPostOptions {
  * Reads one post from twitterapi.io (GET /twitter/tweets) and returns the stored transcript plus a title.
  * Posts have no timeline, so the single evidence item sits at second 0 and the window is [0, 0].
  * Throws with the actual failure (deleted, protected, bad key, rate limited) so the unit shows it.
+ * articleLookupComplete prevents reuse when an unavailable supplementary lookup leaves article presence unknown.
  */
 export async function extractXPost(o: XPostOptions): Promise<{ title: string; transcript: NonNullable<IngestedUnit["transcript"]>; articleLookupComplete: boolean }> {
   const fetchUrl = (url: string) => (o.fetchImpl ?? fetch)(url, { headers: { "x-api-key": o.apiKey }, signal: AbortSignal.timeout(o.timeoutMs ?? 15_000) });
