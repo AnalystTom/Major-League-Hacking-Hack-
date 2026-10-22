@@ -58,6 +58,8 @@ async function complete(o: DigestOptions, messages: Message[], cap: number): Pro
     body: JSON.stringify({
       model: o.model ?? DEFAULT_DIGEST_MODEL,
       max_completion_tokens: cap,
+      // Request reproducible sampling without changing the model's reasoning settings.
+      seed: 0,
       ...effortField(),
       response_format: { type: "json_object" },
       messages,
