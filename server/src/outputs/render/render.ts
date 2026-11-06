@@ -49,7 +49,7 @@ async function renderRound(a: ReadyArtifact, draft: DraftScene[], dir: string, r
     wavs.push(wav);
   }
   const slots = timeline(await Promise.all(wavs.map(async wav => (await probe(wav)).duration)));
-  const cues = captionCues(draft.map(scene => scene.narration_text), slots, 32);
+  const cues = captionCues(draft.map(scene => scene.narration_text), slots);
   const vtt = join(dir, "short.vtt");
   await writeFile(vtt, toVtt(cues));
   let verification: unknown = null;

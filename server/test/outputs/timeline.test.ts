@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { captionCues, SCENE_GAP_SECONDS, timeline, toVtt, wrap } from "../../src/outputs/render/timeline.js";
+import { captionCues, phrases, SCENE_GAP_SECONDS, timeline, toVtt, wrap } from "../../src/outputs/render/timeline.js";
 import { validateScript } from "../../src/outputs/render/script.js";
 import { headerText } from "../../src/outputs/render/ffmpeg.js";
 import { randomUUID } from "node:crypto";
@@ -69,4 +69,12 @@ test("the frame header puts a long category on its own clipped line", () => {
   const long = headerText("Post-training pipelines and evaluation environments");
   assert.equal(long, "RESURFACE\nPOST-TRAINING PIPELINES AND EVALU…");
   assert.equal(long.split("\n")[1].length, 34);
+});
+
+test("caption phrases keep clauses, numbers with their units, and leading words with what follows", () => {
+  assert.deepEqual(phrases("The share reverted fell by more than 40 percent.", 26), ["The share reverted fell", "by more than 40 percent."]);
+  assert.deepEqual(phrases("Claude writes about 90 percent of Claude Code's own code.", 26), ["Claude writes about", "90 percent of Claude", "Code's own code."]);
+  assert.deepEqual(phrases("Try it. Run code review.", 26), ["Try it.", "Run code review."]);
+  assert.ok(!phrases("Claude writes about ninety percent of Claude Code.", 26).some((l) => / ninety$/.test(l)));
+  for (const line of phrases("In a Claude Code session, run slash code-review to find bugs in your branch.", 26)) assert.ok(line.length <= 26 && !/ (the|of|to|by|a)$/.test(line), line);
 });

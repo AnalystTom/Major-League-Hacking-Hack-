@@ -130,13 +130,12 @@ export async function burnSubtitles(dir: string, mp4: string, cues: Cue[]): Prom
   const filters = [];
   for (const [i, cue] of cues.entries()) {
     const file = join(dir, `caption-${i}.txt`);
-    // Break unusually long source words too: no caption can run outside the frame.
-    const text = cue.text.replace(/(\S{16})(?=\S)/gu, "$1 ");
-    await writeFile(file, wrap(text, 16));
+    // Cues are single phrases (timeline.ts); a source word too long for the line still can't leave the frame.
+    await writeFile(file, cue.text.replace(/(\S{26})(?=\S)/gu, "$1 "));
     const enabled = `gte(t,${cue.start.toFixed(3)})*lt(t,${cue.end.toFixed(3)})`;
-    filters.push(`drawbox=x=${band.left}:y=${band.top}:w=${band.right-band.left}:h=${band.bottom-band.top}:color=black@0.92:t=fill:enable='${enabled}'`,
-      `drawtext=${font}:textfile='${file}':expansion=none:fontsize=52:fontcolor=white:line_spacing=10:` +
-      `borderw=2:bordercolor=black:x=(w-text_w)/2:y=${(band.top+band.bottom)/2}-text_h/2:enable='${enabled}'`);
+    // One centred line in a box sized to it, always at the same height in the caption band.
+    filters.push(`drawtext=${font}:textfile='${file}':expansion=none:fontsize=52:fontcolor=white:box=1:boxcolor=black@0.85:boxborderw=26:` +
+      `x=(w-text_w)/2:y=${Math.round((band.top + band.bottom) / 2)}-text_h/2:fix_bounds=1:enable='${enabled}'`);
   }
   const output = join(dir, "subtitled.mp4");
   await run("ffmpeg", ["-y", "-v", "error", "-i", mp4, "-vf", filters.join(","), "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart", output]);

@@ -69,7 +69,9 @@ test("renders a 1080x1920 H.264/AAC short with captions timed to the narration",
 
     const vtt = await readFile(join(out, media.keys[1].replace(/\//g, "_")), "utf8");
     assert.match(vtt, /^WEBVTT/);
-    assert.match(vtt, /Your coding agent says it's/);
+    assert.match(vtt, /\nYour coding agent\n[\s\S]*\nsays it's done\.\n/);
+    // Every cue is one phrase on one line, short enough for the caption band.
+    for (const cue of vtt.trim().split("\n\n").slice(1)) assert.ok(cue.split("\n").length === 3 && cue.split("\n")[2].length <= 26, cue);
   } finally {
     await rm(out, { recursive: true, force: true });
   }

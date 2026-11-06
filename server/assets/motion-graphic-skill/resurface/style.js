@@ -29,12 +29,26 @@ function transition(sc, lt){
   if (themeOf(sc) === THEMES.cobalt && themeOf(SC[sc.i - 1]) !== THEMES.cobalt){
     if (lt > .4) return;
     const p = eIO(inv(0, .4, lt)), r = p * Math.hypot(W, H) * .52;
-    ctx.save(); ctx.fillStyle = themeOf(SC[sc.i - 1]).bg; ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.arc(W / 2, H / 2, r, 0, TAU, true); ctx.fill('evenodd');
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.arc(W / 2, H / 2, r, 0, TAU, true); ctx.clip('evenodd'); lastFrame(SC[sc.i - 1]); ctx.restore();
+    ctx.save();
     ctx.strokeStyle = rgba(THEMES.cobalt.ink, .7 * (1 - p)); ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(W / 2, H / 2, r, 0, TAU); ctx.stroke(); ctx.restore();
     return;
   }
   if (lt > .3) return;
   const prev = SC[sc.i - 1], p = eIO(inv(0, .3, lt));
-  ctx.save(); ctx.fillStyle = themeOf(prev).bg; ctx.fillRect(0, 0, W, H * (1 - p)); ctx.restore();
+  // Cuts alternate direction so consecutive scenes don't arrive the same way: up, then across.
+  if (sc.i % 2 === 0){
+    ctx.save(); ctx.beginPath(); ctx.rect(W * p, 0, W * (1 - p), H); ctx.clip(); lastFrame(prev); ctx.restore();
+    ctx.fillStyle = themeOf(sc).acc === themeOf(sc).ink ? themeOf(prev).bg : themeOf(sc).acc; ctx.fillRect(W * p, 0, 18, H);
+    return;
+  }
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H * (1 - p)); ctx.clip(); lastFrame(prev); ctx.restore();
   ctx.fillStyle = themeOf(sc).acc === themeOf(sc).ink ? themeOf(prev).bg : themeOf(sc).acc; ctx.fillRect(0, H * (1 - p) - 18, W, 18);
+}
+
+// The previous scene as it ended, so a cut wipes its copy away instead of blanking it a frame early.
+function lastFrame(prev){
+  const t = prev.t0 + prev.d - 1e-3;
+  ctx.fillStyle = themeOf(prev).bg; ctx.fillRect(0, 0, W, H);
+  ctx.save(); try { S[prev.id].draw(prev.d - 1e-3, prev.d, t); } catch (e){ console.error(e); } ctx.restore();
 }

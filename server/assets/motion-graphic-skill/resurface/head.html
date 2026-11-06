@@ -10,6 +10,8 @@
   .app.app{grid-template-rows:minmax(0,1fr) auto;align-content:stretch;gap:0}
   .stage.stage{aspect-ratio:auto;height:100%;min-height:0}
 }
+/* The poster's play button sits below the copy, where no headline or illustration is drawn. */
+.start.start{top:auto;bottom:16%;transform:none}
 @media (pointer:coarse){
   .scrub.scrub{top:clamp(0px,calc(var(--bar-y) - max(2.4%,16px)),calc(100% - 32px))}
 }

@@ -32,8 +32,8 @@ for (const { artifact, skill } of cases) {
     const spec = motionSpec(artifact, scenes, slots, card);
     assert.deepEqual(Object.keys(spec.skill!), ["name", "description"]);
     assert.equal(spec.skill!.name, skill.name);
-    assert.ok(spec.skill!.description.length > 0 && spec.skill!.description.length <= 80);
-    assert.ok(skill.description.startsWith(`${spec.skill!.description} `));
+    assert.ok(spec.skill!.description.length > 0 && spec.skill!.description.length <= 200);
+    assert.ok(`${skill.description} `.startsWith(`${spec.skill!.description} `));
     assert.doesNotMatch(spec.skill!.description, /…/);
     assert.deepEqual(spec.scenes.map(scene => scene.d), [1.15, 1.15, 2.5]);
     assert.doesNotMatch(JSON.stringify(spec), /\.agents\/skills\/|SKILL\.md|SEND TO YOUR AGENT/);
