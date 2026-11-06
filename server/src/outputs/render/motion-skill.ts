@@ -26,7 +26,7 @@ const RECORD_TIMEOUT_MS = 40 * 60_000;
 /** The ready skill an end card can name; null while it's still being written or if it failed. */
 export interface SkillCard { name: string; description: string }
 
-export interface MotionScene { d: number; code: string; theme: string; text: string; sub: string; label: string; move: string; swap: string }
+export interface MotionScene { d: number; code: string; theme: string; text: string; sub: string; label: string; move: string; swap: string; visual: unknown }
 export interface MotionSpec {
   layout: { caption_band: typeof CAPTION_BAND; content_bottom: number };
   id: string;
@@ -63,7 +63,7 @@ function sourceOf(a: ReadyArtifact): MotionSpec["source"] {
 }
 
 /** Optional visual direction preserves compatibility with older scripts. */
-export interface SpecScene { on_screen_text: string; narration_text: string; aside?: string; move?: string; swap?: string; ground?: string }
+export interface SpecScene { on_screen_text: string; narration_text: string; aside?: string; move?: string; swap?: string; ground?: string; visual?: unknown }
 
 /** One ground per scene: night first, paper last, the script's choice between, and never the same twice in a row. */
 export function groundsFor(scenes: SpecScene[]): string[] {
@@ -80,8 +80,9 @@ export function groundsFor(scenes: SpecScene[]): string[] {
 /** The template's data: one entry per narrated scene, timed to its measured narration slot. */
 export function motionSpec(a: ReadyArtifact, scenes: SpecScene[], slots: Slot[], skill: SkillCard | null): MotionSpec {
   const last = scenes.length - 1, grounds = groundsFor(scenes);
-  const description = skill ? oneLine(skill.description).match(/^.{1,80}(?=\s|$)/u)?.[0] : undefined;
-  if (skill && !description) throw new Error("Skill description has no complete word within 80 characters");
+  // The end card shows the description whole when it fits four aside lines, else up to its last complete word.
+  const description = skill ? oneLine(skill.description).match(/^.{1,200}(?=\s|$)/u)?.[0] : undefined;
+  if (skill && !description) throw new Error("Skill description has no complete word within 200 characters");
   return {
     layout: { caption_band: CAPTION_BAND, content_bottom: CONTENT_BOTTOM },
     id: a.id.slice(0, 8),
@@ -98,6 +99,7 @@ export function motionSpec(a: ReadyArtifact, scenes: SpecScene[], slots: Slot[],
         theme: grounds[i],
         text, sub: i === last || sub.toLowerCase() === text.toLowerCase() ? "" : sub, label: "",
         move, swap: move === "slam" || move === "count" ? "" : clip(oneLine(s.swap ?? ""), 24),
+        visual: s.visual ?? null,
       };
     }),
     skill: skill && { name: oneLine(skill.name), description: description! },

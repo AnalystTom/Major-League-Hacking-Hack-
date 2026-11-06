@@ -16,6 +16,8 @@
   .app.app{grid-template-rows:minmax(0,1fr) auto;align-content:stretch;gap:0}
   .stage.stage{aspect-ratio:auto;height:100%;min-height:0}
 }
+/* The poster's play button sits below the copy, where no headline or illustration is drawn. */
+.start.start{top:auto;bottom:16%;transform:none}
 @media (pointer:coarse){
   .scrub.scrub{top:clamp(0px,calc(var(--bar-y) - max(2.4%,16px)),calc(100% - 32px))}
 }
@@ -298,14 +300,28 @@ function transition(sc, lt){
   if (themeOf(sc) === THEMES.cobalt && themeOf(SC[sc.i - 1]) !== THEMES.cobalt){
     if (lt > .4) return;
     const p = eIO(inv(0, .4, lt)), r = p * Math.hypot(W, H) * .52;
-    ctx.save(); ctx.fillStyle = themeOf(SC[sc.i - 1]).bg; ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.arc(W / 2, H / 2, r, 0, TAU, true); ctx.fill('evenodd');
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.arc(W / 2, H / 2, r, 0, TAU, true); ctx.clip('evenodd'); lastFrame(SC[sc.i - 1]); ctx.restore();
+    ctx.save();
     ctx.strokeStyle = rgba(THEMES.cobalt.ink, .7 * (1 - p)); ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(W / 2, H / 2, r, 0, TAU); ctx.stroke(); ctx.restore();
     return;
   }
   if (lt > .3) return;
   const prev = SC[sc.i - 1], p = eIO(inv(0, .3, lt));
-  ctx.save(); ctx.fillStyle = themeOf(prev).bg; ctx.fillRect(0, 0, W, H * (1 - p)); ctx.restore();
+  // Cuts alternate direction so consecutive scenes don't arrive the same way: up, then across.
+  if (sc.i % 2 === 0){
+    ctx.save(); ctx.beginPath(); ctx.rect(W * p, 0, W * (1 - p), H); ctx.clip(); lastFrame(prev); ctx.restore();
+    ctx.fillStyle = themeOf(sc).acc === themeOf(sc).ink ? themeOf(prev).bg : themeOf(sc).acc; ctx.fillRect(W * p, 0, 18, H);
+    return;
+  }
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H * (1 - p)); ctx.clip(); lastFrame(prev); ctx.restore();
   ctx.fillStyle = themeOf(sc).acc === themeOf(sc).ink ? themeOf(prev).bg : themeOf(sc).acc; ctx.fillRect(0, H * (1 - p) - 18, W, 18);
+}
+
+// The previous scene as it ended, so a cut wipes its copy away instead of blanking it a frame early.
+function lastFrame(prev){
+  const t = prev.t0 + prev.d - 1e-3;
+  ctx.fillStyle = themeOf(prev).bg; ctx.fillRect(0, 0, W, H);
+  ctx.save(); try { S[prev.id].draw(prev.d - 1e-3, prev.d, t); } catch (e){ console.error(e); } ctx.restore();
 }
 // @@/style
 
@@ -385,8 +401,8 @@ function headline(text, x, y, lt, t0, th, width = W - 2 * x, z = 132, span = 1.4
 }
 
 // the italic serif aside under a headline, wrapped to at most 3 lines; returns where it ends
-function aside(text, x, y, lt, t0, th){
-  const { lines, z } = wrapLines(text, FS, 'italic 400', 56, W - 2 * x, 3);
+function aside(text, x, y, lt, t0, th, size = 56, maxLines = 3){
+  const { lines, z } = wrapLines(text, FS, 'italic 400', size, W - 2 * x, maxLines);
   lines.forEach((l, i) => rise(l, x, y + i * z * 1.12, lt, t0 + i * .08, { f: FS, w: 'italic 400', z, c: th.ink }));
   return y + (lines.length - 1) * z * 1.12 + z * .3;
 }
@@ -460,12 +476,13 @@ const MOVE = {
   count: (s, th, lt, t0) => {
     // a signed number can't count up from zero, so it slams like any headline (validateScript already avoids this)
     const m = s.text.match(NUM); if (!m || /([-−–+]\s*[$€£]?|[$€£]\s+)\s*$/.test(s.text.slice(0, m.index))) return MOVE.slam(s, th, lt, t0);
-    const rest = s.text.replace(m[0], ' ').replace(/\s+/g, ' ').trim(), y = 650;
+    // With an illustration below, the number is drawn smaller and higher so both fit above content_bottom.
+    const rest = s.text.replace(m[0], ' ').replace(/\s+/g, ' ').trim(), y = s.visual ? 600 : 650;
     const shown = `${m[1]}${countText(m[2], inv(t0 + .05, t0 + 1.15, lt))}${m[3]}`, full = `${m[1]}${m[2]}${m[3]}`;
-    let z = 330; while (mw(full, FD, 800, z) > HW && z > 120) z *= .94;
+    let z = s.visual ? 230 : 330; while (mw(full, FD, 800, z) > HW && z > 120) z *= .94;
     rise(shown, HX, y, lt, t0, { f: FD, w: 800, z, c: th.ink }, .35, 60);
     if (!rest) return { bottom: y + z * .2, tEnd: t0 + 1.2 };
-    return headline(rest, HX, y + 170, lt, t0 + .9, th, HW, 112, 1, { mode: 'slam' });
+    return headline(rest, HX, y + (s.visual ? 130 : 170), lt, t0 + .9, th, HW, s.visual ? 84 : 112, 1, { mode: 'slam' });
   },
 };
 
@@ -486,6 +503,8 @@ function lesson(s, th, lt, t0, d){
   const h = MOVE[mv](s, th, lt, t0, d);
   const end = s.sub ? aside(s.sub, HX, h.bottom + 90, lt, Math.max(h.tEnd + .25, Math.min(2.2, d * .35)), th) : h.bottom;
   if (mv === 'stamp' && s.swap) stampBadge(s.swap.toUpperCase(), W - HX - 10, Math.min(1190, end + 170), lt, at.hit - .18, th);
+  // The scene's illustration is its second beat: it lands after the headline and keeps changing until the cut.
+  if (s.visual) return drawVisual(s.visual, th, lt, Math.max(h.tEnd + .35, .9), d, end + (mv === 'stamp' && s.swap ? 250 : 80));
   // A paced progress reveal keeps longer spoken scenes alive after headline and aside land.
   if (d > 4 && lt > 2.4){ ctx.fillStyle = th.acc; ctx.fillRect(HX, DATA.layout.content_bottom - 30, HW * inv(2.4, d - .2, lt), 8); }
 }
@@ -528,7 +547,7 @@ S.say = {
   draw(lt, d, t){
     const sc = sceneAt(t), th = themeOf(sc), s = dataOf(t);
     // Decorative step number also stays above the reserved caption band.
-    T(String(sc.i).padStart(2, '0'), W - 90, 1300, { f: FD, w: 800, z: 320, c: rgba(th.ink, .07), al: 'right', a: inv(.1, .5, lt) });
+    if (!s.visual) T(String(sc.i).padStart(2, '0'), W - 90, 1300, { f: FD, w: 800, z: 320, c: rgba(th.ink, .07), al: 'right', a: inv(.1, .5, lt) });
     label(`LESSON ${String(sc.i).padStart(2, '0')}${s.label ? ` · ${s.label.toUpperCase()}` : ''}`, 90, 330, lt, .15, th.acc === th.ink ? th.ink : th.acc);
     lesson(s, th, lt, .25, d);
   },
@@ -537,11 +556,116 @@ S.say = {
 
 S.skill = {
   draw(lt, d, t){
-    const th = THEMES.paper, sk = DATA.skill;
-    const h = headline(sk ? sk.name.replace(/-/g, ' ') : dataOf(t).text, 90, 400, lt, .35, th, W - 180, 88, 1);
-    if (sk) aside(sk.description, 90, h.bottom + 85, lt, h.tEnd + .1, th);
+    const th = THEMES.paper, sk = DATA.skill, s = dataOf(t);
+    if (!sk){ lesson(s, th, lt, .35, d); return; }
+    // The skill's actual name, hyphens and all, then its description in full and what to do first.
+    label('THE SKILL', 90, 330, lt, .1, th.acc);
+    rise(sk.name, 90, 440, lt, .35, { f: FM, w: 600, z: 64, c: th.ink, fit: W - 180 }, .45, 30);
+    const ul = spring(lt - .7, ...SPRING.snappy);
+    if (ul > 0){ ctx.fillStyle = th.acc; ctx.fillRect(90, 470, Math.min(W - 180, mw(sk.name, FM, 600, 64)) * Math.min(1, ul), 10); }
+    const end = aside(sk.description, 90, 570, lt, .8, th, 46, 4);
+    if (s.visual) drawVisual(s.visual, th, lt, 1.4, d, end + 70);
   },
   cues: d => [[.35, 'slam', .35]]
+};
+
+// ---- Illustrations: the second beat of a scene, drawn in the free space between the copy and content_bottom ----
+const VB = () => DATA.layout.content_bottom - 50;
+const inkOf = th => th.acc === th.ink ? th.ink : th.acc;
+const pop = (lt, t1) => spring(lt - t1, ...SPRING.snappy);
+function drawVisual(v, th, lt, t0, d, top){
+  const bottom = VB(), room = bottom - top;
+  if (room < 170 || lt < t0) return;
+  const f = VIS[v.kind]; if (f) f(v, th, lt, t0, Math.max(t0 + 1, d - .3), top, bottom);
+}
+// times n beats from t0 to tEnd, at least .45 s apart, so the picture keeps changing through the scene
+const beats = (n, t0, tEnd) => Array.from({ length: n }, (_, i) => t0 + i * Math.max(.45, (tEnd - t0 - .8) / Math.max(1, n)));
+const VIS = {
+  // two bars, before and after, each with its source-stated value counting up
+  compare(v, th, lt, t0, tEnd, top, bottom){
+    const rows = [v.before, v.after], nums = rows.map(r => parseFloat(String(r.value).replace(/[^\d.]/g, '')) || 0), max = Math.max(...nums, 1);
+    const rowH = Math.min(190, (bottom - top) / 2), at = beats(2, t0, tEnd);
+    rows.forEach((r, i) => {
+      const p = pop(lt, at[i]); if (p <= 0) return;
+      const y = top + i * rowH, bw = (HW - 230) * nums[i] / max * Math.min(1, p);
+      label(String(r.label).toUpperCase(), HX, y + 30, lt, at[i], i ? inkOf(th) : th.dim);
+      ctx.fillStyle = i ? inkOf(th) : rgba(th.ink, .28); ctx.beginPath(); ctx.roundRect(HX, y + 55, Math.max(8, bw), 70, 10); ctx.fill();
+      const m = String(r.value).match(NUM), shown = m ? String(r.value).replace(m[0], `${m[1]}${countText(m[2], inv(at[i], at[i] + .8, lt))}${m[3]}`) : String(r.value);
+      T(shown, HX + Math.max(8, bw) + 24, y + 112, { f: FD, w: 800, z: 66, c: th.ink });
+    });
+  },
+  // numbered steps that light up one after another: what to do
+  steps(v, th, lt, t0, tEnd, top, bottom){
+    const items = v.items.slice(0, 4), gap = Math.min(150, (bottom - top) / items.length), at = beats(items.length, t0, tEnd), c = inkOf(th);
+    items.forEach((s, i) => {
+      const p = pop(lt, at[i]); if (p <= 0) return;
+      const y = top + i * gap, lit = lt >= at[i] + .05;
+      ctx.save(); ctx.globalAlpha *= clamp(p * 1.6); ctx.translate((1 - p) * -40, 0);
+      ctx.fillStyle = lit ? c : 'transparent'; ctx.strokeStyle = c; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.arc(HX + 38, y + 38, 36, 0, TAU); lit ? ctx.fill() : ctx.stroke();
+      T(String(i + 1), HX + 38, y + 54, { f: FD, w: 800, z: 44, c: lit ? th.bg : c, al: 'center' });
+      T(s, HX + 104, y + 56, { f: FD, w: 700, z: 54, c: th.ink, fit: HW - 110 });
+      if (i < items.length - 1 && lt > at[i + 1] - .3){ ctx.fillStyle = rgba(th.ink, .35); ctx.fillRect(HX + 35, y + 80, 6, (gap - 84) * inv(at[i + 1] - .3, at[i + 1], lt)); }
+      ctx.restore();
+    });
+  },
+  // a terminal card that types the command from the sources
+  command(v, th, lt, t0, tEnd, top){
+    const p = pop(lt, t0); if (p <= 0) return;
+    const h = 210, y = top + (1 - p) * 40;
+    ctx.save(); ctx.globalAlpha *= clamp(p * 1.6);
+    ctx.fillStyle = '#0E0D0B'; ctx.beginPath(); ctx.roundRect(HX, y, HW, h, 22); ctx.fill();
+    ctx.strokeStyle = rgba('#F4EFE6', .18); ctx.lineWidth = 2; ctx.stroke();
+    ['#FF5A1F', '#8E877C', '#8E877C'].forEach((c, i) => dot(HX + 40 + i * 30, y + 38, 9, c));
+    const typed = typeOn(v.text, inv(t0 + .25, t0 + .25 + Math.min(1.6, v.text.length * .05), lt));
+    T('$ ' + typed, HX + 40, y + 140, { f: FM, w: 600, z: 44, c: '#F4EFE6', fit: HW - 80 });
+    if (Math.floor(lt * 2) % 2 === 0){ const cx = HX + 40 + Math.min(HW - 80, mw('$ ' + typed, FM, 600, 44)) + 6; ctx.fillStyle = '#FF5A1F'; ctx.fillRect(cx, y + 104, 22, 46); }
+    ctx.restore();
+  },
+  // one drawn icon and a short label, the icon drawn on stroke by stroke
+  icon(v, th, lt, t0, tEnd, top, bottom){
+    const p = inv(t0, t0 + .9, lt), s = Math.min(260, bottom - top - 40), x = HX, y = top;
+    const draw = ICONS[v.icon]; if (!draw) return;
+    ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.strokeStyle = inkOf(th); ctx.lineWidth = 7 / s * 1.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.setLineDash([4 * eIO(p), 4]); draw(); ctx.restore();
+    // The label lands mid-scene, a second change after the icon draws on.
+    if (v.label) rise(v.label, x + s + 50, y + s / 2 + 20, lt, t0 + Math.max(.6, (tEnd - t0) * .45), { f: FD, w: 700, z: 56, c: th.ink, fit: HW - s - 50 });
+    // a slow pulse ring keeps the illustration alive after it is drawn
+    if (lt > t0 + 1){ const q = ((lt - t0 - 1) % 1.6) / 1.6; ctx.save(); ctx.strokeStyle = rgba(th.ink, .25 * (1 - q)); ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x + s / 2, y + s / 2, s * (.55 + q * .25), 0, TAU); ctx.stroke(); ctx.restore(); }
+  },
+  // before and now, side by side: the old way dims and is struck, the new way lands
+  versus(v, th, lt, t0, tEnd, top){
+    const at = beats(2, t0, tEnd), cw = (HW - 40) / 2, h = 230;
+    [[v.left, 'BEFORE'], [v.right, 'NOW']].forEach(([s, tag], i) => {
+      const p = pop(lt, at[i]); if (p <= 0) return;
+      const x = HX + i * (cw + 40), y = top + (1 - p) * 40, old = i === 0 && lt > at[1];
+      ctx.save(); ctx.globalAlpha *= clamp(p * 1.6) * (old ? .55 : 1);
+      ctx.strokeStyle = i ? inkOf(th) : rgba(th.ink, .5); ctx.lineWidth = 5; ctx.beginPath(); ctx.roundRect(x, y, cw, h, 20); ctx.stroke();
+      T(tag, x + 30, y + 52, { f: FM, w: 700, z: 22, c: i ? inkOf(th) : th.dim, ls: 4 });
+      const { lines, z } = wrapLines(s, FD, 700, 50, cw - 60, 3);
+      lines.forEach((l, k) => T(l, x + 30, y + 112 + k * z * 1.08, { f: FD, w: 700, z, c: th.ink }));
+      if (old){ ctx.fillStyle = th.ink; ctx.fillRect(x + 20, y + h / 2, (cw - 40) * inv(at[1], at[1] + .3, lt), 6); }
+      ctx.restore();
+    });
+  },
+};
+// icons on a unit square, as strokes
+const L = (pts) => { ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke(); };
+const C0 = (x, y, r, a = 0, b = TAU) => { ctx.beginPath(); ctx.arc(x, y, r, a, b); ctx.stroke(); };
+const ICONS = {
+  check: () => { C0(.5, .5, .45); L([[.28, .52], [.44, .67], [.73, .36]]); },
+  shield: () => { L([[.5, .06], [.88, .2], [.84, .55], [.5, .94], [.16, .55], [.12, .2], [.5, .06]]); L([[.34, .5], [.46, .62], [.68, .38]]); },
+  bug: () => { ctx.beginPath(); ctx.ellipse(.5, .58, .22, .3, 0, 0, TAU); ctx.stroke(); C0(.5, .22, .12); L([[.5, .3], [.5, .88]]); [[.28, .45, .08, .35], [.28, .62, .06, .62], [.28, .78, .1, .9], [.72, .45, .92, .35], [.72, .62, .94, .62], [.72, .78, .9, .9]].forEach(([a, b, c, e]) => L([[a, b], [c, e]])); },
+  'chart-up': () => { L([[.08, .08], [.08, .92], [.92, .92]]); L([[.18, .74], [.4, .52], [.56, .64], [.86, .24]]); L([[.7, .24], [.86, .24], [.86, .4]]); },
+  'chart-down': () => { L([[.08, .08], [.08, .92], [.92, .92]]); L([[.18, .26], [.4, .48], [.56, .36], [.86, .76]]); L([[.7, .76], [.86, .76], [.86, .6]]); },
+  clock: () => { C0(.5, .5, .44); L([[.5, .22], [.5, .5], [.7, .62]]); },
+  people: () => { C0(.34, .3, .13); C0(.7, .34, .11); ctx.beginPath(); ctx.arc(.34, .84, .26, Math.PI, TAU); ctx.stroke(); ctx.beginPath(); ctx.arc(.72, .84, .2, Math.PI * 1.05, TAU); ctx.stroke(); },
+  agent: () => { ctx.beginPath(); ctx.roundRect(.14, .28, .72, .56, .12); ctx.stroke(); C0(.36, .54, .07); C0(.64, .54, .07); L([[.5, .28], [.5, .12]]); C0(.5, .09, .04); L([[.38, .72], [.62, .72]]); },
+  merge: () => { C0(.28, .16, .08); C0(.28, .84, .08); C0(.74, .5, .08); L([[.28, .24], [.28, .76]]); ctx.beginPath(); ctx.moveTo(.28, .3); ctx.bezierCurveTo(.28, .5, .5, .5, .66, .5); ctx.stroke(); },
+  doc: () => { L([[.22, .06], [.62, .06], [.8, .24], [.8, .94], [.22, .94], [.22, .06]]); L([[.62, .06], [.62, .24], [.8, .24]]); [.44, .6, .76].forEach(y => L([[.34, y], [.68, y]])); },
+  search: () => { C0(.42, .42, .28); L([[.62, .62], [.9, .9]]); },
+  money: () => { C0(.5, .5, .44); L([[.62, .32], [.42, .32], [.36, .4], [.42, .5], [.58, .5], [.64, .6], [.58, .68], [.36, .68]]); L([[.5, .2], [.5, .8]]); },
+  terminal: () => { ctx.beginPath(); ctx.roundRect(.06, .16, .88, .68, .08); ctx.stroke(); L([[.2, .38], [.34, .5], [.2, .62]]); L([[.42, .64], [.66, .64]]); },
 };
 // @@/scenes
 

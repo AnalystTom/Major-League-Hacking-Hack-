@@ -47,7 +47,7 @@ export const approvedJudgment = () => publicationJudgment([reviewReply(), review
 
 export const scriptReply = (a: ReadyArtifact) => ({
   scenes: [
-    { narration_text: "Your coding agent says it's done. Is it, though? Most of the time nobody actually checked the change it made.", on_screen_text: "Done? Prove it.", visual_instruction: "title", source_ids: a.source_ids },
+    { narration_text: "Your coding agent says it's done. Nobody checked the change.", on_screen_text: "Done? Prove it.", visual_instruction: "title", source_ids: a.source_ids },
     { narration_text: "The talk's fix is simple. Write a failing check before the agent starts, so success means a red test turning green.", on_screen_text: "Failing check first", visual_instruction: "test", source_ids: [a.source_ids[0]] },
     { narration_text: "Then the agent can't declare victory by itself. It has to run the check and show you the result.", on_screen_text: "Run it. Show it.", visual_instruction: "terminal", source_ids: [a.source_ids[0]] },
     { narration_text: "Next time you hand off a task, write the check first and make it part of the request.", on_screen_text: "Check first, every time", visual_instruction: "cta", source_ids: a.source_ids },

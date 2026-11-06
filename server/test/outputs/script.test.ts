@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { SCRIPT_SYSTEM_PROMPT, validateScript, writeScript, reviseScript } from "../../src/outputs/render/script.js";
+import { SCRIPT_SYSTEM_PROMPT, settleVisual, validateScript, writeScript, reviseScript } from "../../src/outputs/render/script.js";
 import { cueCheck, groundsFor, motionSpec } from "../../src/outputs/render/motion-skill.js";
 import { assertJudged, publicationJudgment } from "../../src/outputs/render/judge.js";
 import { MemoryOutputStore } from "../../src/outputs/store.js";
@@ -9,7 +9,8 @@ import { artifact, approvedJudgment, reviewReply, scriptReply } from "./helpers.
 
 const narration = (n: number) => Array.from({ length: n }, (_, i) => `word${i}`).join(" ");
 const reply = (a: ReturnType<typeof artifact>, scenes: Record<string, unknown>[]) => ({
-  scenes: scenes.map((s) => ({ narration_text: narration(16), on_screen_text: "Failing check first", source_ids: a.source_ids, ...s })),
+  // Scenes share the 30-75 word budget, so eight scenes get short narration.
+  scenes: scenes.map((s) => ({ narration_text: narration(Math.max(4, Math.floor(64 / Math.max(scenes.length, 4)))), on_screen_text: "Failing check first", source_ids: a.source_ids, ...s })),
 });
 
 test("writeScript delivers its instructions and artifact evidence to the model", async () => {
@@ -213,4 +214,30 @@ test("a final cue failure withholds publication even when the reviewer misses it
   const row = [...outputs.rows.video.values()][0];
   assert.equal(row.status, "running");
   assert.equal(row.value, undefined, "no unapproved media becomes published");
+});
+
+test("a visual keeps a command or number only as the evidence states it", () => {
+  const src = "Run `claude -p '/code-review'` locally. Comments rose from 16% to 54%.";
+  assert.deepEqual(settleVisual({ kind: "command", text: "claude -p '/code-review'" }, src), { kind: "command", text: "claude -p '/code-review'" });
+  assert.equal(settleVisual({ kind: "command", text: "claude --yolo" }, src), null);
+  const side = (value: string) => ({ label: "Before", value });
+  assert.equal(settleVisual({ kind: "compare", before: side("16%"), after: side("54%") }, src)?.kind, "compare");
+  assert.equal(settleVisual({ kind: "compare", before: side("16%"), after: side("90%") }, src), null);
+  assert.equal(settleVisual({ kind: "steps", items: ["Run it"] }, src), null); // needs 2-4 steps
+  assert.equal(settleVisual({ kind: "icon", icon: "rocket" }, src), null);
+  assert.equal(settleVisual({ kind: "gif" }, src), null);
+});
+
+test("an over-long script is retried once with the rejection, then accepted", async () => {
+  const a = artifact();
+  const long = { scenes: scriptReply(a).scenes.map((s) => ({ ...s, narration_text: `${s.narration_text} ${s.narration_text} ${s.narration_text}` })) };
+  const users: string[] = [];
+  const fetchImpl: typeof fetch = async (_url, init) => {
+    const user = JSON.parse(String(init!.body)).messages[1].content;
+    users.push(user);
+    return Response.json({ choices: [{ message: { content: JSON.stringify(users.length === 1 ? long : scriptReply(a)) } }] });
+  };
+  assert.equal((await writeScript(a, { apiKey: "k", fetchImpl })).length, 4);
+  assert.equal(users.length, 2);
+  assert.match(users[1], /previous reply was rejected: script narration is \d+ words/);
 });
