@@ -11,7 +11,7 @@ import { burnSubtitles, composeShort, probe } from "./ffmpeg.js";
 import type { MediaStore } from "./media.js";
 import { SCRIPT_PROMPT_REVISION, scriptEffort, shortModel, writeScript, reviseScript, type DraftScene } from "./script.js";
 import { captionCues, timeline, toVtt } from "./timeline.js";
-import { synthesize, TTS_MODEL } from "./tts.js";
+import { narrationVoice, synthesize } from "./tts.js";
 import { MOTION_MUSIC_PROVENANCE, MOTION_SKILL_REVISION, cueCheck, motionSpec, narrationTrack, renderMotion, type SkillCard } from "./motion-skill.js";
 import type { SkillState } from "../store.js";
 import type { ProviderOptions, ReadyArtifact, RenderedVideo, ReviewFix, ScriptScene, ShortReview } from "../types.js";
@@ -42,12 +42,19 @@ async function readySkill(a: ReadyArtifact, o: RenderOptions): Promise<SkillCard
 
 async function renderRound(a: ReadyArtifact, draft: DraftScene[], dir: string, round: number, o: RenderOptions, skill: SkillCard | null, cue_checks: string[]) {
   await mkdir(dir, { recursive: true });
-  const wavs: string[] = [];
-  for (const [i, scene] of draft.entries()) {
-    const wav = join(dir, `scene-${i}.wav`);
-    await writeFile(wav, await synthesize(scene.narration_text, { apiKey: o.geminiKey, model: o.ttsModel, voice: o.ttsVoice, fetchImpl: o.fetchImpl }));
-    wavs.push(wav);
-  }
+  const wavs: string[] = [], speak = async () => {
+    const out: string[] = [];
+    for (const [i, scene] of draft.entries()) {
+      const wav = join(dir, `scene-${i}.wav`);
+      await writeFile(wav, await synthesize(scene.narration_text, { apiKey: o.geminiKey, model: o.ttsModel, voice: o.ttsVoice, fetchImpl: o.fetchImpl }));
+      out.push(wav);
+    }
+    return out;
+  };
+  const voice = narrationVoice(o.ttsModel);
+  wavs.push(...await speak());
+  // Gemini ran out of quota partway: narrate every scene again with the fallback, so one short has one voice.
+  if (narrationVoice(o.ttsModel) !== voice) wavs.splice(0, wavs.length, ...await speak());
   const slots = timeline(await Promise.all(wavs.map(async wav => (await probe(wav)).duration)));
   const cues = captionCues(draft.map(scene => scene.narration_text), slots);
   const vtt = join(dir, "short.vtt");
@@ -103,7 +110,7 @@ export async function renderArtifact(a: ReadyArtifact, o: RenderOptions): Promis
     const narration_ref = await o.media.put(`audio/${base}/narration.m4a`, second.out.narration, "audio/mp4");
     return {
       judgment, script: { scenes: second.scenes },
-      prompt_revision: `${SCRIPT_PROMPT_REVISION}; openai:${shortModel(o.openaiModel)}/${scriptEffort()}; tts:${o.ttsModel ?? TTS_MODEL}${motion ? `; ${MOTION_SKILL_REVISION}` : ""}`,
+      prompt_revision: `${SCRIPT_PROMPT_REVISION}; openai:${shortModel(o.openaiModel)}/${scriptEffort()}; tts:${narrationVoice(o.ttsModel)}${motion ? `; ${MOTION_SKILL_REVISION}` : ""}`,
       media_ref, caption_ref, narration_ref, duration_seconds: second.out.duration,
       music_provenance: motion ? MOTION_MUSIC_PROVENANCE : null,
     };

@@ -4,6 +4,7 @@
 
 import { database } from "./database.js";
 import { media } from "./media.js";
+import { tts } from "./tts.js";
 import { Container, getContainer } from "@cloudflare/containers";
 
 // Worker secrets and vars the processor reads from process.env.
@@ -127,10 +128,10 @@ async function authorized(request, env) {
 // saved, and the processor's first sweep, a second after it starts, picks them up either way.
 const ANSWER_WITHIN_MS = 6000;
 
-// Allow processing, handoff, health and settings requests, plus the container's D1 and media bridges.
+// Allow processing, handoff, health and settings requests, plus the container's D1, media and narration bridges.
 // Anything else (such as the processor's dev import route, which skips the processing limits) never
 // reaches the container.
-const ROUTES = new Set(["GET /health", "POST /api/ingest/process", "POST /api/ingest/handoff", "GET /settings-status", "POST /internal/d1", "PUT /internal/media"]);
+const ROUTES = new Set(["GET /health", "POST /api/ingest/process", "POST /api/ingest/handoff", "GET /settings-status", "POST /internal/d1", "PUT /internal/media", "POST /internal/tts"]);
 
 export default {
   async fetch(request, env, ctx) {
@@ -140,6 +141,7 @@ export default {
 
     if (pathname === "/internal/d1") return database(request, env);
     if (pathname === "/internal/media") return media(request, env);
+    if (pathname === "/internal/tts") return tts(request, env);
 
     // Read the body first: once the early 202 below has gone out, the incoming request can't be read any more,
     // and a slow container would get a request without its unit ids.
