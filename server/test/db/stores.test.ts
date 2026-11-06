@@ -330,3 +330,14 @@ test('D1 infrastructure failures retain completed critiques without exhausting o
     assert.equal((await s.db.query('SELECT attempts FROM video_results WHERE id=?1', [claim.id])).rows[0].attempts, 2);
   } finally { s.sqlite.close(); }
 });
+
+test('a new import is queued before older retries and refreshes', async () => {
+  const s = await setup();
+  try {
+    const old = await s.artifact([await s.unit('ready')]);
+    await s.db.query(`INSERT INTO video_results(artifact_id,artifact_version,status,attempts,review_feedback,updated_at)
+      VALUES(?1,1,'failed',1,'{}','2000-01-01T00:00:00Z')`, [old.id]);
+    const fresh = await s.artifact([await s.unit('ready')]);
+    assert.deepEqual((await s.outputs.artifactsNeeding('video', 10)).map((a) => a.id), [fresh.id, old.id]);
+  } finally { s.sqlite.close(); }
+});
