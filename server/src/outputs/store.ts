@@ -84,7 +84,9 @@ export class D1OutputStore implements OutputStore {
       WHERE a.ingestion_status='ready' AND a.digestion_prompt_id IS NOT NULL
       AND EXISTS(SELECT 1 FROM user_imports ui WHERE ui.unit_id IN (SELECT value FROM json_each(a.source_ids)))
       AND NOT EXISTS(SELECT 1 FROM ${TABLE[kind]} r WHERE r.artifact_id=a.id AND r.artifact_version=a.version
-        AND NOT ${CLAIMABLE('r',kind)}) ORDER BY a.created_at LIMIT ?1`, [limit]);
+        AND NOT ${CLAIMABLE('r',kind)})
+      -- New imports (no result row yet) first, so a backlog of retries and refreshes never delays them.
+      ORDER BY EXISTS(SELECT 1 FROM ${TABLE[kind]} r WHERE r.artifact_id=a.id AND r.artifact_version=a.version), a.created_at LIMIT ?1`, [limit]);
     return rows.map(rowToArtifact);
   }
   async claim(kind: Kind, a: ReadyArtifact) {
@@ -152,7 +154,8 @@ export class MemoryOutputStore implements OutputStore {
       || (r.status === "failed" && r.attempts < MAX_OUTPUT_ATTEMPTS && Date.now() >= (r.failedAt ?? 0) + this.retryAfterMs * r.attempts);
 
   async artifactsNeeding(kind: Kind, limit: number) {
-    return this.artifacts.filter((a) => this.claimable(this.rows[kind].get(this.key(a)), kind)).slice(0, limit);
+    const rows = this.rows[kind], fresh = (a: ReadyArtifact) => (rows.has(this.key(a)) ? 1 : 0);
+    return this.artifacts.filter((a) => this.claimable(rows.get(this.key(a)), kind)).sort((x, y) => fresh(x) - fresh(y)).slice(0, limit);
   }
   async claim(kind: Kind, a: ReadyArtifact) {
     const before = this.rows[kind].get(this.key(a));
