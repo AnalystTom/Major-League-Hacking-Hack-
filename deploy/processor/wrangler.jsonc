@@ -47,5 +47,7 @@
     "database_id": "89d777a6-eb11-4feb-9484-6f555a3ba96e", "migrations_dir": "../../web/migrations" }],
   // Rendered shorts go to this bucket through the Worker (src/media.js), so the processor needs no R2 API token.
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "resurface-media" }],
+  // Narration fallback when Gemini TTS is out of quota (src/tts.js); billed per character to this account.
+  "ai": { "binding": "AI" },
   "observability": { "enabled": true }
 }

@@ -9,7 +9,8 @@ import { fontFile, probe } from "../../src/outputs/render/ffmpeg.js";
 import type { MediaStore } from "../../src/outputs/render/media.js";
 import { assertJudged } from "../../src/outputs/render/judge.js";
 import { renderArtifact } from "../../src/outputs/render/render.js";
-import { artifact, outputsFetch, reviewReply, scriptReply } from "./helpers.js";
+import { artifact, outputsFetch, reviewReply, scriptReply, toneWav } from "./helpers.js";
+import { resetTtsQuotaPause } from "../../src/outputs/render/tts.js";
 
 // These cover the plain ffmpeg renderer; motion-skill.test.ts covers the motion-graphic-skill path.
 process.env.RENDER_STYLE = "basic";
@@ -125,4 +126,31 @@ test("an unavailable model fails before narration, rendering or upload", async (
   } }), /OpenAI.*404.*gpt-6.1-sol/);
   assert.equal(calls, 1);
   assert.deepEqual(media.keys, []);
+});
+
+test("a Gemini quota error partway through narrates the whole short with the fallback voice", { skip: !hasFfmpeg && "ffmpeg not installed", timeout: 360_000 }, async () => {
+  const out = await mkdtemp(join(tmpdir(), "resurface-render-test-"));
+  const saved = { D1_URL: process.env.D1_URL, D1_TOKEN: process.env.D1_TOKEN };
+  Object.assign(process.env, { D1_URL: "http://processor/internal/d1", D1_TOKEN: "t" });
+  resetTtsQuotaPause();
+  try {
+    const a = artifact();
+    const { impl } = outputsFetch(a);
+    let gemini = 0, fallback = 0;
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      if (String(url).includes("/internal/tts")) { fallback++; return new Response(toneWav(1)); }
+      if (String(url).includes("interactions") && ++gemini === 3) return new Response("quota", { status: 429 });
+      return impl(url, init);
+    }) as unknown as typeof fetch;
+    const v = await renderArtifact(a, { openaiKey: "o", geminiKey: "g", media: new DirMedia(out), fetchImpl });
+    const scenes = scriptReply(a).scenes.length;
+    assert.equal(gemini, 3, "Gemini is skipped once it reports its quota");
+    // Round 1: the scenes from the quota hit on, then every scene again with one voice; round 2: every scene.
+    assert.equal(fallback, (scenes - 2) + scenes + scenes);
+    assert.match(v.prompt_revision, /tts:workers-ai:@cf\/deepgram\/aura-2-en/);
+  } finally {
+    resetTtsQuotaPause();
+    for (const [k, val] of Object.entries(saved)) if (val === undefined) delete process.env[k]; else process.env[k] = val;
+    await rm(out, { recursive: true, force: true });
+  }
 });
