@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Resurface</title>
-  <meta name="description" content="Tutorials stuck in Watch Later. Bring the YouTube videos you saved and Resurface turns them into 30-second shorts, then installs the ones you keep in Claude Code, Codex, Cursor or Hermes.">
+  <meta name="description" content="Paste the X posts, YouTube videos and Substack posts you saved. Resurface turns each one into a SKILL.md for Claude Code, Codex, Cursor or Hermes, plus a short narrated clip.">
   <meta property="og:title" content="Resurface: you saved it, your agent never saw it">
-  <meta property="og:description" content="Your backlog as 30-second shorts. Bring your saved videos, watch what's worth keeping, and send it to your coding agent.">
+  <meta property="og:description" content="Your saved posts and videos as skills your coding agent can use, with a short clip of the idea worth keeping.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <script>
     // Apply the chosen colour palette before first paint: ?palette= wins, then the last pick.
@@ -30,7 +30,6 @@
         Resurface
       </a>
       <nav class="topnav" aria-label="Sections">
-        <a href="#shorts">Shorts</a>
         <a href="#how">How it works</a>
       </nav>
       <a class="topnav-signin" href="/start#signin" data-signin-link>Sign in</a>
@@ -46,13 +45,13 @@
         <span class="line"><span class="kw" style="--i:0">You</span> <span class="kw" style="--i:1">saved</span> <span class="kw" style="--i:2">it.</span></span>
         <span class="line"><span class="kw" style="--i:3">Your</span> <span class="kw" style="--i:4">agent</span> <span class="kw" style="--i:5">never</span> <span class="kw" style="--i:6">saw</span> <span class="kw" style="--i:7">it.</span></span>
       </h1>
-      <p class="lede">Resurface turns the bookmarks, Watch Later videos and conference talks you never got to into 30-second shorts. Keep the good ones and they're installed in your coding agent as skills.</p>
+      <p class="lede">Paste the X posts, YouTube videos and Substack posts you saved and never went back to. Each one becomes a SKILL.md your coding agent can read, and a short narrated clip once it passes review.</p>
       <div class="hero-cta" id="get-started">
         <a class="btn" href="/start" data-cta>Get started, it's free</a>
-        <p>Create an account, paste the YouTube videos you saved, and watch them back as 30-second shorts.</p>
+        <p>Free to start, with no card and no X login. Paste your saved links, one per line.</p>
       </div>
       <div class="works-with">
-        <p>Sends to</p>
+        <p>Skills ready for</p>
         <ul>
           <li><span class="logo logo-claude-code" aria-hidden="true"></span>Claude Code</li>
           <li><span class="logo logo-codex" aria-hidden="true"></span>Codex</li>
@@ -70,14 +69,6 @@
       </figure>
     </section>
 
-    <section class="feed" id="shorts" aria-labelledby="feed-title">
-      <div class="section-head">
-        <h2 id="feed-title">Public reels &amp; skills</h2>
-        <p>Browse content explicitly made public. Your personal reels stay behind sign-in.</p>
-        <a class="btn" href="/available">View available reels &amp; Skills</a>
-      </div>
-    </section>
-
     <!-- ============ How it works ============ -->
     <section class="steps" id="how" aria-labelledby="steps-heading">
       <div class="section-head">
@@ -85,20 +76,20 @@
       </div>
       <ol>
         <li>
-          <h3>Connect what you've saved</h3>
-          <p>X bookmarks, YouTube playlists, GitHub stars, newsletters and conference talks. Paste single links too.</p>
+          <h3>Paste what you saved</h3>
+          <p>X posts (including Articles), YouTube videos and talks, and Substack posts, one per line. No account linking.</p>
         </li>
         <li>
-          <h3>Watch a short for each one</h3>
-          <p>Every item becomes a 30-second short of the part worth keeping. Copy it, or send it straight to your agents.</p>
+          <h3>Get a skill for each one</h3>
+          <p>Each item becomes a SKILL.md that uses only what the source says and links back to the original post or video.</p>
         </li>
         <li>
-          <h3>Check it against today's docs</h3>
-          <p>Before anything is installed, Resurface pulls the linked repo, release notes and open issues, so a year-old tip doesn't ship a deprecated flag.</p>
+          <h3>Watch the short</h3>
+          <p>Items with one clear idea also get a short narrated clip. A separate reviewer model checks it against the source before it's published.</p>
         </li>
         <li>
-          <h3>Install it where your agent looks</h3>
-          <p>Skills, rules and AGENTS.md sections land in your repo as a reviewable diff, each one linked back to the post or video it came from.</p>
+          <h3>Drop it where your agent looks</h3>
+          <p>Pick Claude Code, Codex, Cursor or Hermes. Resurface shows the exact file path for that agent, and you copy or download the skill.</p>
         </li>
       </ol>
     </section>
