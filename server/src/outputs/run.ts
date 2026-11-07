@@ -14,6 +14,8 @@ export interface OutputOptions extends ProviderOptions {
   outputs: OutputStore;
   /** Where rendered files go; without one, renders fail with that reason instead of waiting forever. */
   media: MediaStore | null;
+  /** false pauses short rendering: nothing is claimed, so paused shorts start when it's turned back on. */
+  shorts?: boolean;
   log?: (msg: string) => void;
 }
 
@@ -67,6 +69,7 @@ async function produceNow(kind: Kind, a: ReadyArtifact, o: OutputOptions) {
 
 /** Renders run one after another; a job that fails doesn't stop the ones behind it. */
 function queueRender(a: ReadyArtifact, o: OutputOptions): Promise<void> {
+  if (o.shorts === false) return Promise.resolve();
   const state = stateFor(o);
   // Counted as busy from the moment it's queued, not just while it renders.
   const job = tracked(() => state.renderQueue.then(() => produceNow("video", a, o)));
@@ -81,7 +84,7 @@ export async function produceOutputs(artifacts: ReadyArtifact[], o: OutputOption
 
 /** Finds ready artifacts needing output generation or legacy refresh. Returns how many it started. */
 export async function sweepOutputs(o: OutputOptions, limit = 10): Promise<number> {
-  const [skills, videos] = await Promise.all([o.outputs.artifactsNeeding("skill", limit), o.outputs.artifactsNeeding("video", limit)]);
+  const [skills, videos] = await Promise.all([o.outputs.artifactsNeeding("skill", limit), o.shorts === false ? [] : o.outputs.artifactsNeeding("video", limit)]);
   await Promise.all([
     ...skills.map((a) => produce("skill", a, o)),
     ...videos.map((a) => queueRender(a, o)),

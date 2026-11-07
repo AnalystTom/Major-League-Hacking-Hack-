@@ -7,6 +7,7 @@ import { testDatabase } from './helpers.js';
 import { D1Store } from '../../src/ingest/store.js';
 import { D1OutputStore } from '../../src/outputs/store.js';
 import { D1HandoffStore } from '../../src/outputs/handoff-store.js';
+import { saveUsage } from '../../src/usage.js';
 import { processUnits, sweepOnce } from '../../src/ingest/processor.js';
 import { mockFetch } from '../ingest/helpers.js';
 import { UNLIMITED } from '../../src/ingest/limits.js';
@@ -340,4 +341,13 @@ test('a new import is queued before older retries and refreshes', async () => {
     const fresh = await s.artifact([await s.unit('ready')]);
     assert.deepEqual((await s.outputs.artifactsNeeding('video', 10)).map((a) => a.id), [fresh.id, old.id]);
   } finally { s.sqlite.close(); }
+});
+
+test('usage records land in usage_events',async()=>{
+  const s=await setup();
+  try {
+    await saveUsage(s.db,{step:'judge',provider:'openai',model:'gpt-6.1-sol',input_tokens:63768,output_tokens:3533,reasoning_tokens:1552,ref:'artifact-1'});
+    assert.deepEqual({...(await s.db.query('SELECT step,model,input_tokens,output_tokens,ref FROM usage_events')).rows[0]},
+      {step:'judge',model:'gpt-6.1-sol',input_tokens:63768,output_tokens:3533,ref:'artifact-1'});
+  } finally {s.sqlite.close();}
 });

@@ -242,3 +242,15 @@ for (const status of ["ready", "failed"] as const) {
     assert.deepEqual(await outputs.artifactsNeeding("video", 10), []);
   });
 }
+
+test("with shorts paused, skills still land and no short is claimed or started", async () => {
+  const a = artifact(), outputs = new MemoryOutputStore();
+  outputs.artifacts.push(a);
+  const { impl, calls } = outputsFetch(a);
+  const o = { outputs, openaiKey: "o", geminiKey: "g", media, fetchImpl: impl, shorts: false };
+  await produceOutputs([a], o);
+  await sweepOutputs(o);
+  assert.equal([...outputs.rows.skill.values()][0].status, "ready");
+  assert.equal(outputs.rows.video.size, 0);
+  assert.equal(calls.script, 0);
+});
