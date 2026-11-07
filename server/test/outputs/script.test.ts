@@ -241,3 +241,14 @@ test("an over-long script is retried once with the rejection, then accepted", as
   assert.equal(users.length, 2);
   assert.match(users[1], /previous reply was rejected: script narration is \d+ words/);
 });
+
+test("a revision fix with an axis outside the list keeps its known axes instead of failing the short", async () => {
+  const a = artifact(), raw = scriptReply(a), scenes = validateScript(raw, a);
+  const changed = { ...raw, scenes: raw.scenes.map((s: { on_screen_text: string }, i: number) => i === 0 ? { ...s, on_screen_text: "Write the check first" } : s) };
+  const { fixes } = await reviseScript(a, scenes, reviewReply(), { apiKey: "test", fetchImpl: async () =>
+    Response.json({ choices: [{ message: { content: JSON.stringify({ ...changed, fixes: [
+      { axes: ["pacing", "hook"], scenes: [0], description: "Hook first" },
+      { axes: ["pacing"], scenes: [0], description: "Only an unknown axis" },
+    ] }) } }] }) });
+  assert.deepEqual(fixes, [{ axes: ["hook"], scenes: [0], description: "Hook first" }]);
+});

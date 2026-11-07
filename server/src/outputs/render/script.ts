@@ -208,11 +208,17 @@ export async function reviseScript(a: ReadyArtifact, scenes: DraftScene[], revie
   });
   const revised = validateScript(raw, a);
   if (revised.length !== scenes.length) throw new Error("Revision must preserve scene count and order");
+  // The model sometimes logs an axis outside the list ("pacing"); drop it rather than failing the whole short.
+  const logged: unknown[] = Array.isArray((raw as { fixes?: unknown })?.fixes) ? (raw as { fixes: unknown[] }).fixes : [];
+  const known = logged.map((f) => {
+    const axes = (f as { axes?: unknown })?.axes;
+    return Array.isArray(axes) ? { ...(f as object), axes: axes.filter((x) => (CRITIQUE_AXES as readonly unknown[]).includes(x)) } : f;
+  }).filter((f) => !Array.isArray((f as { axes?: unknown[] })?.axes) || (f as { axes: unknown[] }).axes.length > 0);
   const { fixes } = z.object({ fixes: z.array(z.object({
     axes: z.array(z.enum(CRITIQUE_AXES)).min(1),
     scenes: z.array(z.number().int().min(0).max(scenes.length - 1)).min(1),
     description: z.string().trim().min(1).max(500),
-  })).max(21) }).parse(raw);
+  })).max(21) }).parse({ fixes: known });
   for (const fix of fixes) for (const index of fix.scenes) {
     if (JSON.stringify(revised[index]) === JSON.stringify(scenes[index])) throw new Error("Revision logged a fix for an unchanged scene");
   }
