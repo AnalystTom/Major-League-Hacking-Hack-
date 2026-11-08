@@ -17,7 +17,7 @@ dev. The processor's hosting is PR #5. Shorts reach production only when that's 
 4. **Watch the reel**, full screen at 9:16 below the top bar, edge to edge on phones. **Add videos** opens a sheet
    with the paste box.
 5. **Skills** open as a sheet over the reel, from the top-bar button or a short's **View skill** link at its
-   skill card. Copy or download a skill for the selected agent; tasks and Send to agent are unavailable.
+   skill card. Choose which skills to keep and, optionally, request videos for them; copy or download a kept skill for the selected agent. Tasks and Send to agent are unavailable.
 6. **View available reels & Skills** opens `/available` without requiring sign-in. The landing page links to
    this catalogue instead of displaying sample shorts. Access rules live in the [HTTP contract](project-actions-spec.md#http-api).
 
@@ -54,7 +54,7 @@ Node, in `server/src`. `POST /api/ingest/process` takes `{ "unit_ids": [...] }` 
    retried, up to 3 times per unit.
 3. **Skill** (`outputs/skills.ts`): generate the [concise skill contract](project-actions-spec.md#workflow-3-processed-skill-and-codex-use)
    independently of video rendering.
-4. **Short** (`outputs/render/`): OpenAI writes the script; Gemini TTS speaks each scene, and measured speech
+4. **Short** (`outputs/render/`), only for a kept skill whose account requested videos (`POST /api/skills/choices`): OpenAI writes the script; Gemini TTS speaks each scene, and measured speech
    determines the timeline and WebVTT cues. The default [motion renderer](../server/assets/motion-graphic-skill/README.md)
    uses headless Chromium; `RENDER_STYLE=basic` selects ffmpeg title cards without music. Both produce
    1080×1920 H.264 + AAC with `+faststart` and burn high-contrast narration captions into an exclusive lower safe band
