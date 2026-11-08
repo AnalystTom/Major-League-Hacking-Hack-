@@ -12,7 +12,8 @@ function setup() {
   db.exec('PRAGMA foreign_keys=ON');
   for (const file of ['0002_application.sql','0003_video_duration.sql','0005_x_oauth.sql','0006_x_read_budget.sql']) db.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url),'utf8'));
   const calls = [];
-  const env = { X_CLIENT_ID:'fixture-client',X_CLIENT_SECRET:'fixture-secret',X_CALLBACK_URL:'http://localhost/api/auth/x/callback',X_READS_ENABLED:'true',
+  const allow={async limit(){return {success:true}}};
+  const env = { AUTH_LIMITER:allow,IMPORT_LIMITER:allow,X_CLIENT_ID:'fixture-client',X_CLIENT_SECRET:'fixture-secret',X_CALLBACK_URL:'http://localhost/api/auth/x/callback',X_READS_ENABLED:'true',
     DB:{prepare(q){return {bind(...p){return {async all(){return {results:db.prepare(q).all(...p)}}}}}}},
     X_PROVIDER:{async fetch(input, options){
       const url = new URL(input); calls.push({url,options});
@@ -264,4 +265,29 @@ test('revoked refresh tokens require reconnect; disconnect revokes both tokens a
   assert.equal(t.db.prepare('SELECT refresh_token FROM x_connections').get().refresh_token,null);
   assert.equal(t.db.prepare('SELECT count(*) AS n FROM x_seen_bookmarks').get().n,count);
  }finally{t.db.close();}
+});
+
+test('X start, callback and bookmark import are throttled with Retry-After and fail closed',async()=>{
+  const t=setup();
+  const flow=await t.begin();
+  const signedIn=await t.finish(flow);
+  const cookie=signedIn.headers.get('set-cookie').match(/rs_session=[^;, ]+/)[0];
+  const before=t.calls.length;
+  const routes=[['AUTH_LIMITER','/api/auth/x/start','GET'],['AUTH_LIMITER','/api/auth/x/callback?state=s&code=c','GET'],['IMPORT_LIMITER','/api/x/bookmarks','POST']];
+  for(const [binding,path,method] of routes){
+    const original=t.env[binding];
+    t.env[binding]={async limit(){return {success:false}}};
+    const limited=await t.call(path,method==='POST'?cookie:'',method);
+    assert.equal(limited.status,429,path);
+    assert.equal(limited.headers.get('retry-after'),'60');
+    for(const broken of [undefined,{async limit(){throw new Error('outage')}}]){
+      t.env[binding]=broken;
+      const unavailable=await t.call(path,method==='POST'?cookie:'',method);
+      assert.equal(unavailable.status,503,path);
+      assert.equal(unavailable.headers.get('retry-after'),'60');
+    }
+    t.env[binding]=original;
+  }
+  assert.equal(t.calls.length,before);
+  assert.equal(t.db.prepare('SELECT count(*) n FROM x_oauth_attempts').get().n,0);
 });
