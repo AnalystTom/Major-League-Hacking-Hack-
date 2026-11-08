@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { SCRIPT_SYSTEM_PROMPT, settleVisual, validateScript, writeScript, reviseScript } from "../../src/outputs/render/script.js";
+import { SCRIPT_PROMPT_REVISION, SCRIPT_SYSTEM_PROMPT, settleVisual, validateScript, writeScript, reviseScript } from "../../src/outputs/render/script.js";
 import { cueCheck, groundsFor, motionSpec } from "../../src/outputs/render/motion-skill.js";
 import { assertJudged, publicationJudgment } from "../../src/outputs/render/judge.js";
 import { MemoryOutputStore } from "../../src/outputs/store.js";
@@ -38,6 +38,17 @@ test("writeScript delivers its instructions and artifact evidence to the model",
   const scenes = await writeScript(a, { apiKey: "test", fetchImpl });
   assert.equal(calls, 1);
   assert.deepEqual(scenes.map(s => [s.narration_text, s.source_ids]), raw.scenes.map(s => [s.narration_text, s.source_ids]));
+});
+
+test("storyboard prompt distinguishes sourced replacements from alternatives and companions", () => {
+  assert.equal(SCRIPT_PROMPT_REVISION, "script-v7-no-implied-replacement");
+  const contract = SCRIPT_SYSTEM_PROMPT.split("RESURFACE STORYBOARD CONTRACT:")[1];
+  const strike = contract.split("\n").find(line => line.trimStart().startsWith('"strike":'))!;
+  assert.ok(strike.includes("Only when the source says the struck idea is wrong or was replaced"));
+  assert.ok(strike.includes("never strike a tool, product or option the source presents as an alternative or a companion"));
+  const compare = contract.split("\n").find(line => line.includes('"kind":"compare"'))!;
+  assert.ok(compare.includes("For a before/after or a this/that the source measures"));
+  assert.ok(compare.includes("Never label two tools or options as before/after or old/new unless the source says one replaced the other"));
 });
 
 test("script effort can be overridden without changing other OpenAI calls", async () => {
