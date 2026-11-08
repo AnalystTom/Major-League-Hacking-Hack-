@@ -32,8 +32,11 @@ test("/health counts an import while its provider call is still waiting, and dro
 
 test("a queued render counts as busy before it starts, as does a running skill", async () => {
   const outputs = new MemoryOutputStore();
+  const artifacts = [artifact(), artifact()];
+  for (const a of artifacts) outputs.videoRequests.add(`${a.id}:${a.version}`);
   const { release, impl } = held(() => new Response("boom", { status: 500 }));
-  const done = produceOutputs([artifact(), artifact()], { outputs, openaiKey: "o", geminiKey: "g", media: { put: async (k) => `r2:${k}` }, fetchImpl: impl });
+  const done = produceOutputs(artifacts, { outputs, openaiKey: "o", geminiKey: "g", media: { put: async (k) => `r2:${k}` }, fetchImpl: impl });
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(await busy(), 4, "two skills running, one render running, one queued");
   release();
   await done;

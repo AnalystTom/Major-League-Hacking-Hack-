@@ -5,7 +5,7 @@ import { parseYouTubeLink } from "../src/youtube.js";
 import { describeUnit, parseImport, parseUnitIds } from "../src/imports.js";
 import { isMediaKey, parseRange, resolveMediaRef } from "../src/media.js";
 import { serializeItem } from "../src/feed.js";
-import { requestProcessing } from "../src/processor.js";
+import { requestProcessing, requestVideoProcessing } from "../src/processor.js";
 import { followImports } from "../public/units.js";
 
 const ID = "6f1c2a52-8d0e-4f3b-9a51-0c6d2e7b9a10";
@@ -286,4 +286,20 @@ test("parseImport caps Substack posts at 20 independently of videos and X posts"
   const yt = Array.from({ length: 20 }, (_, i) => `https://www.youtube.com/watch?v=${String(i).padStart(11, "a")}`);
   assert.equal(parseImport({ links: [...yt, ...posts(20)] }).ok, true);
   assert.match(parseImport({ links: posts(21) }).error, /at most 20 Substack/);
+});
+
+
+test("video requests wake the output sweep without submitting imports and survive outages", async () => {
+  let calls=0;
+  const env={PROCESSOR_URL:'https://processor.example/api/ingest/process?unused=1',PROCESSOR_TOKEN:'test-token',PROCESSOR:{async fetch(url,init){
+    calls++;
+    assert.equal(url,'https://processor.example/health');
+    assert.equal(init.headers.authorization,'Bearer test-token');
+    assert.equal(init.body,undefined);
+    return new Response(null,{status:202});
+  }}};
+  assert.equal(await requestVideoProcessing(env), 'requested');
+  assert.equal(calls,1);
+  assert.equal(await requestVideoProcessing({}), 'not_configured');
+  assert.equal(await requestVideoProcessing({PROCESSOR_URL:env.PROCESSOR_URL}, async()=>{throw Error('offline')}), 'unavailable');
 });
