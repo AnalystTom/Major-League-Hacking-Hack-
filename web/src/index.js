@@ -4,6 +4,7 @@ import {
 import { xRoute } from "./x-oauth.js";
 import { connect } from "./db.js";
 import waitlist from "./waitlist.js";
+import { rateLimit, requestIp } from "./rate-limit.js";
 import { canReadMedia, readFeed } from "./feed.js";
 import { createUnits, parseImport, readUnits, userUnitIds } from "./imports.js";
 import { serveMedia } from "./media.js";
@@ -30,14 +31,6 @@ async function readJson(request, maxBytes = 32_000) {
   }
 }
 
-async function limited(limiter, key) {
-  if (!limiter) return false;
-  const { success } = await limiter.limit({ key });
-  return !success;
-}
-
-const ip = (request) => request.headers.get("cf-connecting-ip") ?? "local";
-
 /** The signed-in user and how many links they've imported (0 means the home page shows its first-run state). */
 async function accountState(sql, user) {
   const [{ count }] = await sql`SELECT count(*) AS count FROM user_imports WHERE user_id = ${user.id}`;
@@ -45,7 +38,8 @@ async function accountState(sql, user) {
 }
 
 async function signup(request, env, sql) {
-  if (await limited(env.AUTH_LIMITER, ip(request))) return json({ error: "Too many attempts. Wait a minute and try again." }, 429);
+  const rejection = await rateLimit(env.AUTH_LIMITER, requestIp(request));
+  if (rejection) return rejection;
   const { body, error } = await readJson(request);
   if (error) return error;
   const parsed = parseSignup(body);
@@ -57,7 +51,8 @@ async function signup(request, env, sql) {
 }
 
 async function signin(request, env, sql) {
-  if (await limited(env.AUTH_LIMITER, ip(request))) return json({ error: "Too many attempts. Wait a minute and try again." }, 429);
+  const rejection = await rateLimit(env.AUTH_LIMITER, requestIp(request));
+  if (rejection) return rejection;
   const { body, error } = await readJson(request);
   if (error) return error;
   const parsed = parseLogin(body);
@@ -70,9 +65,8 @@ async function signin(request, env, sql) {
 
 // POST /api/imports: store the links as the user's units, then hand the ones new to this user to the processor.
 async function startImport(request, env, sql, user) {
-  if (await limited(env.IMPORT_LIMITER, user.id)) {
-    return json({ error: "That's a lot of imports at once. Wait a minute and try again." }, 429);
-  }
+  const rejection = await rateLimit(env.IMPORT_LIMITER, user.id, "That's a lot of imports at once. Wait a minute and try again.");
+  if (rejection) return rejection;
   const { body, error } = await readJson(request);
   if (error) return error;
   const parsed = parseImport(body);

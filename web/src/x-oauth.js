@@ -2,6 +2,7 @@
 import { cookieSecure, createSession, readCookie, sessionCookie } from './auth.js';
 import { createUnits, parseImport, readUnits, userUnitIds } from './imports.js';
 import { requestProcessing } from './processor.js';
+import { rateLimit, requestIp } from './rate-limit.js';
 
 const enc = new TextEncoder();
 const b64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)));
@@ -58,7 +59,8 @@ const clientAuth = env => `Basic ${btoa(`${encodeURIComponent(env.X_CLIENT_ID)}:
 
 async function start(request, env, sql, user) {
   if (!xAvailable(env)) return redirect('/start?x=unavailable');
-  if (env.AUTH_LIMITER && !(await env.AUTH_LIMITER.limit({ key: request.headers.get('cf-connecting-ip') ?? 'local' })).success) return json({ error: 'Too many sign-in attempts. Try again in a minute.' }, 429);
+  const rejection = await rateLimit(env.AUTH_LIMITER, requestIp(request));
+  if (rejection) return rejection;
   await sql`DELETE FROM x_oauth_attempts WHERE expires_at < ${now()}`;
   const state = random(), browser = random(), verifier = random();
   await sql`INSERT INTO x_oauth_attempts(state_hash,browser_hash,verifier,user_id,expires_at)
@@ -78,6 +80,8 @@ async function start(request, env, sql, user) {
 async function callback(request, env, sql, user) {
   const clear = nonceCookie('', request, 0);
   if (!xAvailable(env)) return redirect('/start?x=unavailable', [clear]);
+  const rejection = await rateLimit(env.AUTH_LIMITER, requestIp(request));
+  if (rejection) return rejection;
   const url = new URL(request.url), state = url.searchParams.get('state');
   const browser = readCookie(request.headers.get('cookie'), 'rs_x_nonce');
   if (!state || state.length > 200 || !browser) return redirect('/start?x=invalid', [clear]);
@@ -129,7 +133,8 @@ async function status(env, sql, user) {
 
 async function importBookmarks(env, sql, user, request) {
   if (!xAvailable(env)) return json({ error: 'X bookmark import is unavailable. Paste links instead.' }, 503);
-  if (env.IMPORT_LIMITER && !(await env.IMPORT_LIMITER.limit({ key: user.id })).success) return json({ error: 'Too many imports. Try again in a minute.' }, 429);
+  const rejection = await rateLimit(env.IMPORT_LIMITER, user.id, "That's a lot of imports at once. Wait a minute and try again.");
+  if (rejection) return rejection;
   let refresh = false;
   try { refresh = (await request.json()).refresh === true; } catch { return json({ error: 'Invalid import request.' }, 400); }
   const lease = random();

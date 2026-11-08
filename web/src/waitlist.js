@@ -1,3 +1,4 @@
+import { rateLimit, requestIp } from "./rate-limit.js";
 import { parseSignup } from "./signup.js";
 
 const json = (data, status = 200) =>
@@ -11,6 +12,8 @@ async function joinWaitlist(request, env) {
   if (!(request.headers.get("content-type") ?? "").startsWith("application/json")) {
     return json({ error: "Send requests as application/json." }, 415);
   }
+  const rejection = await rateLimit(env.WAITLIST_LIMITER, requestIp(request));
+  if (rejection) return rejection;
   let body;
   try {
     const text = await request.text();

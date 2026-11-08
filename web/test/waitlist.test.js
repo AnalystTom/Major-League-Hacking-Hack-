@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import worker from "../src/waitlist.js";
 
+const env = { WAITLIST_LIMITER: { async limit() { return { success: true }; } } };
+
 const request = (body, headers = { "content-type": "application/json" }) =>
   new Request("https://resurface.test/api/waitlist", { method: "POST", headers, body });
 
@@ -14,15 +16,15 @@ test("rejects invalid, oversized, and non-JSON submissions before writing", asyn
     [request('x'.repeat(32_001)), 413],
     [request('{"email":"a@b.co"}', { "content-type": "text/plain" }), 415],
   ]) {
-    assert.equal((await worker.fetch(req, {})).status, status);
+    assert.equal((await worker.fetch(req, env)).status, status);
   }
 });
 
 test("bots don't write to storage and storage failure never reports success", async () => {
-  const ignored = await worker.fetch(request('{"email":"a@b.co","company":"spam"}'), {});
+  const ignored = await worker.fetch(request('{"email":"a@b.co","company":"spam"}'), env);
   assert.equal(ignored.status, 200);
   assert.deepEqual(await ignored.json(), { joined: true });
-  const unavailable = await worker.fetch(request('{"email":"a@b.co"}'), {});
+  const unavailable = await worker.fetch(request('{"email":"a@b.co"}'), env);
   assert.equal(unavailable.status, 503);
   assert.equal((await unavailable.json()).joined, undefined);
 });
