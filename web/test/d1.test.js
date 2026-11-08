@@ -15,6 +15,7 @@ function database() {
   sqlite.exec('PRAGMA foreign_keys=ON');
   sqlite.exec(readFileSync(new URL('../migrations/0002_application.sql',import.meta.url),'utf8'));
   sqlite.exec(readFileSync(new URL('../migrations/0003_video_duration.sql',import.meta.url),'utf8'));
+  sqlite.exec(readFileSync(new URL('../migrations/0005_skill_choices.sql',import.meta.url),'utf8'));
   const env={DB:{prepare(sql){return {bind(...params){return {async all(){return {results:sqlite.prepare(sql).all(...params)}}}}}}}};
   return {sqlite,env,sql:connect(env)};
 }
@@ -293,5 +294,45 @@ test('legacy skill text stays withheld in both projections until a successful re
       assert.equal((await readSkills(sql,scope))[0].markdown,updated);
       assert.equal((await readFeed(sql,scope))[0].skill.status,'ready');
     }
+  } finally {sqlite.close();}
+});
+
+
+test('skill choices are account-scoped, atomic, idempotent and default to skills only', async () => {
+  const {sqlite,env,sql}=database();
+  const call=(path,body,cookie)=>app.fetch(new Request(`http://localhost${path}`,{method:body?'POST':'GET',headers:{'content-type':'application/json',...(cookie?{cookie}:{})},...(body?{body:JSON.stringify(body)}:{})}),env,{});
+  try {
+    const signup=await call('/api/auth/signup',{email:'choices@example.com',password:'correct horse battery'});
+    const {user}=await signup.json(),cookie=signup.headers.get('set-cookie').split(';')[0];
+    const other=await call('/api/auth/signup',{email:'other-choices@example.com',password:'correct horse battery'});
+    const otherCookie=other.headers.get('set-cookie').split(';')[0];
+    const [unit]=await sql`INSERT INTO ingested_units(submitted_url,source_url) VALUES('x','https://x.com/i/status/123') RETURNING id`;
+    await sql`INSERT INTO user_imports(user_id,unit_id) VALUES(${user.id},${unit.id})`;
+    const ids=[];
+    for (const name of ['Check first','Read the source']) {
+      const [source]=await sql`INSERT INTO ingested_units(submitted_url,source_url) VALUES(${name},${`https://x.com/i/status/${123+ids.length}`}) RETURNING id`;
+      await sql`INSERT INTO user_imports(user_id,unit_id) VALUES(${user.id},${source.id})`;
+      const [a]=await sql`INSERT INTO artifacts(name,source_url,source_ids,processed_text,ingestion_status) VALUES(${name},'https://x.com/i/status/123',${JSON.stringify([source.id])},'content','ready') RETURNING id`;
+      await sql`INSERT INTO skill_results(artifact_id,artifact_version,status,skill_markdown,review_feedback) VALUES(${a.id},1,'ready','---\nname: check\ndescription: Check the source\n---\nRead it',${JSON.stringify({prompt_revision:SKILL_PROMPT_REVISION})})`;
+      ids.push(a.id);
+    }
+    const body={choices:ids.map((id,i)=>({id,version:1,keep:i===0})),generateVideos:false};
+    assert.equal((await call('/api/skills/choices',body)).status,401);
+    assert.equal((await call('/api/skills/choices',body,otherCookie)).status,409);
+    assert.equal((await call('/api/skills/choices',{...body,choices:[...body.choices,{id:'foreign',version:1,keep:true}]},cookie)).status,409);
+    assert.equal((await sql`SELECT * FROM user_skill_choices`).length,0);
+    for(let i=0;i<2;i++) assert.equal((await call('/api/skills/choices',body,cookie)).status,200);
+    const rows=await sql`SELECT * FROM user_skill_choices`;
+    assert.equal(rows.length,2);
+    assert.ok(rows.every(r=>r.video_requested===0));
+    const kept=await (await call('/api/skills',null,cookie)).json();
+    assert.equal(kept.skills.length,1);
+    assert.equal(kept.skills[0].kept,true);
+    assert.equal((await call('/api/skills/choices',{...body,generateVideos:true},cookie)).status,200);
+    assert.deepEqual((await sql`SELECT video_requested FROM user_skill_choices ORDER BY kept DESC`).map(r=>r.video_requested),[1,0]);
+    // Sharing the source gives the second account an independent review, not the first account's discard.
+    const otherUser=await (await call('/api/me',null,otherCookie)).json();
+    await sql`INSERT INTO user_imports(user_id,unit_id) SELECT ${otherUser.user.id},unit_id FROM user_imports WHERE user_id=${user.id}`;
+    assert.equal((await (await call('/api/skills',null,otherCookie)).json()).skills.length,2);
   } finally {sqlite.close();}
 });

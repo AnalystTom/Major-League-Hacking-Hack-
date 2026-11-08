@@ -5,7 +5,7 @@ import { parseYouTubeLink } from "../src/youtube.js";
 import { describeUnit, parseImport, parseUnitIds } from "../src/imports.js";
 import { isMediaKey, parseRange, resolveMediaRef } from "../src/media.js";
 import { serializeItem } from "../src/feed.js";
-import { requestProcessing } from "../src/processor.js";
+import { requestProcessing, requestVideoProcessing } from "../src/processor.js";
 import { followImports } from "../public/units.js";
 
 const ID = "6f1c2a52-8d0e-4f3b-9a51-0c6d2e7b9a10";
@@ -294,4 +294,19 @@ test('a current skill with no video settles the scan at skill ready while shorts
   assert.equal(describeUnit(row).settled,true);
   row.artifacts[0].skill.review_feedback=null;
   assert.notEqual(describeUnit(row).stage,'skill_ready','old skill revisions are still regenerating');
+});
+
+test("video requests wake the output sweep without submitting imports and survive outages", async () => {
+  let calls=0;
+  const env={PROCESSOR_URL:'https://processor.example/api/ingest/process?unused=1',PROCESSOR_TOKEN:'test-token',PROCESSOR:{async fetch(url,init){
+    calls++;
+    assert.equal(url,'https://processor.example/health');
+    assert.equal(init.headers.authorization,'Bearer test-token');
+    assert.equal(init.body,undefined);
+    return new Response(null,{status:202});
+  }}};
+  assert.equal(await requestVideoProcessing(env), 'requested');
+  assert.equal(calls,1);
+  assert.equal(await requestVideoProcessing({}), 'not_configured');
+  assert.equal(await requestVideoProcessing({PROCESSOR_URL:env.PROCESSOR_URL}, async()=>{throw Error('offline')}), 'unavailable');
 });

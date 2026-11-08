@@ -7,8 +7,9 @@ import waitlist from "./waitlist.js";
 import { canReadMedia, readFeed } from "./feed.js";
 import { createUnits, parseImport, readUnits, userUnitIds } from "./imports.js";
 import { serveMedia } from "./media.js";
+import { saveSkillChoices } from "./skill-choices.js";
 import { readSkills } from "./skills.js";
-import { requestProcessing } from "./processor.js";
+import { requestProcessing, requestVideoProcessing } from "./processor.js";
 
 const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), {
@@ -19,9 +20,9 @@ const json = (data, status = 200, headers = {}) =>
 const UNAVAILABLE = "Resurface can't reach its database right now. Try again in a minute.";
 const SIGNED_OUT = { error: "Sign in to continue." };
 
-async function readJson(request) {
+async function readJson(request, maxBytes = 32_000) {
   const text = await request.text();
-  if (text.length > 32_000) return { error: json({ error: "That request is too large." }, 413) };
+  if (text.length > maxBytes) return { error: json({ error: "That request is too large." }, 413) };
   try {
     return { body: JSON.parse(text) };
   } catch {
@@ -129,8 +130,18 @@ async function api(request, env, url, sql) {
     return json({ items: await readFeed(sql, ids) });
   }
 
+  if (pathname === "/api/skills/choices" && method === "POST") {
+    const { body, error } = await readJson(request, 256_000);
+    if (error) return error;
+    const result = await saveSkillChoices(sql, user.id, body);
+    if (!result.error && body.generateVideos && body.choices.some((c) => c.keep)) {
+      result.processor = await requestVideoProcessing(env);
+    }
+    return json(result.error ? { error: result.error } : result, result.status ?? 200);
+  }
+
   if (pathname === "/api/skills" && method === "GET") {
-    return json({ skills: await readSkills(sql, await userUnitIds(sql, user.id)) });
+    return json({ skills: await readSkills(sql, await userUnitIds(sql, user.id), user.id) });
   }
 
   if (pathname.startsWith("/api/handoffs")) return json({ error: "Task generation is unavailable. Download a skill instead." }, 410);
