@@ -16,7 +16,7 @@ function database() {
   sqlite.exec(readFileSync(new URL('../migrations/0002_application.sql',import.meta.url),'utf8'));
   sqlite.exec(readFileSync(new URL('../migrations/0003_video_duration.sql',import.meta.url),'utf8'));
   sqlite.exec(readFileSync(new URL('../migrations/0005_skill_choices.sql',import.meta.url),'utf8'));
-  const env={DB:{prepare(sql){return {bind(...params){return {async all(){return {results:sqlite.prepare(sql).all(...params)}}}}}}}};
+  const env={AUTH_LIMITER:{async limit(){return {success:true}}},IMPORT_LIMITER:{async limit(){return {success:true}}},DB:{prepare(sql){return {bind(...params){return {async all(){return {results:sqlite.prepare(sql).all(...params)}}}}}}}};
   return {sqlite,env,sql:connect(env)};
 }
 
@@ -335,4 +335,53 @@ test('skill choices are account-scoped, atomic, idempotent and default to skills
     await sql`INSERT INTO user_imports(user_id,unit_id) SELECT ${otherUser.user.id},unit_id FROM user_imports WHERE user_id=${user.id}`;
     assert.equal((await (await call('/api/skills',null,otherCookie)).json()).skills.length,2);
   } finally {sqlite.close();}
+});
+
+test('imports enforce the account window under concurrency, isolate accounts and recover', async () => {
+  const { sqlite, env, sql } = database();
+  const calls = [];
+  let now = 0;
+  const windows = new Map();
+  env.IMPORT_LIMITER = { async limit({ key }) {
+    calls.push(key);
+    const window = Math.floor(now / 60);
+    const entry = windows.get(key);
+    const count = entry?.window === window ? entry.count + 1 : 1;
+    windows.set(key, { window, count });
+    return { success: count <= 5 };
+  } };
+  const call = (path, body, cookie, ip = '192.0.2.1') => app.fetch(new Request(`https://resurface.test${path}`, {
+    method: 'POST', headers: { 'content-type': 'application/json', 'cf-connecting-ip': ip, ...(cookie ? { cookie } : {}) },
+    body: JSON.stringify(body),
+  }), env, {});
+  try {
+    const cookies = [];
+    const ids = [];
+    for (const email of ['limited@example.com', 'isolated@example.com']) {
+      const response = await call('/api/auth/signup', { email, password: 'correct horse battery' });
+      assert.equal(response.status, 201);
+      cookies.push(response.headers.get('set-cookie').split(';')[0]);
+      ids.push((await response.json()).user.id);
+    }
+    assert.equal((await call('/api/imports', {})).status, 401);
+    assert.deepEqual(calls, [], 'anonymous requests cannot consume an account limit');
+    const responses = await Promise.all(Array.from({ length: 8 }, (_, i) =>
+      call('/api/imports', {}, cookies[0], `192.0.2.${i + 1}`)));
+    assert.deepEqual(responses.map(r => r.status).sort(), [400, 400, 400, 400, 400, 429, 429, 429]);
+    for (const response of responses.filter(r => r.status === 429)) {
+      assert.equal(response.headers.get('retry-after'), '60');
+      assert.equal(response.headers.get('cache-control'), 'no-store');
+    }
+    assert.deepEqual(calls, Array(8).fill(ids[0]), 'changing IP does not reset the account limit');
+    assert.equal((await call('/api/imports', {}, cookies[1])).status, 400, 'another account on the same IP has its own window');
+    assert.equal(calls.at(-1), ids[1]);
+    now = 60;
+    assert.equal((await call('/api/imports', {}, cookies[0])).status, 400, 'requests reach validation again after recovery');
+    for (const limiter of [undefined, { async limit() { throw new Error('unavailable'); } }]) {
+      env.IMPORT_LIMITER = limiter;
+      assert.equal((await call('/api/imports', { links: ['https://youtu.be/VQy50fuxI34'] }, cookies[0])).status, 503);
+    }
+    assert.equal((await sql`SELECT count(*) AS n FROM user_imports`)[0].n, 0);
+    assert.equal((await sql`SELECT count(*) AS n FROM ingested_units`)[0].n, 0);
+  } finally { sqlite.close(); }
 });
