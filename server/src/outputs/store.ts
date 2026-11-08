@@ -40,6 +40,7 @@ export class LostClaim extends Error {
 }
 
 export interface OutputStore {
+  videoRequested(a: ReadyArtifact): Promise<boolean>;
   /** Eligible ready digests, including versioned legacy refreshes, stale claims and retryable failures. */
   artifactsNeeding(kind: Kind, limit: number): Promise<ReadyArtifact[]>;
   /** Claims generation; an approved video stays ready during its refresh. Null if already held or settled. */
@@ -67,6 +68,11 @@ export function skillCardOf(markdown: string): SkillCard | null {
   return { name, description: description.replace(/\s+/g, " ").trim() };
 }
 
+const VIDEO_REQUESTED = `EXISTS (SELECT 1 FROM user_skill_choices c
+  WHERE c.artifact_id=a.id AND c.artifact_version=a.version AND c.kept=1 AND c.video_requested=1
+    AND NOT EXISTS (SELECT 1 FROM json_each(a.source_ids) src
+      WHERE NOT EXISTS (SELECT 1 FROM user_imports ui WHERE ui.user_id=c.user_id AND ui.unit_id=src.value)))`;
+
 const TABLE: Record<Kind, string> = { skill: "skill_results", video: "video_results" };
 
 function rowToArtifact(r: any): ReadyArtifact {
@@ -79,9 +85,14 @@ function rowToArtifact(r: any): ReadyArtifact {
 
 export class D1OutputStore implements OutputStore {
   constructor(private db: Database) {}
+  async videoRequested(a: ReadyArtifact) {
+    const { rows } = await this.db.query(`SELECT a.id FROM artifacts a WHERE a.id=?1 AND a.version=?2 AND ${VIDEO_REQUESTED}`, [a.id,a.version]);
+    return rows.length > 0;
+  }
   async artifactsNeeding(kind: Kind, limit: number) {
     const { rows } = await this.db.query(`SELECT a.* FROM artifacts a
       WHERE a.ingestion_status='ready' AND a.digestion_prompt_id IS NOT NULL
+      ${kind === 'video' ? `AND ${VIDEO_REQUESTED}` : ''}
       AND EXISTS(SELECT 1 FROM user_imports ui WHERE ui.unit_id IN (SELECT value FROM json_each(a.source_ids)))
       AND NOT EXISTS(SELECT 1 FROM ${TABLE[kind]} r WHERE r.artifact_id=a.id AND r.artifact_version=a.version
         AND NOT ${CLAIMABLE('r',kind)})
@@ -92,7 +103,8 @@ export class D1OutputStore implements OutputStore {
   async claim(kind: Kind, a: ReadyArtifact) {
     const t = TABLE[kind];
     const { rows } = await this.db.query(`INSERT INTO ${t}(artifact_id,artifact_version,status,updated_at,claim_token,attempts,review_feedback)
-      VALUES(?1,?2,'running',${NOW},?3,1,${kind === 'video' ? `json_object('generator_revision','${VIDEO_GENERATOR_REVISION}')` : 'NULL'})
+      SELECT ?1,?2,'running',${NOW},?3,1,${kind === 'video' ? `json_object('generator_revision','${VIDEO_GENERATOR_REVISION}')` : 'NULL'}
+      FROM artifacts a WHERE a.id=?1 AND a.version=?2 ${kind === 'video' ? `AND ${VIDEO_REQUESTED}` : ''}
       ON CONFLICT(artifact_id,artifact_version) DO UPDATE SET
         status=${kind === 'video' ? `CASE WHEN ${t}.status='ready' THEN 'ready' ELSE 'running' END` : "'running'"},error=NULL,updated_at=${NOW},
         review_feedback=${kind === 'skill' ? `CASE WHEN ${t}.status='ready' THEN '{"regenerating":true}' ELSE ${t}.review_feedback END` : `json_set(${feedback(t)},'$.generator_revision','${VIDEO_GENERATOR_REVISION}','$.regenerating',${videoRefresh(t)})`},
@@ -144,6 +156,8 @@ type Row = {
 /** In-memory stand-in for tests and runs without D1_URL. */
 export class MemoryOutputStore implements OutputStore {
   artifacts: ReadyArtifact[] = [];
+  videoRequests = new Set<string>();
+  async videoRequested(a: ReadyArtifact) { return this.videoRequests.has(this.key(a)); }
   rows: Record<Kind, Map<string, Row>> = { skill: new Map(), video: new Map() };
   /** RETRY_AFTER_MINUTES in milliseconds; tests set 0. */
   constructor(private retryAfterMs = RETRY_AFTER_MINUTES * 60_000) {}
@@ -155,9 +169,10 @@ export class MemoryOutputStore implements OutputStore {
 
   async artifactsNeeding(kind: Kind, limit: number) {
     const rows = this.rows[kind], fresh = (a: ReadyArtifact) => (rows.has(this.key(a)) ? 1 : 0);
-    return this.artifacts.filter((a) => this.claimable(rows.get(this.key(a)), kind)).sort((x, y) => fresh(x) - fresh(y)).slice(0, limit);
+    return this.artifacts.filter((a) => (kind !== "video" || this.videoRequests.has(this.key(a))) && this.claimable(rows.get(this.key(a)), kind)).sort((x, y) => fresh(x) - fresh(y)).slice(0, limit);
   }
   async claim(kind: Kind, a: ReadyArtifact) {
+    if (kind === "video" && !await this.videoRequested(a)) return null;
     const before = this.rows[kind].get(this.key(a));
     if (!this.claimable(before, kind)) return null;
     const refresh = kind === "video" && !!before && (before.status === "ready" || before.status === "failed") && before.generatorRevision !== VIDEO_GENERATOR_REVISION;

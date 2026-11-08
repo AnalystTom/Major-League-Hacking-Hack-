@@ -209,6 +209,7 @@ test("a final cue failure withholds publication even when the reviewer misses it
   assert.equal(judgment.passed, false);
   assert.ok(judgment.reasons.includes("Both rounds require cue-check receipts; the final round must pass."));
   const outputs = new MemoryOutputStore(0);
+  outputs.videoRequests.add(`${a.id}:${a.version}`);
   const claim = (await outputs.claim("video", a))!;
   await assert.rejects(outputs.finishVideo(claim, { judgment, script: { scenes: [] }, prompt_revision: "test",
     media_ref: "r2:videos/new/short.mp4", caption_ref: "r2:captions/new/short.vtt", narration_ref: "r2:audio/new/narration.m4a", duration_seconds: 3.6 }), /quality judge/);

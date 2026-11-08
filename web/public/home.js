@@ -13,7 +13,7 @@ const sheet = $("[data-add-sheet]");
 const skillsSheet = $("[data-skills-sheet]");
 const skills = createSkills({
   skillsList: $("[data-skills]"), picker: $("[data-agent]"),
-  skillsStatus: $("[data-skills-status]"),
+  skillsStatus: $("[data-skills-status]"), review: true, onSaved: showSkills,
 });
 const form = $("[data-add-template]").content.firstElementChild.cloneNode(true);
 let follower = null;

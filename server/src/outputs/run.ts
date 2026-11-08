@@ -68,8 +68,8 @@ async function produceNow(kind: Kind, a: ReadyArtifact, o: OutputOptions) {
 }
 
 /** Renders run one after another; a job that fails doesn't stop the ones behind it. */
-function queueRender(a: ReadyArtifact, o: OutputOptions): Promise<void> {
-  if (o.shorts === false) return Promise.resolve();
+async function queueRender(a: ReadyArtifact, o: OutputOptions): Promise<void> {
+  if (o.shorts === false || !await o.outputs.videoRequested(a)) return;
   const state = stateFor(o);
   // Counted as busy from the moment it's queued, not just while it renders.
   const job = tracked(() => state.renderQueue.then(() => produceNow("video", a, o)));

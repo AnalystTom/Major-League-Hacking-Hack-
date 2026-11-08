@@ -882,3 +882,10 @@ a.reel-btn { text-decoration: none; }
 .app-bar a.topbar-pill { text-decoration: none; text-align: center; font-size: .75rem; max-width: 160px; }
 
 .public-catalogue .topbar-pill { color: var(--ink); }
+
+.skill-review-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 0; position: sticky; top: 0; background: var(--paper, #faf7f2); z-index: 1; }
+.skill-review-actions[hidden] { display: none; }
+.skill-choice { display: flex; align-items: center; gap: .65rem; font-size: .9rem; cursor: pointer; }
+.skill-choice input { width: 1.15rem; height: 1.15rem; accent-color: var(--accent, #c54b26); }
+.skill-head > .skill-choice { margin-bottom: .75rem; }
+@media (max-width: 600px) { .skill-review-actions { flex-direction: column; align-items: stretch; } }
