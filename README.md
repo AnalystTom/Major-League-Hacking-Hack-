@@ -2,7 +2,7 @@
 
 **You saved it. Your agent never saw it.**
 
-Resurface turns the bookmarks, Watch Later videos, and conference talks you never got to into 30-second shorts. Keep the good ones, and they're installed in your coding agent as skills.
+Resurface turns the X, YouTube, and Substack links you never got to into source-linked `SKILL.md` files for your coding agent.
 
 Live site: <https://resurface.thomasmann2001.workers.dev/>
 
@@ -11,14 +11,13 @@ Built at AI Engineer NYC 2026.
 ## What it does
 
 - Takes saved content from YouTube, X, and Substack.
-- Creates a 30-second short of the key part of each item.
-- Lets you keep the useful ones, which become skills for your coding agent.
+- Accepts pasted individual links after email/password sign-in and turns each into a skill for your coding agent.
 - Sends skills to Claude Code, Codex, Cursor, and Hermes.
 
 ## Features
 
-- **Shorts**: source-grounded clips with visible narration subtitles, checked by a model judge before upload. See the [processor flow](docs/proceed-and-media.md#the-processor).
-- **Keep**: mark items worth keeping. Keeps become skills, linked to their source (coming at launch).
+- **Shorts**: new video generation is paused (`SHORTS=off`); previously produced shorts remain. See the [processor flow](docs/proceed-and-media.md#the-processor).
+- **Keep**: choosing which generated skills to keep is not live yet.
 - **Skills**: concise source-grounded SKILL.md files for your coding agent; see the [skill contract](docs/project-actions-spec.md#workflow-3-processed-skill-and-codex-use).
 - **Private reels**: sign in for your personal reel, or choose **View available reels & Skills** to browse the public catalogue at `/available`.
 - **Source checking**: before installing, Resurface pulls the linked repo, release notes, and open issues so outdated tips (such as a deprecated flag) don't ship.
@@ -26,12 +25,12 @@ Built at AI Engineer NYC 2026.
 
 ## Supported sources
 
-X bookmarks, YouTube playlists and videos, GitHub stars, newsletters, Substack, conference talks, and single pasted links.
+Individual pasted X, YouTube, and Substack links. Automatic Watch Later import and Google sign-in are not live yet. X sign-in with bookmark import is built but stays off until the operator enables it; see [X sign-in and bookmark import](docs/x-bookmarks.md).
 
 ## How it works
 
-1. **Connect what you've saved**: import X bookmarks, YouTube playlists, GitHub stars, newsletters, and conference talks, or paste single links.
-2. **Watch a short for each one**: each item becomes a 30-second short. Copy it or send it to your agents.
+1. **Paste what you've saved**: add individual X, YouTube, or Substack links.
+2. **Get a skill for each one**: copy or download it for your agent.
 3. **Check it against today's docs**: Resurface verifies content against current sources before installing.
 4. **Install it where your agent looks**: skills, rules, and `AGENTS.md` sections are added to your repo as a reviewable diff.
 

@@ -288,6 +288,13 @@ test("parseImport caps Substack posts at 20 independently of videos and X posts"
   assert.match(parseImport({ links: posts(21) }).error, /at most 20 Substack/);
 });
 
+test('a current skill with no video settles the scan at skill ready while shorts are off',()=>{
+  const row={id:'skill-only',source_url:'https://x.com/i/status/123',status:'ready',artifacts:[{ingestion_status:'ready',skill:{status:'ready',review_feedback:JSON.stringify({prompt_revision:'skill-v4-skill-creator'})},video:null}]};
+  assert.equal(describeUnit(row).stage,'skill_ready');
+  assert.equal(describeUnit(row).settled,true);
+  row.artifacts[0].skill.review_feedback=null;
+  assert.notEqual(describeUnit(row).stage,'skill_ready','old skill revisions are still regenerating');
+});
 
 test("video requests wake the output sweep without submitting imports and survive outages", async () => {
   let calls=0;

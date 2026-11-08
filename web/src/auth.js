@@ -85,7 +85,7 @@ export async function currentUser(sql, request) {
     SELECT u.id, u.email, u.name
     FROM sessions s JOIN users u ON u.id = s.user_id
     WHERE s.token_hash = ${await sha256(token)} AND julianday(s.expires_at) > julianday('now')`;
-  return user ?? null;
+  return user ? { ...user, email: user.email?.startsWith("oauth:x:") ? null : user.email } : null;
 }
 
 export async function endSession(sql, request) {

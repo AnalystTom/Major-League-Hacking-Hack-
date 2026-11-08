@@ -1,0 +1,3 @@
+# X response fixtures
+
+Recorded response **shape** from the official [GET bookmarks reference](https://docs.x.com/x-api/users/get-bookmarks), accessed 8 November 2026: `data` Post array, string `id`/`text`, `meta.result_count` and optional `meta.next_token`. IDs/text/tokens are synthetic test values, not a recording of a person's private bookmarks. The second page deliberately repeats an ID to test deduplication. No paid X request was made. These files are tests only and must never be served as real product results. The local journey harness uses an explicitly marked fixture provider and processor; screenshots must carry that caveat.

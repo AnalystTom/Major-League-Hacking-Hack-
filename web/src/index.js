@@ -1,6 +1,7 @@
 import {
   cookieSecure, createSession, createUser, currentUser, endSession, login, parseLogin, parseSignup, sessionCookie,
 } from "./auth.js";
+import { xRoute } from "./x-oauth.js";
 import { connect } from "./db.js";
 import waitlist from "./waitlist.js";
 import { rateLimit, requestIp } from "./rate-limit.js";
@@ -104,6 +105,7 @@ async function api(request, env, url, sql) {
   }
 
   const user = await currentUser(sql, request);
+  if (pathname.startsWith("/api/auth/x/") || pathname.startsWith("/api/x")) return xRoute(request, env, sql, user);
   // "Am I signed in?" is a normal question for every visitor, so a signed-out answer isn't an error.
   if (pathname === "/api/me" && method === "GET") {
     return json(user ? await accountState(sql, user) : { user: null });
