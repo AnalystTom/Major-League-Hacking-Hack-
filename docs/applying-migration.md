@@ -13,6 +13,8 @@ npm run db:migrate:remote
 
 `web/migrations/0002_application.sql` is the application schema. The PostgreSQL migrations in
 `db/migrations/` are retained as historical source documentation; do not apply them to D1.
+`web/migrations/0005_skill_choices.sql` adds per-account keep and video-request decisions. Apply it before deploying the web and processor changes. New artifacts generate skills only; video claims and retries require an explicit request on a kept revision, and `SHORTS=off` continues to pause all video work. Shared artifacts and other accounts' choices are preserved.
+
 D1 stores UUIDs and UTC timestamps as text, JSON as validated JSON text, booleans as integers,
 and processing start IDs as autoincrement integers. Artifact revisions remain immutable.
 

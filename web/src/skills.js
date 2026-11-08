@@ -11,18 +11,19 @@ import { skillStatus } from "./skill-policy.js";
  * The newest skill result per ready artifact revision built only from these units (all of the user's imports),
  * newest artifact first, with its contributing sources. Public reads require a team-assigned feed_order.
  */
-export async function readSkills(sql, unitIds) {
+export async function readSkills(sql, unitIds, userId = null, includeDiscarded = false) {
   if (unitIds && unitIds.length === 0) return [];
   const rows = await sql`
     SELECT a.id AS artifact_id, a.version AS artifact_version, a.name AS artifact_name, a.category, a.created_at,
       s.id, s.status, s.error, s.attempts, s.skill_markdown, s.review_feedback,
-      a.source_url,
+      a.source_url, c.kept, c.video_requested,
       (SELECT json_group_array(json_object('source_url',u.source_url,'start_seconds',u.start_seconds)) FROM json_each(a.source_ids) src JOIN ingested_units u ON u.id=src.value) AS source_units,
       (SELECT json_group_array(json(item)) FROM (
         SELECT json_object('id', u.id, 'url', u.source_url, 'title', u.title) AS item
         FROM json_each(a.source_ids) src JOIN ingested_units u ON u.id = src.value ORDER BY CAST(src.key AS INTEGER))) AS videos
     FROM artifacts a
     JOIN skill_results s ON s.artifact_id = a.id AND s.artifact_version = a.version
+    LEFT JOIN user_skill_choices c ON c.artifact_id=a.id AND c.artifact_version=a.version AND c.user_id=${userId}
     WHERE a.ingestion_status = 'ready'
       AND (${unitIds === null ? 1 : 0}=1 OR NOT EXISTS (SELECT 1 FROM json_each(a.source_ids) WHERE value NOT IN (SELECT value FROM json_each(${JSON.stringify(unitIds ?? [])}))))
       AND (${unitIds === null ? 1 : 0}=0 OR (s.status='ready' AND EXISTS(SELECT 1 FROM video_results v WHERE v.artifact_id=a.id AND v.artifact_version=a.version AND v.feed_order IS NOT NULL)))
@@ -31,7 +32,7 @@ export async function readSkills(sql, unitIds) {
   return dedupeContent([
     ...rows.filter((row) => displayed.has(`${row.artifact_id}:${row.artifact_version}`)),
     ...rows.filter((row) => !displayed.has(`${row.artifact_id}:${row.artifact_version}`)),
-  ]).map(serializeSkill);
+  ]).filter((row) => includeDiscarded || row.kept !== 0).map(serializeSkill);
 }
 
 /** name and description from SKILL.md frontmatter; null when absent. */
@@ -61,6 +62,8 @@ export function serializeSkill(row) {
   const videos = (row.videos ?? []).filter((v) => /^https:\/\/(?:www\.youtube\.com\/watch\?v=[\w-]{11}|x\.com\/i\/status\/\d{1,19}|[a-z0-9-]+\.substack\.com\/p\/[\w-]+)$/.test(v.url));
   return {
     id: row.id,
+    kept: row.kept == null ? null : Boolean(row.kept),
+    videoRequested: Boolean(row.video_requested),
     status,
     error: row.status === "failed" ? row.error ?? null : null,
     retrying,

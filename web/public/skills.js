@@ -1,6 +1,7 @@
 // Each ready artifact's SKILL.md and the path where the chosen agent reads it. Every API string goes in through textContent.
 
 import { AGENTS, agentOrDefault, skillAnchor, skillFile, skillSlug } from "./agents.js";
+import { api } from "./api.js";
 import { el } from "./dom.js";
 
 const AGENT_KEY = "resurface-agent";
@@ -37,8 +38,32 @@ const SKILL_STATE = {
   regenerating: "This skill is being regenerated.",
 };
 
-export function createSkills({ skillsList, picker, skillsStatus }) {
+export function createSkills({ skillsList, picker, skillsStatus, review = false, onSaved = () => {} }) {
   let skills = [];
+  const selected = new Map();
+  let saving = false;
+  const video = el("input", { type: "checkbox" });
+  const save = el("button", { type: "button", class: "btn btn-small", text: "Keep selected", onclick: async () => {
+    saving = true;
+    render();
+    try {
+      const choices = skills.filter((s) => s.status === "ready").map((s) => ({ id: s.artifact.id, version: s.artifact.version, keep: selected.get(s.id) ?? s.kept !== false }));
+      const generateVideos = video.checked && choices.some((c) => c.keep);
+      const result = await api("/api/skills/choices", { method: "POST", body: { choices, generateVideos } });
+      skills = result.skills;
+      selected.clear();
+      onSaved(skills);
+      skillsStatus.textContent = generateVideos ? "Selected skills kept. Videos requested; rendering may be paused." : choices.some((c) => c.keep) ? "Selected skills kept." : "No skills kept.";
+      skillsStatus.dataset.tone = "ok";
+      video.checked = false;
+    } catch (err) {
+      skillsStatus.textContent = err.message;
+      skillsStatus.dataset.tone = "error";
+    } finally { saving = false; render(); }
+  } });
+  const actions = el("div", { class: "skill-review-actions", hidden: true },
+    el("label", { class: "skill-choice" }, video, "Request videos for selected skills"), save);
+  if (review) skillsList.before(actions);
   let agent = "claude-code";
   try { agent = agentOrDefault(localStorage.getItem(AGENT_KEY)); } catch {}
 
@@ -72,6 +97,12 @@ export function createSkills({ skillsList, picker, skillsStatus }) {
       li.append(el("p", { class: "skill-state", text: s.status === "failed" ? failed.trim() : message }));
       return li;
     }
+    if (review) {
+      const keep = el("input", { type: "checkbox", checked: selected.get(s.id) ?? s.kept !== false,
+        "aria-label": `Keep ${s.name ?? s.artifact.name}`, disabled: saving, onchange: (e) => selected.set(s.id, e.currentTarget.checked) });
+      head.prepend(el("label", { class: "skill-choice" }, keep, "Keep"));
+    }
+    if (review && s.videoRequested) head.append(el("p", { class: "skill-state", text: "Video requested" }));
     const file = skillFile(s, agent);
     const md = el("pre", { class: "skill-md", hidden: true }, el("code", { text: file.content }));
     const toggle = el("button", { type: "button", class: "btn-line", "aria-expanded": "false", text: "Show SKILL.md",
@@ -80,6 +111,10 @@ export function createSkills({ skillsList, picker, skillsStatus }) {
         e.currentTarget.setAttribute("aria-expanded", String(!md.hidden));
         e.currentTarget.textContent = md.hidden ? "Show SKILL.md" : "Hide SKILL.md";
       } });
+    if (review && s.kept !== true) {
+      li.append(toggle, md);
+      return li;
+    }
     li.append(
       el("p", { class: "skill-path" }, el("span", { text: `${AGENTS[agent].name} reads it from` }), el("code", { text: file.path })),
       el("div", { class: "skill-actions" },
@@ -96,6 +131,10 @@ export function createSkills({ skillsList, picker, skillsStatus }) {
   }
 
   function render() {
+    save.disabled = saving || !skills.some((s) => s.status === "ready");
+    save.textContent = saving ? "Keeping…" : "Keep selected";
+    video.disabled = saving;
+    actions.hidden = !skills.some((s) => s.status === "ready");
     skillsList.replaceChildren(...skills.map(skillCard));
   }
 

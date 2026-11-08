@@ -18,6 +18,7 @@ const media: MediaStore = { put: async (key) => `r2:${key}` };
 test("an artifact gets a ready skill and a ready short, once", { skip: !hasFfmpeg && "ffmpeg not installed", timeout: 360_000 }, async () => {
   const a = artifact();
   const outputs = new MemoryOutputStore();
+  outputs.videoRequests.add(`${a.id}:${a.version}`);
   const { impl, calls } = outputsFetch(a);
   const o = { outputs, openaiKey: "o", geminiKey: "g", media, fetchImpl: impl };
   await Promise.all([produceOutputs([a], o), produceOutputs([a], o)]);
@@ -34,6 +35,7 @@ test("an artifact gets a ready skill and a ready short, once", { skip: !hasFfmpe
 test("without media storage the short fails with that reason, and the skill still lands", async () => {
   const a = artifact();
   const outputs = new MemoryOutputStore();
+  outputs.videoRequests.add(`${a.id}:${a.version}`);
   const { impl, calls } = outputsFetch(a);
   await produceOutputs([a], { outputs, openaiKey: "o", geminiKey: "g", media: null, fetchImpl: impl });
   assert.equal([...outputs.rows.skill.values()][0].status, "ready");
@@ -46,6 +48,7 @@ test("without media storage the short fails with that reason, and the skill stil
 test("a skill failure is recorded with the provider error", async () => {
   const a = artifact();
   const outputs = new MemoryOutputStore();
+  outputs.videoRequests.add(`${a.id}:${a.version}`);
   const { impl } = outputsFetch(a, { openaiStatus: 500 });
   await produceOutputs([a], { outputs, openaiKey: "o", media: null, fetchImpl: impl });
   const s = [...outputs.rows.skill.values()][0];
@@ -56,6 +59,7 @@ test("a skill failure is recorded with the provider error", async () => {
 test("a failed skill is retried by the sweep until it lands, at most MAX_OUTPUT_ATTEMPTS times", async () => {
   const a = artifact();
   const outputs = new MemoryOutputStore(0);
+  outputs.videoRequests.add(`${a.id}:${a.version}`);
   outputs.artifacts.push(a);
   const failing = outputsFetch(a, { openaiStatus: 500 });
   const o = { outputs, openaiKey: "o", media: null, fetchImpl: failing.impl };
@@ -83,6 +87,7 @@ test("a failed skill is retried by the sweep until it lands, at most MAX_OUTPUT_
 test("a failed result waits before it's retried", async () => {
   const a = artifact();
   const outputs = new MemoryOutputStore();
+  outputs.videoRequests.add(`${a.id}:${a.version}`);
   await produceOutputs([a], { outputs, openaiKey: "o", media: null, fetchImpl: outputsFetch(a, { openaiStatus: 500 }).impl });
   outputs.artifacts.push(a);
   assert.equal((await outputs.artifactsNeeding("skill", 10)).length, 0);
@@ -91,6 +96,7 @@ test("a failed result waits before it's retried", async () => {
 test("the sweep produces outputs for artifacts that are missing them", async () => {
   const a = artifact();
   const outputs = new MemoryOutputStore();
+  outputs.videoRequests.add(`${a.id}:${a.version}`);
   outputs.artifacts.push(a);
   const { impl } = outputsFetch(a);
   const o = { outputs, openaiKey: "o", media: null, fetchImpl: impl };
@@ -101,6 +107,7 @@ test("the sweep produces outputs for artifacts that are missing them", async () 
 test("a worker whose claim was taken over can't save or fail the result", async () => {
   const a = artifact();
   const outputs = new MemoryOutputStore();
+  outputs.videoRequests.add(`${a.id}:${a.version}`);
   const stale = (await outputs.claim("video", a))!;
   takeOver(outputs, "video", stale.id);
   await assert.rejects(outputs.finishVideo(stale, { script: { scenes: [] }, prompt_revision: "r", media_ref: "m", caption_ref: "c", narration_ref: "n", duration_seconds: 1 }), LostClaim);
@@ -111,6 +118,7 @@ test("a worker whose claim was taken over can't save or fail the result", async 
 for (const status of ["ready", "failed"] as const) for (const success of [true, false]) {
   test(`memory ${status} video refresh retains publication and settles once (${success ? "pass" : "fail"})`, async () => {
     const a = artifact(), outputs = new MemoryOutputStore(0);
+    outputs.videoRequests.add(`${a.id}:${a.version}`);
     outputs.artifacts.push(a);
     const old: RenderedVideo = { judgment: approvedJudgment(),
       script: { scenes: [] }, prompt_revision: "script-v2", media_ref: "r2:videos/old/short.mp4",
@@ -151,6 +159,7 @@ for (const status of ["ready", "failed"] as const) for (const success of [true, 
 for (const stage of ["revision", "narration", "render", "judge", "video", "caption", "audio"] as const) {
   test(`transient ${stage} failure after critique preserves receipts and retry eligibility`, { skip: !hasFfmpeg && "ffmpeg not installed", timeout: 120_000 }, async () => {
     const a = artifact(), outputs = new MemoryOutputStore(0);
+    outputs.videoRequests.add(`${a.id}:${a.version}`);
     outputs.artifacts.push(a);
     const { impl } = outputsFetch(a);
     const font = process.env.RENDER_FONT;
@@ -219,6 +228,7 @@ for (const stage of ["revision", "narration", "render", "judge", "video", "capti
 for (const status of ["ready", "failed"] as const) {
   test(`legacy ${status} refresh keeps its one-attempt bound after a reviewed upload failure`, { skip: !hasFfmpeg && "ffmpeg not installed", timeout: 120_000 }, async () => {
     const a = artifact(), outputs = new MemoryOutputStore(0);
+    outputs.videoRequests.add(`${a.id}:${a.version}`);
     outputs.artifacts.push(a);
     const old: RenderedVideo = { judgment: approvedJudgment(), script: { scenes: [] }, prompt_revision: "old",
       media_ref: "r2:videos/old/short.mp4", caption_ref: "r2:captions/old/short.vtt", narration_ref: "r2:audio/old/narration.m4a", duration_seconds: 30 };
@@ -245,6 +255,7 @@ for (const status of ["ready", "failed"] as const) {
 
 test("with shorts paused, skills still land and no short is claimed or started", async () => {
   const a = artifact(), outputs = new MemoryOutputStore();
+  outputs.videoRequests.add(`${a.id}:${a.version}`);
   outputs.artifacts.push(a);
   const { impl, calls } = outputsFetch(a);
   const o = { outputs, openaiKey: "o", geminiKey: "g", media, fetchImpl: impl, shorts: false };
@@ -253,4 +264,22 @@ test("with shorts paused, skills still land and no short is claimed or started",
   assert.equal([...outputs.rows.skill.values()][0].status, "ready");
   assert.equal(outputs.rows.video.size, 0);
   assert.equal(calls.script, 0);
+});
+
+
+test('new artifacts generate only skills until explicitly requested; SHORTS off still wins', async()=>{
+  const a=artifact(),outputs=new MemoryOutputStore(0);
+  outputs.artifacts.push(a);
+  const {impl,calls}=outputsFetch(a);
+  const o={outputs,openaiKey:'o',geminiKey:'g',media:null,fetchImpl:impl};
+  await produceOutputs([a],o);
+  await sweepOutputs(o);
+  assert.equal(outputs.rows.video.size,0);
+  assert.equal(calls.script,0);
+  outputs.videoRequests.add(`${a.id}:${a.version}`);
+  await produceOutputs([a],{...o,shorts:false});
+  await sweepOutputs({...o,shorts:false});
+  assert.equal(outputs.rows.video.size,0);
+  await sweepOutputs(o);
+  assert.equal(outputs.rows.video.size,1);
 });
