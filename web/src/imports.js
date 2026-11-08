@@ -1,6 +1,7 @@
 // Proceed: pasted YouTube and X post links become ingested units in D1, and their progress is read back
 // from the units, artifacts and video results the processor writes. Nothing here invents progress.
 
+import { skillStatus } from "./skill-policy.js";
 import { dedupeContent, sourceKey } from "./content.js";
 import { isSubstackHost, parseSubstackLink } from "./substack.js";
 import { isXLink, parseXLink } from "./xpost.js";
@@ -141,6 +142,7 @@ export async function readUnits(sql, ids, visible = ids) {
       (SELECT json_group_array(json(item)) FROM (
         SELECT json_object('id', a.id, 'version', a.version, 'name', a.name,
           'ingestion_status', a.ingestion_status, 'error', a.error,
+          'skill', json((SELECT json_object('status',s.status,'review_feedback',s.review_feedback) FROM skill_results s WHERE s.artifact_id=a.id AND s.artifact_version=a.version ORDER BY s.created_at DESC LIMIT 1)),
           'video', json((SELECT json_object('status', v.status, 'error', v.error, 'attempts', v.attempts, 'review_feedback', v.review_feedback)
             FROM video_results v WHERE v.artifact_id = a.id AND v.artifact_version = a.version
             ORDER BY v.created_at DESC, v.id DESC LIMIT 1))) AS item
@@ -217,6 +219,7 @@ export function describeUnit(row, now = new Date()) {
     const v = a.video;
     if (a.ingestion_status === "failed") return at("failed", true, a.error ?? null);
     if (a.ingestion_status !== "ready") return at("digesting", false);
+    if (skillStatus(a.skill?.status, a.skill?.review_feedback) === "ready" && !v) return at("skill_ready", true);
     if (!v || v.status === "pending" || v.status === "running") return at("rendering", false);
     if (willRetry(v)) return at("render_retrying", false, v.error ?? null);
     if (v.status === "failed") return at("render_failed", true, v.error ?? null);
@@ -225,6 +228,6 @@ export function describeUnit(row, now = new Date()) {
     if (judgment?.judge !== "short-judge-v1" || !judgment.passed || !judgment.captions_burned) return at("reviewing", false);
     return at("ready", true);
   });
-  const rank = ["failed", "render_failed", "digesting", "render_retrying", "rendering", "reviewing", "ready"];
+  const rank = ["failed", "render_failed", "digesting", "render_retrying", "rendering", "reviewing", "skill_ready", "ready"];
   return stages.reduce((best, s) => (rank.indexOf(s.stage) > rank.indexOf(best.stage) ? s : best));
 }

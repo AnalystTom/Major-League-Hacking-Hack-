@@ -1,6 +1,7 @@
 // Sign up or sign in, then straight to /app, where the user pastes links and watches their reel.
 
 import { api } from "./api.js";
+import { connectX } from "./x-connect.js";
 
 const root = document.querySelector("[data-onboard]");
 const $ = (sel) => root.querySelector(sel);
@@ -8,7 +9,7 @@ const $ = (sel) => root.querySelector(sel);
 function show() {
   $("[data-loading]").hidden = true;
   $('[data-step="account"]').hidden = false;
-  $('[data-form="signup"] input').focus({ preventScroll: true });
+
 }
 
 /** Wires a form: disables its button while the request runs and shows the server's error in place. */
@@ -40,6 +41,7 @@ $("[data-switch]").addEventListener("click", () => {
   signup.hidden = toLogin;
   $('[data-form="login"]').hidden = !toLogin;
   $("[data-account-title]").textContent = toLogin ? "Welcome back" : "Create your account";
+  if ($('[data-step="account"]').dataset.xUnavailable === "true") $("#start-title").textContent = $("[data-account-title]").textContent;
   $("[data-switch-text]").textContent = toLogin ? "New to Resurface?" : "Already have an account?";
   $("[data-switch]").textContent = toLogin ? "Create an account" : "Sign in";
   $(`[data-form="${toLogin ? "login" : "signup"}"] input[type=email]`).focus();
@@ -55,5 +57,10 @@ $("[data-switch]").addEventListener("click", () => {
     return;
   }
   show();
+  await connectX($("[data-x-connect]"), { onReady: (state) => {
+    $("[data-email-fallback]").open = !state.available || location.hash === "#signin";
+    $('[data-step="account"]').dataset.xUnavailable = String(!state.available);
+    $("#start-title").textContent = state.available ? "Bring your bookmarks back" : "Create your account";
+  } });
   if (location.hash === "#signin") $("[data-switch]").click();
 })();

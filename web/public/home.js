@@ -3,6 +3,7 @@
 // status popover, more videos come in through the Add videos sheet, and Skills open in a sheet.
 
 import { api } from "./api.js";
+import { connectX } from "./x-connect.js";
 import { createReel } from "./reel.js";
 import { createSkills } from "./skills.js";
 import { FAILED_STAGES, followImports, PROCESSOR, renderUnits } from "./units.js";
@@ -58,14 +59,15 @@ function render(units, items) {
 
   const waiting = units.some((u) => !u.settled);
   const limited = !waiting && units.some((u) => u.stage === "limited");
-  const title = units.length === 0 ? "Paste your first links" : waiting ? "Reading your links" : limited ? "Your links are in the queue" : "Nothing from these links yet";
+  const skillsReady = units.some(u => u.stage === "skill_ready");
+  const title = units.length === 0 ? "Paste your first links" : waiting ? "Reading your links" : limited ? "Your links are in the queue" : skillsReady ? "Your skills are ready" : "Nothing from these links yet";
   const lede = units.length === 0
     ? "Each YouTube video, X post or Substack post becomes a skill your coding agent can read, from the part worth keeping."
     : waiting
       ? "Your first skill shows up here as soon as it's ready. You can leave; processing carries on."
       : limited
         ? "Resurface processes a limited number of links each day. These start on their own when there's room; you can leave."
-        : "Each link below says what happened. Try other videos.";
+        : skillsReady ? "Open Skills above to copy or download what you want to use." : "Each link below says what happened. Try other links.";
   $("[data-first-title]").textContent = title;
   $("[data-first-lede]").textContent = lede;
   const list = $("[data-first-units]");
@@ -183,7 +185,7 @@ $("[data-signout]").addEventListener("click", async () => {
   if (me.imports === 0) {
     render([], []);
     reveal();
-    form.querySelector("textarea").focus({ preventScroll: true });
+    if (form.querySelector("[data-paste-fallback]").open) form.querySelector("textarea").focus({ preventScroll: true });
   }
   // A failed check is shown wherever the user is looking: the loading line before the page appears, the reel's
   // frame for a new account (the status chip only exists once there are links), else the status list.
@@ -206,5 +208,10 @@ $("[data-signout]").addEventListener("click", async () => {
     onItems: (i) => { items = i; render(units, items); reveal(); clearError(); },
     onSkills: showSkills,
     onError: (err) => (err.status === 401 ? location.assign("/start") : showError(err)),
+  });
+  connectX(form.querySelector("[data-x-connect]"), {
+    onImported: () => follower.refresh(),
+    onError: err => { $("[data-first-note]").textContent = err.message; },
+    onReady: state => { form.querySelector("[data-paste-fallback]").open = !state.available; },
   });
 })();

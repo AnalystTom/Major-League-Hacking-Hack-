@@ -1,6 +1,6 @@
 # Resurface v7 launch kit
 
-Drafts only. Nothing has been posted or deployed by this change.
+Drafts only. Nothing has been posted or deployed by this change. This branch now also implements X sign-in/bookmark import behind operator configuration and an explicit paid-read switch, plus the real-stage scan. See [X onboarding](x-bookmarks.md). Its full journey is verified only against local test fixtures; do not announce live X access until configured and verified by the owner.
 
 ## Claims as of 8 November 2026
 
