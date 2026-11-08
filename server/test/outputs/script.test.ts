@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { SCRIPT_SYSTEM_PROMPT, settleVisual, validateScript, writeScript, reviseScript } from "../../src/outputs/render/script.js";
+import { SCRIPT_PROMPT_REVISION, SCRIPT_SYSTEM_PROMPT, settleVisual, validateScript, writeScript, reviseScript } from "../../src/outputs/render/script.js";
 import { cueCheck, groundsFor, motionSpec } from "../../src/outputs/render/motion-skill.js";
 import { assertJudged, publicationJudgment } from "../../src/outputs/render/judge.js";
 import { MemoryOutputStore } from "../../src/outputs/store.js";
@@ -26,6 +26,13 @@ test("writeScript delivers its instructions and artifact evidence to the model",
       const reference = readFileSync(new URL(`../../assets/motion-graphic-skill/${file}`, import.meta.url), "utf8");
       assert.ok(request.messages[0].content.includes(reference), `the model receives the actual vendored ${file}`);
     }
+    const contract = request.messages[0].content.split("RESURFACE STORYBOARD CONTRACT:")[1];
+    const strike = contract.split("\n").find((line: string) => line.trimStart().startsWith('"strike":'));
+    assert.match(strike, /Only when the source says the struck idea is wrong or was replaced/, "delivered prompt contract: strike needs a sourced replacement");
+    assert.match(strike, /never strike a tool, product or option the source presents as an alternative or a companion/);
+    const compare = contract.split("\n").find((line: string) => line.includes('"kind":"compare"'));
+    assert.match(compare, /For a before\/after or a this\/that the source measures/, "delivered prompt contract: compare needs a sourced replacement");
+    assert.match(compare, /Never label two tools or options as before\/after or old\/new unless the source says one replaced the other/);
     assert.deepEqual(request.messages, [
       { role: "system", content: SCRIPT_SYSTEM_PROMPT },
       { role: "user", content: JSON.stringify({ artifact: {
