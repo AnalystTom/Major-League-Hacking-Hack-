@@ -26,6 +26,13 @@ test("writeScript delivers its instructions and artifact evidence to the model",
       const reference = readFileSync(new URL(`../../assets/motion-graphic-skill/${file}`, import.meta.url), "utf8");
       assert.ok(request.messages[0].content.includes(reference), `the model receives the actual vendored ${file}`);
     }
+    const contract = request.messages[0].content.split("RESURFACE STORYBOARD CONTRACT:")[1];
+    const strike = contract.split("\n").find((line: string) => line.trimStart().startsWith('"strike":'));
+    assert.match(strike, /Only when the source says the struck idea is wrong or was replaced/, "delivered prompt contract: strike needs a sourced replacement");
+    assert.match(strike, /never strike a tool, product or option the source presents as an alternative or a companion/);
+    const compare = contract.split("\n").find((line: string) => line.includes('"kind":"compare"'));
+    assert.match(compare, /For a before\/after or a this\/that the source measures/, "delivered prompt contract: compare needs a sourced replacement");
+    assert.match(compare, /Never label two tools or options as before\/after or old\/new unless the source says one replaced the other/);
     assert.deepEqual(request.messages, [
       { role: "system", content: SCRIPT_SYSTEM_PROMPT },
       { role: "user", content: JSON.stringify({ artifact: {
@@ -38,17 +45,6 @@ test("writeScript delivers its instructions and artifact evidence to the model",
   const scenes = await writeScript(a, { apiKey: "test", fetchImpl });
   assert.equal(calls, 1);
   assert.deepEqual(scenes.map(s => [s.narration_text, s.source_ids]), raw.scenes.map(s => [s.narration_text, s.source_ids]));
-});
-
-test("storyboard prompt distinguishes sourced replacements from alternatives and companions", () => {
-  assert.equal(SCRIPT_PROMPT_REVISION, "script-v7-no-implied-replacement");
-  const contract = SCRIPT_SYSTEM_PROMPT.split("RESURFACE STORYBOARD CONTRACT:")[1];
-  const strike = contract.split("\n").find(line => line.trimStart().startsWith('"strike":'))!;
-  assert.ok(strike.includes("Only when the source says the struck idea is wrong or was replaced"));
-  assert.ok(strike.includes("never strike a tool, product or option the source presents as an alternative or a companion"));
-  const compare = contract.split("\n").find(line => line.includes('"kind":"compare"'))!;
-  assert.ok(compare.includes("For a before/after or a this/that the source measures"));
-  assert.ok(compare.includes("Never label two tools or options as before/after or old/new unless the source says one replaced the other"));
 });
 
 test("script effort can be overridden without changing other OpenAI calls", async () => {
