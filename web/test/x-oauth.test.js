@@ -3,24 +3,26 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 import app from '../src/index.js';
+import { X_PREPAID_CREDIT_CAP_USD } from '../src/x-oauth.js';
+assert.equal(X_PREPAID_CREDIT_CAP_USD,20);
 
 const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/x/${name}.json`, import.meta.url), 'utf8'));
 function setup() {
   const db = new DatabaseSync(':memory:');
   db.exec('PRAGMA foreign_keys=ON');
-  for (const file of ['0002_application.sql','0003_video_duration.sql','0005_x_oauth.sql']) db.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url),'utf8'));
+  for (const file of ['0002_application.sql','0003_video_duration.sql','0005_x_oauth.sql','0006_x_read_budget.sql']) db.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url),'utf8'));
   const calls = [];
   const env = { X_CLIENT_ID:'fixture-client',X_CLIENT_SECRET:'fixture-secret',X_CALLBACK_URL:'http://localhost/api/auth/x/callback',X_READS_ENABLED:'true',
     DB:{prepare(q){return {bind(...p){return {async all(){return {results:db.prepare(q).all(...p)}}}}}}},
     X_PROVIDER:{async fetch(input, options){
       const url = new URL(input); calls.push({url,options});
-      if (url.pathname.endsWith('/token')) return Response.json({access_token:'fixture-user-token',expires_in:7200,scope:'tweet.read users.read bookmark.read'});
+      if (url.pathname.endsWith('/token')) return Response.json({access_token:'fixture-user-token',expires_in:7200,refresh_token:'fixture-refresh-token',scope:'tweet.read users.read bookmark.read offline.access'});
       if (url.pathname==='/2/users/me') return Response.json({data:{id:'123456789',username:'fixture_user',name:'Fixture User'}});
       if (url.pathname.endsWith('/revoke')) return Response.json({revoked:true});
       if (url.pathname.endsWith('/bookmarks')) return Response.json(fixture(url.searchParams.has('pagination_token')?'bookmarks-page-2':'bookmarks'));
       throw new Error('Unexpected provider call');
     }} };
-  const call = (path, cookie='', method='GET') => app.fetch(new Request(`http://localhost${path}`,{method,headers:{cookie,...(method==='POST'?{'content-type':'application/json'}:{})},...(method==='POST'?{body:'{}'}:{})}),env,{});
+  const call = (path, cookie='', method='GET', body={}) => app.fetch(new Request(`http://localhost${path}`,{method,headers:{cookie,...(method==='POST'?{'content-type':'application/json'}:{})},...(method==='POST'?{body:JSON.stringify(body)}:{})}),env,{});
   async function begin(cookie='') {
     const response = await call('/api/auth/x/start',cookie);
     const auth = new URL(response.headers.get('location'));
@@ -38,7 +40,7 @@ test('X sign-in uses PKCE, rejects another browser, consumes state once, imports
     assert.equal(flow.auth.origin,'https://x.com');
     assert.equal(flow.auth.searchParams.get('code_challenge_method'),'S256');
     assert.ok(flow.auth.searchParams.get('code_challenge').length>=43);
-    assert.equal(flow.auth.searchParams.get('scope'),'tweet.read users.read bookmark.read');
+    assert.equal(flow.auth.searchParams.get('scope'),'tweet.read users.read bookmark.read offline.access');
     assert.match(flow.response.headers.get('set-cookie'),/HttpOnly; SameSite=Lax/);
     const callback=`/api/auth/x/callback?state=${flow.auth.searchParams.get('state')}&code=fixture-code`;
     assert.equal((await t.call(callback,'rs_x_nonce=wrong-browser')).headers.get('location'),'/start?x=invalid');
@@ -131,4 +133,135 @@ test('empty bookmarks finish with no invented imports; a lost import lease canno
     assert.equal((await t.call('/api/x/bookmarks',cookie,'POST')).status,409);
     assert.deepEqual((await (await t.call('/api/imports',cookie)).json()).units,[]);
   }finally{t.db.close();}
+});
+
+
+test('initial import requests at most 50, stores order boundary, and reconnect never re-reads it',async()=>{
+ const t=setup();try {
+  const signed=await t.finish(await t.begin());const cookie=signed.headers.get('set-cookie').match(/rs_session=[^;, ]+/)[0];
+  const pages=[];
+  t.env.X_PROVIDER.fetch=async(input)=>{
+   const url=new URL(input);pages.push(url);
+   const n=Number(url.searchParams.get('max_results'));
+   const data=Array.from({length:n},(_,i)=>({id:String(9000-i)}));
+   return Response.json({data,meta:{result_count:n,next_token:'older'}});
+  };
+  const first=await(await t.call('/api/x/bookmarks',cookie,'POST')).json();
+  assert.equal(first.complete,true);assert.equal(first.read,50);assert.equal(first.capped,true);
+  assert.equal(pages[0].searchParams.get('max_results'),'50');
+  assert.equal(t.db.prepare('SELECT last_seen_id FROM x_connections').get().last_seen_id,'9000');
+  await t.call('/api/x/bookmarks',cookie,'POST');assert.equal(pages.length,1);
+  t.env.X_PROVIDER.fetch=async(input)=>{
+   const url=new URL(input);if(url.pathname.endsWith('/token'))return Response.json({access_token:'new-token',refresh_token:'new-refresh',expires_in:7200,scope:'tweet.read users.read bookmark.read offline.access'});
+   if(url.pathname.endsWith('/me'))return Response.json({data:{id:'123456789',username:'fixture_user'}});
+   throw Error('must not read stored bookmarks on reconnect');
+  };
+  await t.call('/api/x/disconnect',cookie,'POST');await t.finish(await t.begin());
+  assert.equal(t.db.prepare('SELECT initial_complete FROM x_connections').get().initial_complete,1);
+  assert.equal((await(await t.call('/api/x/bookmarks',cookie,'POST')).json()).complete,true);
+ }finally{t.db.close();}
+});
+
+test('refresh uses one-post pages, stops at first known in bookmark order, and never reprocesses it',async()=>{
+ const t=setup();try {
+  const signed=await t.finish(await t.begin());const cookie=signed.headers.get('set-cookie').match(/rs_session=[^;, ]+/)[0];
+  await t.call('/api/x/bookmarks',cookie,'POST');await t.call('/api/x/bookmarks',cookie,'POST');
+  const seen=t.db.prepare('SELECT last_seen_id FROM x_connections').get().last_seen_id;
+  const requests=[],processed=[];t.env.PROCESSOR_URL='https://fixture/api/ingest/process';
+  t.env.PROCESSOR={async fetch(req,opts){processed.push(JSON.parse(opts.body).unit_ids);return Response.json({accepted:true});}};
+  // An old Post can be newly bookmarked. Its numeric ID must not exclude it.
+  t.env.X_PROVIDER.fetch=async(input)=>{
+   const url=new URL(input);requests.push(url);
+   const known=url.searchParams.has('pagination_token');
+   return Response.json({data:[{id:known?seen:'42'}],meta:{result_count:1,next_token:known?'must-not-read':'boundary'}});
+  };
+  const first=await(await t.call('/api/x/bookmarks',cookie,'POST',{refresh:true})).json();
+  assert.equal(first.complete,false);assert.equal(first.units.length,1);
+  const boundary=await(await t.call('/api/x/bookmarks',cookie,'POST')).json();
+  assert.equal(boundary.complete,true);assert.equal(boundary.units.length,0);
+  assert.equal(requests.length,2);assert.ok(requests.every(u=>u.searchParams.get('max_results')==='1'));
+  assert.equal(t.db.prepare('SELECT last_seen_id FROM x_connections').get().last_seen_id,'42');
+  assert.equal(processed.flat().length,1);
+  await t.call('/api/x/bookmarks',cookie,'POST');assert.equal(requests.length,2,'ordinary retry after completion does not refetch');
+ }finally{t.db.close();}
+});
+
+test('daily budgets reserve before reads, count failures, isolate users and reset at UTC day',async()=>{
+ const t=setup();try {
+  const signed=await t.finish(await t.begin());const cookie=signed.headers.get('set-cookie').match(/rs_session=[^;, ]+/)[0];
+  t.env.X_USER_DAILY_READ_REQUEST_LIMIT='1';
+  await t.call('/api/x/bookmarks',cookie,'POST');
+  const before=t.calls.length;
+  assert.equal((await t.call('/api/x/bookmarks',cookie,'POST')).status,429);assert.equal(t.calls.length,before);
+  t.db.exec("UPDATE x_read_requests SET day='2000-01-01'");
+  assert.equal((await t.call('/api/x/bookmarks',cookie,'POST')).status,200);
+  t.env.X_DAILY_READ_REQUEST_LIMIT='1';
+  const noCalls=t.calls.length;
+  assert.equal((await t.finish(await t.begin())).headers.get('location'),'/start?x=budget');assert.equal(t.calls.length,noCalls,'global budget also blocks identity lookup and token exchange');
+  t.env.X_DAILY_READ_REQUEST_LIMIT='invalid';
+  assert.equal((await t.call('/api/x/bookmarks',cookie,'POST',{refresh:true})).status,429);
+ }finally{t.db.close();}
+});
+
+
+test('remaining initial-page size cannot exceed 50 total; reconnect keeps an unfinished cursor',async()=>{
+ const t=setup();try {
+  const signed=await t.finish(await t.begin());const cookie=signed.headers.get('set-cookie').match(/rs_session=[^;, ]+/)[0];
+  const calls=[];
+  t.env.X_PROVIDER.fetch=async(input)=>{
+   const url=new URL(input);calls.push(url);
+   const second=url.searchParams.has('pagination_token');
+   assert.equal(url.searchParams.get('max_results'),second?'1':'50');
+   const data=Array.from({length:second?1:49},(_,i)=>({id:String((second?800:900)-i)}));
+   return Response.json({data,meta:{result_count:data.length,next_token:second?'older':'page-2'}});
+  };
+  assert.equal((await(await t.call('/api/x/bookmarks',cookie,'POST')).json()).complete,false);
+  const result=await(await t.call('/api/x/bookmarks',cookie,'POST')).json();
+  assert.equal(result.complete,true);assert.equal(result.read,50);assert.equal(calls.length,2);
+  await t.call('/api/x/bookmarks',cookie,'POST');assert.equal(calls.length,2);
+ }finally{t.db.close();}
+});
+
+test('expired access token renews server-side without losing the saved bookmark boundary',async()=>{
+ const t=setup();try {
+  const signed=await t.finish(await t.begin());const cookie=signed.headers.get('set-cookie').match(/rs_session=[^;, ]+/)[0];
+  await t.call('/api/x/bookmarks',cookie,'POST');await t.call('/api/x/bookmarks',cookie,'POST');
+  const boundary=t.db.prepare('SELECT last_seen_id,refresh_token FROM x_connections').get();assert.ok(!boundary.refresh_token.includes('fixture-refresh-token'));
+  t.db.exec('UPDATE x_connections SET expires_at=0');
+  const before=t.calls.length;
+  t.env.X_PROVIDER.fetch=async(input,options)=>{
+   const url=new URL(input);t.calls.push({url,options});
+   if(url.pathname.endsWith('/token')) {
+    const body=new URLSearchParams(options.body);assert.equal(body.get('grant_type'),'refresh_token');assert.equal(body.get('refresh_token'),'fixture-refresh-token');
+    return Response.json({access_token:'renewed-private-token',refresh_token:'rotated-private-refresh',expires_in:7200});
+   }
+   assert.equal(options.headers.authorization,'Bearer renewed-private-token');
+   return Response.json({data:[{id:boundary.last_seen_id}],meta:{result_count:1,next_token:'no-read'}});
+  };
+  assert.equal((await(await t.call('/api/x/bookmarks',cookie,'POST',{refresh:true})).json()).complete,true);
+  assert.equal(t.calls.length-before,2);
+  const after=t.db.prepare('SELECT last_seen_id,refresh_token FROM x_connections').get();assert.equal(after.last_seen_id,boundary.last_seen_id);assert.ok(!after.refresh_token.includes('rotated-private-refresh'));
+ }finally{t.db.close();}
+});
+
+
+test('revoked refresh tokens require reconnect; disconnect revokes both tokens and retains seen history',async()=>{
+ const t=setup();try {
+  const signed=await t.finish(await t.begin());const cookie=signed.headers.get('set-cookie').match(/rs_session=[^;, ]+/)[0];
+  await t.call('/api/x/bookmarks',cookie,'POST');await t.call('/api/x/bookmarks',cookie,'POST');
+  t.db.exec('UPDATE x_connections SET expires_at=0');
+  const original=t.env.X_PROVIDER.fetch;
+  t.env.X_PROVIDER.fetch=async()=>new Response('',{status:401});
+  assert.equal((await t.call('/api/x/bookmarks',cookie,'POST',{refresh:true})).status,409);
+  assert.equal((await(await t.call('/api/x',cookie)).json()).expired,true);
+  t.env.X_PROVIDER.fetch=original;
+  await t.finish(await t.begin());
+  const count=t.db.prepare('SELECT count(*) AS n FROM x_seen_bookmarks').get().n;
+  const before=t.calls.length;
+  await t.call('/api/x/disconnect',cookie,'POST');
+  const revokes=t.calls.slice(before).filter(c=>c.url.pathname.endsWith('/revoke'));
+  assert.deepEqual(revokes.map(c=>new URLSearchParams(c.options.body).get('token_type_hint')),['access_token','refresh_token']);
+  assert.equal(t.db.prepare('SELECT refresh_token FROM x_connections').get().refresh_token,null);
+  assert.equal(t.db.prepare('SELECT count(*) AS n FROM x_seen_bookmarks').get().n,count);
+ }finally{t.db.close();}
 });

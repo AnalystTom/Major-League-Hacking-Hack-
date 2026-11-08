@@ -37,13 +37,18 @@ export default {async fetch(request,env,ctx) {
   }
   if(url.pathname==='/2/oauth2/token') {
     const body=new URLSearchParams(await request.text());
+    if(body.get('grant_type')==='refresh_token') return json({access_token:'fixture-user-token',refresh_token:'fixture-refresh-token',expires_in:7200});
     const challenge=encode(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(body.get('code_verifier'))));
     const record=await env.DB.prepare('DELETE FROM fixture_codes WHERE code=? RETURNING challenge').bind(body.get('code')).first();
     if(!record||record.challenge!==challenge) return new Response('Invalid fixture PKCE',{status:400});
-    return json({access_token:'fixture-user-token',expires_in:7200,scope:'tweet.read users.read bookmark.read'});
+    return json({access_token:'fixture-user-token',expires_in:7200,refresh_token:'fixture-refresh-token',scope:'tweet.read users.read bookmark.read offline.access'});
   }
   if(url.pathname==='/2/users/me') return json({data:{id:'123456789',username:'fixture_user',name:'Fixture User'}});
-  if(url.pathname==='/2/users/123456789/bookmarks') return json(url.searchParams.has('pagination_token')?second:first);
+  if(url.pathname==='/2/users/123456789/bookmarks') {
+    const page=url.searchParams.has('pagination_token')?second:first;
+    if(url.searchParams.get('max_results')==='1') return json({data:page.data.slice(0,1),meta:{result_count:1,next_token:'fixture-page-2'}});
+    return json(page);
+  }
   if(url.pathname==='/2/oauth2/revoke') return json({revoked:true});
   if(url.pathname==='/api/ingest/process') {
     const {unit_ids}=await request.json();ctx.waitUntil(process(env,unit_ids));return json({accepted:true});
