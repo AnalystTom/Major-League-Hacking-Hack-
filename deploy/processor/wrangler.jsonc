@@ -38,7 +38,10 @@
     // Hard cap on provider spend across all users, at ~$0.12 a short. Raised to 100/400 (about $48 a month at the cap)
     // for the demo only: put it back to 10/40 afterwards.
     "DAILY_VIDEO_LIMIT": "100",
-    "MONTHLY_VIDEO_LIMIT": "400"
+    "MONTHLY_VIDEO_LIMIT": "400",
+    // Shorts paused 2026-11-07: the quality judge rejected all 97 shorts after #50 (~$0.45 each). Skills still run.
+    // Set to "on" once the judge passes a test batch.
+    "SHORTS": "off"
   },
   // Secrets, set once with `npx wrangler secret put <NAME>`: GEMINI_API_KEY, OPENAI_API_KEY, TWITTERAPI_IO_KEY (X posts), INGEST_TOKEN
   // (checked here before waking the container; the web Worker's PROCESSOR_TOKEN must equal it).

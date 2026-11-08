@@ -4,7 +4,7 @@ import { serve } from "@hono/node-server";
 import { databaseFromEnv } from "./db.js";
 import type { StoredArtifact } from "./ingest/types.js";
 import { createApp, parseOrigins } from "./app.js";
-import { setUsageSink } from "./usage.js";
+import { saveUsage, setUsageSink } from "./usage.js";
 import { limitsFromEnv } from "./ingest/limits.js";
 import { createIngestApp } from "./ingest/api.js";
 import { startSweep } from "./ingest/processor.js";
@@ -14,7 +14,12 @@ import { produceOutputs, startOutputSweep, toReadyArtifact } from "./outputs/run
 import { MemoryOutputStore, D1OutputStore } from "./outputs/store.js";
 
 const app = createApp({ webOrigins: parseOrigins(process.env.WEB_ORIGINS), healthToken: process.env.INGEST_TOKEN });
-setUsageSink((u) => console.log(`[usage] ${JSON.stringify(u)}`));
+const usageDb = databaseFromEnv();
+setUsageSink((u) => {
+  console.log(`[usage] ${JSON.stringify(u)}`);
+  // Best effort: a lost usage row must never fail the call it describes.
+  if (usageDb) saveUsage(usageDb, u).catch((e) => console.log(`[usage] not saved: ${(e as Error).message}`));
+});
 
 // Ingestion (workflow 1) runs on Node only: it needs ffmpeg and requests that outlive a Worker's limits.
 // It spends provider keys, so it is mounted only when GEMINI_API_KEY is set, and then INGEST_TOKEN is required:
@@ -51,6 +56,8 @@ if (process.env.GEMINI_API_KEY) {
     ttsModel: process.env.GEMINI_TTS_MODEL,
     ttsVoice: process.env.GEMINI_TTS_VOICE,
     media: mediaFromEnv(),
+    // SHORTS=off pauses short rendering (skills still run), e.g. while the quality judge rejects everything.
+    shorts: process.env.SHORTS !== "off",
     log: (m: string) => console.log(`[outputs] ${m}`),
   };
   const processor = { ...options, onArtifacts: (a: StoredArtifact[]) => produceOutputs(a.map(toReadyArtifact), outputs) };

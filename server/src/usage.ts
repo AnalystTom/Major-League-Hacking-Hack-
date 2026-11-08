@@ -1,5 +1,7 @@
 // Provider token usage, one record per successful call, so a run's provider cost can be added up. Library code
-// records; the entry point decides where records go (src/index.ts logs them as `[usage] {json}` lines).
+// records; the entry point decides where records go (src/index.ts logs them as `[usage] {json}` lines and, with D1, saves them to usage_events).
+
+import type { Database } from "./db.js";
 
 export interface Usage {
   step: "extract" | "digest" | "skill" | "script" | "tts" | "handoff" | "judge";
@@ -14,6 +16,11 @@ export interface Usage {
 }
 
 let sink: (u: Usage) => void = () => {};
+
+/** Stores one usage record in D1's usage_events, so cost per processed item can be measured from production. */
+export const saveUsage = (db: Database, u: Usage) => db.query(
+  "INSERT INTO usage_events(step,provider,model,input_tokens,output_tokens,reasoning_tokens,ref) VALUES(?1,?2,?3,?4,?5,?6,?7)",
+  [u.step, u.provider, u.model, u.input_tokens, u.output_tokens, u.reasoning_tokens, u.ref]);
 
 export function setUsageSink(fn: (u: Usage) => void) { sink = fn; }
 
