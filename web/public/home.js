@@ -58,13 +58,13 @@ function render(units, items) {
 
   const waiting = units.some((u) => !u.settled);
   const limited = !waiting && units.some((u) => u.stage === "limited");
-  const title = units.length === 0 ? "Paste your first links" : waiting ? "Making your shorts" : limited ? "Your links are in the queue" : "No shorts from these links yet";
+  const title = units.length === 0 ? "Paste your first links" : waiting ? "Reading your links" : limited ? "Your links are in the queue" : "Nothing from these links yet";
   const lede = units.length === 0
-    ? "Each YouTube video, X post or Substack post becomes a short, narrated clip of the part worth keeping."
+    ? "Each YouTube video, X post or Substack post becomes a skill your coding agent can read, from the part worth keeping."
     : waiting
-      ? "Your first short starts playing here as soon as it's ready. You can leave; processing carries on."
+      ? "Your first skill shows up here as soon as it's ready. You can leave; processing carries on."
       : limited
-        ? "Resurface makes a limited number of shorts each day. These start on their own when there's room; you can leave."
+        ? "Resurface processes a limited number of links each day. These start on their own when there's room; you can leave."
         : "Each link below says what happened. Try other videos.";
   $("[data-first-title]").textContent = title;
   $("[data-first-lede]").textContent = lede;
