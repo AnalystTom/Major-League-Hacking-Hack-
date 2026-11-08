@@ -25,7 +25,7 @@ Built at AI Engineer NYC 2026.
 
 ## Supported sources
 
-Individual pasted X, YouTube, and Substack links. Automatic bookmark and Watch Later import, and X/Google sign-in, are not live yet.
+Individual pasted X, YouTube, and Substack links. Automatic Watch Later import and Google sign-in are not live yet. X sign-in with bookmark import is built but stays off until the operator enables it; see [X sign-in and bookmark import](docs/x-bookmarks.md).
 
 ## How it works
 
