@@ -219,8 +219,9 @@ export async function reviseScript(a: ReadyArtifact, scenes: DraftScene[], revie
     scenes: z.array(z.number().int().min(0).max(scenes.length - 1)).min(1),
     description: z.string().trim().min(1).max(500),
   })).max(21) }).parse({ fixes: known });
-  for (const fix of fixes) for (const index of fix.scenes) {
-    if (JSON.stringify(revised[index]) === JSON.stringify(scenes[index])) throw new Error("Revision logged a fix for an unchanged scene");
-  }
-  return { scenes: revised, fixes };
+  // A fix logged for a scene the revision didn't change is dropped, not trusted: publication then keeps that axis at
+  // its round-1 score, so a false log can't raise a score, and it no longer fails the whole short.
+  const made = fixes.map((fix) => ({ ...fix, scenes: fix.scenes.filter((i) => JSON.stringify(revised[i]) !== JSON.stringify(scenes[i])) }))
+    .filter((fix) => fix.scenes.length > 0);
+  return { scenes: revised, fixes: made };
 }

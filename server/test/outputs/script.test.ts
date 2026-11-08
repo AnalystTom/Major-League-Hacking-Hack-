@@ -146,26 +146,27 @@ test("the builder's cue receipt checks every move against the actual template ti
   assert.match(receipt, /impact cues: 0 PASS/);
 });
 
-test("a revision cannot log fixes for unchanged scenes", async () => {
+test("a fix logged for an unchanged scene is dropped, so it can't raise a score", async () => {
   const a = artifact(), raw = scriptReply(a), scenes = validateScript(raw, a);
-  await assert.rejects(reviseScript(a, scenes, reviewReply(), { apiKey: "test", fetchImpl: async () =>
-    Response.json({ choices: [{ message: { content: JSON.stringify({ ...raw, fixes: [{ axes: ["hook"], scenes: [0], description: "No actual change" }] }) } }] }) }), /unchanged scene/);
+  const { fixes } = await reviseScript(a, scenes, reviewReply(), { apiKey: "test", fetchImpl: async () =>
+    Response.json({ choices: [{ message: { content: JSON.stringify({ ...raw, fixes: [{ axes: ["hook"], scenes: [0], description: "No actual change" }] }) } }] }) });
+  assert.deepEqual(fixes, []);
 });
 
 test("publication enforces both reviews, defect caps and logged score improvements", () => {
   const cues = approvedJudgment().cue_checks;
   const first = reviewReply(), second = reviewReply();
-  first.axes.motion.score = 7;
+  first.axes.motion.score = 4;
   const unearned = publicationJudgment([first, second], [], cues);
   assert.equal(unearned.passed, false);
-  assert.match(unearned.review_log, /Builder adjustment: motion 8 → 7/);
+  assert.match(unearned.review_log, /Builder adjustment: motion 8 → 4/);
   assert.throws(() => assertJudged(unearned), /quality judge/);
   assert.throws(() => assertJudged(publicationJudgment([second], [], cues.slice(0, 1))), /quality judge/);
-  const capped = reviewReply();
-  capped.defects[0].result = "FAIL";
-  const rejected = publicationJudgment([second, capped], [], cues);
+  const factual = reviewReply();
+  factual.defects[9].result = "FAIL"; // D10: a name or number that differs from the facts
+  const rejected = publicationJudgment([second, factual], [], cues);
   assert.equal(rejected.passed, false);
-  assert.ok(rejected.reasons.some(reason => reason.includes("motion scored 6")));
+  assert.ok(rejected.reasons.some(reason => reason.startsWith("D10:")));
   const missing = { ...approvedJudgment(), reviews: [reviewReply(), { ...reviewReply(), defects: [] }] };
   assert.throws(() => assertJudged(missing), /quality judge/);
 });
@@ -195,7 +196,7 @@ test("a logged sound revision resolves an initial cue failure without erasing hi
   assert.deepEqual(judgment.cue_checks, [firstCue, finalCue]);
   assert.equal(judgment.reviews[0].defects[10].result, "FAIL");
   assert.match(judgment.review_log, /D11 \| FAIL/);
-  assert.equal(publicationJudgment([first, second], [], [firstCue, finalCue]).passed, false, "an unlogged score increase still cannot pass");
+  assert.match(publicationJudgment([first, second], [], [firstCue, finalCue]).review_log, /Builder adjustment: sound 8 → 6/, "an unlogged score increase is not credited");
 });
 
 test("a final cue failure withholds publication even when the reviewer misses it", async () => {
@@ -251,4 +252,25 @@ test("a revision fix with an axis outside the list keeps its known axes instead 
       { axes: ["pacing"], scenes: [0], description: "Only an unknown axis" },
     ] }) } }] }) });
   assert.deepEqual(fixes, [{ axes: ["hook"], scenes: [0], description: "Hook first" }]);
+});
+
+test("polish defects and middling art scores are notes, not rejections; facts and readability still block", () => {
+  const cues = approvedJudgment().cue_checks;
+  const polish = reviewReply();
+  polish.defects[0].result = "FAIL"; // D1 overlap during a transition
+  polish.defects[3].result = "FAIL"; // D4 dead stretch
+  polish.axes.hook.score = 6;
+  polish.scores.visuals = 3;
+  const passed = publicationJudgment([polish, polish], [], cues);
+  assert.equal(passed.passed, true, passed.reasons.join("; "));
+  assert.match(passed.review_log, /Polish note, not blocking: D1/);
+  assertJudged(passed);
+  for (const [i, id] of [[1, "D2"], [7, "D8"], [10, "D11"]] as const) {
+    const blocked = reviewReply();
+    blocked.defects[i].result = "FAIL";
+    assert.ok(publicationJudgment([blocked, blocked], [], cues).reasons.some(r => r.startsWith(`${id}:`)), id);
+  }
+  const ungrounded = reviewReply();
+  ungrounded.scores.grounding = 3;
+  assert.equal(publicationJudgment([ungrounded, ungrounded], [], cues).passed, false);
 });
