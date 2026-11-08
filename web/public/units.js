@@ -16,6 +16,9 @@ export const STAGE = {
   rendering: "Rendering the short",
   reviewing: "Checking short quality",
   ready: "Ready to watch",
+  skill_ready: "Skill ready",
+  paused: "Video generation paused",
+  video_requested: "Video requested",
   failed: "Couldn't read this source",
   render_failed: "Rendering failed",
   render_retrying: "Rendering failed, trying again",
@@ -31,29 +34,73 @@ export const PROCESSOR = {
 
 const OPENABLE = /^https:\/\/(?:www\.youtube\.com\/watch\?v=[\w-]{11}|x\.com\/i\/status\/\d{1,19}|[a-z0-9-]+\.substack\.com\/p\/[\w-]+)$/;
 
+// The scan marks the reported phase, never elapsed time or estimated completion.
+const PHASE = {
+  queued: 0, fetching: 0, digesting: 1,
+  rendering: 2, reviewing: 2, render_retrying: 2, video_requested: 2,
+};
+const MOVING = new Set(["fetching", "digesting", "rendering", "reviewing", "render_retrying"]);
+
+export function unitScanState(unit) {
+  return {
+    label: STAGE[unit.stage] ?? "Waiting for a status update",
+    phase: PHASE[unit.stage] ?? null,
+    moving: MOVING.has(unit.stage) && !unit.settled,
+  };
+}
+
 export function renderUnits(list, units) {
-  list.replaceChildren(
-    ...units.map((u) => {
-      const li = document.createElement("li");
-      li.dataset.stage = u.stage;
-      const name = document.createElement("a");
-      if (OPENABLE.test(u.source_url)) name.href = u.source_url;
-      name.target = "_blank";
-      name.rel = "noopener noreferrer";
-      name.textContent = u.title || u.source_url.replace(/^https:\/\/(?:www\.)?/, "");
-      const stage = document.createElement("span");
-      stage.className = "unit-stage";
-      stage.textContent = STAGE[u.stage] ?? u.stage;
-      li.append(name, stage);
-      if (u.error || FAILED_STAGES.has(u.stage)) {
-        const why = document.createElement("p");
-        why.className = "unit-error";
-        why.textContent = u.error || "Reason unknown.";
-        li.append(why);
+  // Keep rows across polls so focus and the scan aren't restarted by an unchanged response.
+  const existing = new Map(Array.from(list.children, (li) => [li.dataset.unit, li]));
+  const rows = units.map((u) => {
+    const state = unitScanState(u);
+    const key = u.id || u.source_url;
+    let li = existing.get(key);
+    if (!li) {
+      li = document.createElement("li");
+      li.dataset.unit = key;
+    }
+    const changed = li.dataset.stage !== u.stage;
+    li.dataset.stage = u.stage;
+    li.dataset.moving = String(state.moving);
+    const name = li.querySelector("a") || document.createElement("a");
+    if (OPENABLE.test(u.source_url)) name.href = u.source_url;
+    else name.removeAttribute("href");
+    name.target = "_blank";
+    name.rel = "noopener noreferrer";
+    name.textContent = u.title || u.source_url.replace(/^https:\/\/(?:www\.)?/, "");
+    const stage = li.querySelector(".unit-stage") || document.createElement("span");
+    stage.className = "unit-stage";
+    stage.setAttribute("role", "status");
+    const label = state.label;
+    if (stage.textContent !== label) stage.textContent = label;
+    if (!name.parentElement) li.append(name, stage);
+    if (changed) {
+      li.querySelector(".unit-scan")?.remove();
+      const scan = document.createElement("div");
+      scan.className = "unit-scan";
+      scan.setAttribute("aria-hidden", "true");
+      for (const [index, label] of ["Source", "Digest", "Output"].entries()) {
+        const step = document.createElement("span");
+        step.textContent = label;
+        step.dataset.current = String(state.phase === index);
+        scan.append(step);
       }
-      return li;
-    })
-  );
+      li.append(scan);
+    }
+    li.querySelector(".unit-error")?.remove();
+    if (u.error || FAILED_STAGES.has(u.stage)) {
+      const why = document.createElement("p");
+      why.className = "unit-error";
+      why.textContent = u.error || "Reason unknown.";
+      li.append(why);
+    }
+    return li;
+  });
+  for (const li of existing.values()) if (!rows.includes(li)) li.remove();
+  rows.forEach((li, index) => {
+    if (list.children[index] !== li) list.insertBefore(li, list.children[index] || null);
+  });
 }
 
 
