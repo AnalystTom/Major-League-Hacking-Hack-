@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Your shorts · Resurface</title>
+  <title>Your skills · Resurface</title>
   <meta name="robots" content="noindex">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <script>
@@ -34,7 +34,7 @@
         </div>
       </details>
       <button type="button" class="topbar-pill" data-open-skills="skills" hidden>Skills <b data-count="skills"></b></button>
-      <button type="button" class="btn btn-small add-open" data-open-add aria-label="Add videos" hidden><span aria-hidden="true">+</span><span class="add-label">Add videos</span></button>
+      <button type="button" class="btn btn-small add-open" data-open-add aria-label="Add links" hidden><span aria-hidden="true">+</span><span class="add-label">Add links</span></button>
       <a class="topbar-pill" href="/available">View available reels &amp; Skills</a>
       <button type="button" class="btn btn-small btn-quiet-top" data-signout>Sign out</button>
     </div>
@@ -44,7 +44,7 @@
     <p class="onboard-loading" data-loading>Loading your feed…</p>
 
     <div class="stage-frame" data-home-body hidden>
-      <h1 class="visually-hidden">Your shorts</h1>
+      <h1 class="visually-hidden">Your skills</h1>
       <div class="reel" data-reel hidden>
         <div class="reel-track" data-reel-track tabindex="0" aria-label="Your shorts. Use the up and down arrows to move, M for sound."></div>
         <p class="reel-counter" data-reel-counter aria-live="polite"></p>
@@ -54,7 +54,7 @@
            then what's happening to the links. -->
       <section class="frame-card" data-first hidden aria-labelledby="first-title">
         <h2 id="first-title" data-first-title>Paste your first links</h2>
-        <p class="frame-lede" data-first-lede>Each YouTube video, X post or Substack post becomes a short, narrated clip of the part worth keeping.</p>
+        <p class="frame-lede" data-first-lede>Each YouTube video, X post or Substack post becomes a skill your coding agent can read, from the part worth keeping.</p>
         <div data-first-form-slot></div>
         <p class="form-status" role="status" aria-live="polite" data-first-note></p>
         <ol class="units frame-units" data-first-units hidden></ol>
@@ -63,7 +63,7 @@
   </main>
 
   <dialog class="add-sheet" data-add-sheet aria-labelledby="add-title">
-    <h2 id="add-title">Add videos</h2>
+    <h2 id="add-title">Add links</h2>
     <div data-sheet-form-slot></div>
     <button type="button" class="linkish" data-close-add>Close</button>
   </dialog>
@@ -71,7 +71,7 @@
   <!-- Skills open over the reel. A short's "View skill" link opens this at its skill card. -->
   <dialog class="skills-sheet" data-skills-sheet aria-labelledby="skills-title">
     <div class="skills-sheet-head">
-      <button type="button" class="linkish" data-close-skills>Back to the reel</button>
+      <button type="button" class="linkish" data-close-skills>Back to your sources</button>
     </div>
     <section class="journey-section" aria-labelledby="skills-title" data-skills-section>
       <div class="journey-section-head">
@@ -93,10 +93,14 @@
   <!-- One paste form, moved between the first-run card and the Add videos sheet. -->
   <template data-add-template>
     <form class="add-links" data-add novalidate>
+      <div class="x-connect" data-x-connect></div>
+      <details data-paste-fallback>
+      <summary>Paste links instead</summary>
       <label for="add-links">YouTube, X post or Substack links, one per line (up to 20 videos, 100 X posts and 20 Substack posts)</label>
       <textarea id="add-links" name="links" rows="4" spellcheck="false" autocomplete="off"
         placeholder="Paste your saved links here"></textarea>
-      <button class="btn" type="submit">Make shorts</button>
+      <button class="btn" type="submit">Add links</button>
+      </details>
       <p class="form-status" role="status" aria-live="polite"></p>
     </form>
   </template>
