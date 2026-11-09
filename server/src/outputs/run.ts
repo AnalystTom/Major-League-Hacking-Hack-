@@ -8,10 +8,14 @@ import type { MediaStore } from "./render/media.js";
 import { LostClaim, type Kind, type OutputStore } from "./store.js";
 import { tracked } from "../activity.js";
 import { sourceRefs, type ProviderOptions, type ReadyArtifact, type ShortJudgment } from "./types.js";
+import type { Limits } from "../ingest/limits.js";
+import { isPermanentFailure } from "./retry.js";
 import type { StoredArtifact } from "../ingest/types.js";
 
 export interface OutputOptions extends ProviderOptions {
   outputs: OutputStore;
+  /** Additional output attempts share the processing budget with imports. */
+  limits?: Limits;
   /** Where rendered files go; without one, renders fail with that reason instead of waiting forever. */
   media: MediaStore | null;
   /** false pauses short rendering: nothing is claimed, so paused shorts start when it's turned back on. */
@@ -39,7 +43,7 @@ async function produceNow(kind: Kind, a: ReadyArtifact, o: OutputOptions) {
   if (inFlight.has(key)) return;
   inFlight.add(key);
   try {
-    const claim = await o.outputs.claim(kind, a);
+    const claim = await o.outputs.claim(kind, a, o.limits);
     if (!claim) return;
     try {
       if (!o.openaiKey) throw new Error("OPENAI_API_KEY isn't configured on the processor");
@@ -55,7 +59,7 @@ async function produceNow(kind: Kind, a: ReadyArtifact, o: OutputOptions) {
     } catch (e) {
       // A worker whose claim was taken over leaves the row to the one that took it.
       const error = e as Error & { judgment?: ShortJudgment };
-      const recorded = !(e instanceof LostClaim) && (await o.outputs.fail(kind, claim, error.message, error.judgment));
+      const recorded = !(e instanceof LostClaim) && (await o.outputs.fail(kind, claim, error.message, error.judgment, isPermanentFailure(error.message)));
       recordError(`${kind} failed`, e);
       o.log?.(`${kind} ${recorded ? "failed" : "not recorded"} for artifact ${a.id} v${a.version}: ${(e as Error).message}`);
     }

@@ -379,3 +379,72 @@ test('video opt-in gates direct claims, stale retries and sweep eligibility', as
     assert.equal(await s.outputs.claim('video',a),null,'removed source access revokes eligibility');
   } finally {s.sqlite.close();}
 });
+
+for (const limits of [{daily:1,monthly:10},{daily:10,monthly:1}]) {
+  test(`output retries share the last daily/monthly slot atomically (${JSON.stringify(limits)})`,async()=>{
+    const s=await setup();
+    try {
+      const artifacts=await Promise.all([s.unit('ready'),s.unit('ready')].map(async id=>s.artifact([await id])));
+      const claims=await Promise.all(artifacts.map(a=>s.outputs.claim('skill',a,{daily:0,monthly:0})));
+      assert.ok(claims.every(Boolean),'first output attempts are covered by their digest');
+      for (const c of claims) await s.outputs.fail('skill',c!,'OpenAI HTTP 500: unavailable');
+      await s.db.query("UPDATE skill_results SET updated_at='2000-01-01'");
+      assert.equal(await s.outputs.claim('skill',artifacts[0],{daily:0,monthly:0}),null);
+      assert.deepEqual((await s.db.query('SELECT attempts FROM skill_results')).rows.map(r=>r.attempts),[1,1]);
+      const attempts=await Promise.all([
+        s.outputs.claim('skill',artifacts[0],limits),
+        s.outputs.claim('skill',artifacts[0],limits),
+        s.outputs.claim('skill',artifacts[1],limits),
+      ]);
+      assert.equal(attempts.filter(Boolean).length,1,'one worker takes the last slot');
+      const starts=(await s.db.query('SELECT kind,charged,unit_id FROM processing_starts')).rows;
+      assert.equal(starts.length,1);
+      assert.equal(starts[0].kind,'retry');
+      assert.equal(starts[0].charged,1);
+      assert.equal(starts[0].unit_id,artifacts[0].source_ids[0]);
+      const fresh=await s.artifact([await s.unit('ready')]);
+      assert.equal((await s.outputs.artifactsNeeding('skill',1))[0].id,fresh.id,'blocked retries cannot hide fresh work');
+      assert.ok(await s.outputs.claim('skill',fresh,limits),'fresh work still runs with exhausted retry budget');
+      assert.equal((await s.db.query('SELECT count(*) AS n FROM processing_starts')).rows[0].n,1);
+    } finally {s.sqlite.close();}
+  });
+}
+
+test('stale output claims and versioned refreshes are charged, and unchargeable retries fail closed',async()=>{
+  const s=await setup();
+  try {
+    const a=await s.artifact([await s.unit('ready')]);
+    const claim=(await s.outputs.claim('video',a))!;
+    await s.db.query("UPDATE video_results SET updated_at='2000-01-01'");
+    assert.equal(await s.outputs.claim('video',a,{daily:0,monthly:0}),null);
+    const takeover=(await s.outputs.claim('video',a,{daily:1,monthly:1}))!;
+    assert.ok(takeover);
+    assert.notEqual(takeover.token,claim.token);
+    assert.equal(await s.outputs.fail('video',claim,'late failure'),false);
+    await s.outputs.fail('video',takeover,'temporary failure');
+    await s.db.query("UPDATE video_results SET review_feedback='{}',updated_at='2000-01-01'");
+    assert.equal(await s.outputs.claim('video',a,{daily:1,monthly:1}),null,'refresh also requires budget');
+    assert.ok(await s.outputs.claim('video',a,{daily:2,monthly:2}));
+    assert.equal((await s.db.query("SELECT count(*) AS n FROM processing_starts WHERE kind='retry' AND charged=1")).rows[0].n,2);
+    const orphan=await s.artifact([randomUUID()]);
+    const first=(await s.outputs.claim('skill',orphan))!;
+    await s.outputs.fail('skill',first,'temporary failure');
+    await s.db.query("UPDATE skill_results SET updated_at='2000-01-01'");
+    assert.equal(await s.outputs.claim('skill',orphan,UNLIMITED),null,'no paid retry without a source to charge');
+  } finally {s.sqlite.close();}
+});
+
+test('permanent output failure settles D1 attempts while preserving full review receipts',async()=>{
+  const s=await setup();
+  try {
+    const a=await s.artifact([await s.unit('ready')]);
+    const claim=(await s.outputs.claim('video',a))!;
+    const review=approvedJudgment();
+    assert.equal(await s.outputs.fail('video',claim,'TTS HTTP 402: credits depleted',review,true),true);
+    const row=(await s.db.query('SELECT * FROM video_results')).rows[0];
+    assert.equal(row.attempts,3);
+    assert.deepEqual(JSON.parse(row.review_feedback).last_rejected_review,review);
+    await s.db.query("UPDATE video_results SET updated_at='2000-01-01'");
+    assert.equal(await s.outputs.claim('video',a),null);
+  } finally {s.sqlite.close();}
+});

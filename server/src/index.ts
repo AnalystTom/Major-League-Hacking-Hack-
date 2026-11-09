@@ -50,6 +50,7 @@ if (process.env.GEMINI_API_KEY) {
   // this host and media storage: R2_* for the bucket, or MEDIA_LOCAL_WEB_DIR for local wrangler dev.
   const outputs = {
     outputs: db ? new D1OutputStore(db) : new MemoryOutputStore(),
+    limits: options.limits,
     openaiKey: options.openaiKey,
     openaiModel: options.openaiModel,
     geminiKey: options.geminiKey,
