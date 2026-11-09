@@ -1,6 +1,6 @@
 # CI operations
 
-Every job that runs repository code uses `[self-hosted, Linux, X64, big-machine]`, including the no-checkout `CI required` aggregate. No deployments, paid
+Every job uses `[self-hosted, Linux, X64, big-machine]`, including the no-checkout `CI required` aggregate. No deployments, paid
 provider calls, credentials or production databases are used. Node 22 is pinned
 by major version to match the application. Jobs install locked dependencies with
 `npm ci`, which reuses the persistent runner's local npm cache. `setup-node` remote
@@ -15,29 +15,30 @@ nothing, and fails for a fork PR with a message that a maintainer must review th
 and re-run CI from a same-repo branch, so it never passes silently.
 
 The guards live in the workflow file, which a pull request can edit, so they are not a
-security boundary. Before the runner is used, the owner must set Settings → Actions →
-General → **Require approval for all outside collaborators** (captain-owned; not changed
-here).
+security boundary. The captain may additionally enable Settings → Actions → General →
+**Require approval for all outside collaborators** as a recommended control.
+That captain-owned setting is unchanged by this task; registration was separately
+authorized. Review outside contributions before allowing them onto the host.
 
-## Runner prerequisite
+## Registered Big-Machine runner
 
-On 9 November 2026, `GET /repos/AnalystTom/Major-League-Hacking-Hack-/actions/runners`
-returned zero runners. `GET /repos/AnalystTom/Robots/actions/runners` confirmed an
-online Linux x64 runner named `big-machine-robots`, with custom labels
-`big-machine` and `robots`. A repository runner registered for Robots cannot
-serve this repository.
+On 9 November 2026, the dedicated repository runner `big-machine-resurface` was
+registered and verified online through the repository runner API. It runs GitHub
+Actions Runner 2.338.2 as a persistent, enabled systemd service:
+`actions.runner.AnalystTom-Major-League-Hacking-Hack-.big-machine-resurface.service`.
+Its private directory is `/home/russki/actions-runner-resurface` (mode `700`).
+The verified labels are `self-hosted`, `Linux`, `X64`, `big-machine`, exactly
+matching every job in this workflow. No existing runner was changed.
 
-The owner must sign into GitHub, open this repository's **Settings → Actions →
-Runners → New self-hosted runner**, choose Linux x64, and execute GitHub's displayed
-download/configuration instructions on Big-Machine in a new dedicated runner
-directory. Give it the custom label `big-machine`, retain the default
-`self-hosted`, `Linux`, `X64` labels, and install/start its service using the
-provided service instructions. Do not reconfigure or stop the existing Robots
-runner. Use GitHub's temporary registration instructions directly; do not paste a
-registration token into chat. Verify this repository shows the new runner Online
-before expecting checks to complete. The host needs ffmpeg, ffprobe, Chromium at /usr/bin/chromium or /usr/bin/google-chrome, Docker and Chromium system libraries;
-`npx playwright install chromium` downloads the pinned browser without running
-sudo or modifying system packages in CI.
+The official Linux x64 archive was checked against its published SHA-256.
+Registration used a temporary token obtained directly from the authenticated
+GitHub CLI and retained only in process memory; no token was printed or logged.
+The host already supplies ffmpeg, ffprobe, Google Chrome and Docker. Playwright
+installs its pinned Chromium without sudo or system package changes.
+
+No runner-registration step remains for the captain. Branch protection below
+still requires captain approval; the outside-collaborator approval setting above
+is an additional recommended captain-owned control, not a registration blocker.
 
 ## Check contract
 
