@@ -226,3 +226,7 @@ node_modules/
 
 # Build output
 server/dist/
+
+# Headless CI evidence
+test-results/
+playwright-report/
