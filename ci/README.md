@@ -1,9 +1,19 @@
 # CI operations
 
-Every job uses `[self-hosted, Linux, X64, big-machine]`. No deployments, paid
+Every job that runs repository code uses `[self-hosted, Linux, X64, big-machine]`; the code-free `CI required` aggregate uses `ubuntu-latest`. No deployments, paid
 provider calls, credentials or production databases are used. Node 22 is pinned
 by major version to match the application. Jobs install locked dependencies with
 `npm ci` and cache the npm download cache rather than mutable `node_modules`.
+
+## Fork pull requests
+
+The repository is public and the runner is a private machine, so fork PRs must never
+execute on it. `Change scope` (which gates `fast` and `journey`) only runs for
+same-repository PRs, pushes, schedules and manual runs. `CI required` runs on a
+GitHub-hosted runner and executes no repository code; for a fork PR it fails with
+a message that a maintainer must review the change and re-run CI from a same-repo
+branch, so it never passes silently. Captain-owned repository setting (not changed
+here): Settings → Actions → General → **Require approval for all outside collaborators**.
 
 ## Runner prerequisite
 

@@ -22,6 +22,7 @@ env:
 jobs:
   changes:
     name: Change scope
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, Linux, X64, big-machine]
     timeout-minutes: 3
     outputs:
@@ -71,14 +72,19 @@ jobs:
     name: CI required
     needs: [changes, fast]
     if: always()
-    runs-on: [self-hosted, Linux, X64, big-machine]
+    runs-on: ubuntu-latest
     timeout-minutes: 2
     env:
+      FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
       SCOPE: ${{ needs.changes.result }}
       CODE: ${{ needs.changes.outputs.code }}
       FAST: ${{ needs.fast.result }}
     steps:
       - run: |
+          if [[ "$FORK" == true ]]; then
+            echo "::error::Fork PRs never run on the self-hosted runner. A maintainer must review it and re-run CI from a same-repo branch."
+            exit 1
+          fi
           [[ "$SCOPE" == success ]]
           [[ "$FAST" == success || ( "$CODE" == false && "$FAST" == skipped ) ]]
 
