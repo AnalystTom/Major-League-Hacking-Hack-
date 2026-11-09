@@ -48,7 +48,7 @@ export function createSkills({ skillsList, picker, skillsStatus, review = false,
     render();
     try {
       const choices = skills.filter((s) => s.status === "ready").map((s) => ({ id: s.artifact.id, version: s.artifact.version, keep: selected.get(s.id) ?? s.kept !== false }));
-      const generateVideos = !videoChoice.hidden && video.checked && choices.some((c) => c.keep);
+      const generateVideos = video.checked && choices.some((c) => c.keep);
       const result = await api("/api/skills/choices", { method: "POST", body: { choices, generateVideos } });
       skills = result.skills;
       selected.clear();
@@ -61,9 +61,8 @@ export function createSkills({ skillsList, picker, skillsStatus, review = false,
       skillsStatus.dataset.tone = "error";
     } finally { saving = false; render(); }
   } });
-  const videoChoice = el("label", { class: "skill-choice" }, video, "Request videos for selected skills");
   const actions = el("div", { class: "skill-review-actions", hidden: true },
-    videoChoice, save);
+    el("label", { class: "skill-choice" }, video, "Request videos for selected skills"), save);
   if (review) skillsList.before(actions);
   let agent = "claude-code";
   try { agent = agentOrDefault(localStorage.getItem(AGENT_KEY)); } catch {}
@@ -140,10 +139,6 @@ export function createSkills({ skillsList, picker, skillsStatus, review = false,
   }
 
   return {
-    setShortsEnabled(enabled) {
-      videoChoice.hidden = enabled === false;
-      if (videoChoice.hidden) video.checked = false;
-    },
     /** Re-renders only when something changed, so polling doesn't close an open SKILL.md or move focus. */
     update(next) {
       const same = JSON.stringify(next) === JSON.stringify(skills);

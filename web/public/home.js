@@ -175,10 +175,6 @@ $("[data-signout]").addEventListener("click", async () => {
     return;
   }
   if (!me.user) return location.assign("/start");
-  api("/api/capabilities").then(({ shorts }) => {
-    skills.setShortsEnabled(shorts);
-    if (shorts === false) $("[data-skills-hint]").textContent = "Choose the skills to keep.";
-  }).catch(() => {});
 
   // A new account sees the paste box straight away. Anyone with imports keeps the loading line until their
   // links and shorts arrive, so a slow or failed first load never looks like an empty account.

@@ -106,14 +106,11 @@ test("stubbed X onboarding, scan, pick skills, persistence and explicit video op
   expect(errors).toEqual([]);
 });
 
-test("a new account reaches the paste action without a tall blank frame, and SHORTS off hides video requests", async ({
+test("a new account reaches the paste action without a tall blank frame", async ({
   page,
 }, info) => {
   await page.route("**/api/x", (route) =>
     route.fulfill({ json: { available: false, connected: false } }),
-  );
-  await page.route("**/api/capabilities", (route) =>
-    route.fulfill({ json: { shorts: false } }),
   );
   const response = await page.request.post("/api/auth/signup", {
     data: {
@@ -154,26 +151,4 @@ test("a new account reaches the paste action without a tall blank frame, and SHO
   await page.locator('[data-add] button[type="submit"]').click();
   await expect(page.locator('[data-count="skills"]')).toHaveText("1");
   await expect(page.locator("[data-first-note]")).toHaveText("");
-  await page.locator('[data-open-skills="skills"]').click();
-  await expect(
-    page.getByRole("checkbox", { name: "Request videos for selected skills" }),
-  ).toHaveCount(0);
-  await expect(page.locator("[data-skills-hint]")).toHaveText(
-    "Choose the skills to keep.",
-  );
-  const path = info.outputPath("shorts-off-mobile.png");
-  await page.screenshot({ path, fullPage: true });
-  await info.attach("SYNTHETIC X FIXTURE — SHORTS off", {
-    path,
-    contentType: "image/png",
-  });
-  const saved = page.waitForResponse(
-    (r) =>
-      r.url().endsWith("/api/skills/choices") &&
-      r.request().method() === "POST",
-  );
-  await page
-    .getByRole("button", { name: "Keep selected", exact: true })
-    .click();
-  expect((await saved).request().postDataJSON().generateVideos).toBe(false);
 });

@@ -5,7 +5,7 @@ import { parseYouTubeLink } from "../src/youtube.js";
 import { describeUnit, parseImport, parseUnitIds } from "../src/imports.js";
 import { isMediaKey, parseRange, resolveMediaRef } from "../src/media.js";
 import { serializeItem } from "../src/feed.js";
-import { processorCapabilities, requestProcessing, requestVideoProcessing } from "../src/processor.js";
+import { requestProcessing, requestVideoProcessing } from "../src/processor.js";
 import { followImports } from "../public/units.js";
 
 const ID = "6f1c2a52-8d0e-4f3b-9a51-0c6d2e7b9a10";
@@ -309,17 +309,4 @@ test("video requests wake the output sweep without submitting imports and surviv
   assert.equal(calls,1);
   assert.equal(await requestVideoProcessing({}), 'not_configured');
   assert.equal(await requestVideoProcessing({PROCESSOR_URL:env.PROCESSOR_URL}, async()=>{throw Error('offline')}), 'unavailable');
-});
-
-test("video control follows an explicit processor switch and tolerates unknown capabilities", async () => {
-  for (const shorts of [false, true]) {
-    const env = { PROCESSOR_URL: "https://processor.example/api/ingest/process?unused=1", PROCESSOR_TOKEN: "test-token", PROCESSOR: { async fetch(url, init) {
-      assert.equal(url, "https://processor.example/capabilities");
-      assert.equal(init.headers.authorization, "Bearer test-token");
-      return Response.json({ shorts });
-    } } };
-    assert.deepEqual(await processorCapabilities(env), { shorts });
-  }
-  assert.deepEqual(await processorCapabilities({}), {});
-  assert.deepEqual(await processorCapabilities({ PROCESSOR_URL: "https://processor.example" }, async () => new Response(null, { status: 404 })), {});
 });
