@@ -1,6 +1,6 @@
 # CI operations
 
-Every job that runs repository code uses `[self-hosted, Linux, X64, big-machine]`; the code-free `CI required` aggregate uses `ubuntu-latest`. No deployments, paid
+Every job that runs repository code uses `[self-hosted, Linux, X64, big-machine]`, including the no-checkout `CI required` aggregate. No deployments, paid
 provider calls, credentials or production databases are used. Node 22 is pinned
 by major version to match the application. Jobs install locked dependencies with
 `npm ci` and cache the npm download cache rather than mutable `node_modules`.
@@ -8,12 +8,15 @@ by major version to match the application. Jobs install locked dependencies with
 ## Fork pull requests
 
 The repository is public and the runner is a private machine, so fork PRs must never
-execute on it. `Change scope` (which gates `fast` and `journey`) only runs for
-same-repository PRs, pushes, schedules and manual runs. `CI required` runs on a
-GitHub-hosted runner and executes no repository code; for a fork PR it fails with
-a message that a maintainer must review the change and re-run CI from a same-repo
-branch, so it never passes silently. Captain-owned repository setting (not changed
-here): Settings → Actions → General → **Require approval for all outside collaborators**.
+execute on it. `Change scope`, `Fast checks` and `Journey` each carry a same-repository
+guard and are skipped for fork PRs. `CI required` always runs on the runner, checks out
+nothing, and fails for a fork PR with a message that a maintainer must review the change
+and re-run CI from a same-repo branch, so it never passes silently.
+
+The guards live in the workflow file, which a pull request can edit, so they are not a
+security boundary. Before the runner is used, the owner must set Settings → Actions →
+General → **Require approval for all outside collaborators** (captain-owned; not changed
+here).
 
 ## Runner prerequisite
 

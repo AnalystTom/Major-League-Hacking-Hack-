@@ -47,7 +47,7 @@ jobs:
   fast:
     name: Fast checks
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.code == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, Linux, X64, big-machine]
     timeout-minutes: 10
     steps:
@@ -72,7 +72,7 @@ jobs:
     name: CI required
     needs: [changes, fast]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, big-machine]
     timeout-minutes: 2
     env:
       FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
@@ -91,7 +91,7 @@ jobs:
   journey:
     name: Journey and worker builds
     needs: [changes, fast]
-    if: needs.changes.outputs.code == 'true' && needs.fast.result == 'success'
+    if: needs.changes.outputs.code == 'true' && needs.fast.result == 'success' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, Linux, X64, big-machine]
     timeout-minutes: 60
     concurrency:
