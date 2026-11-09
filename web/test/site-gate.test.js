@@ -34,12 +34,26 @@ test("gate challenges every route before accessing assets, database, or provider
   }
 });
 
-test("gate is off when either secret is missing or empty", async () => {
-  for (const bindings of [{}, { SITE_GATE_USER: "owner" }, { SITE_GATE_PASSWORD: "password" },
-    { ...secrets, SITE_GATE_USER: "" }, { ...secrets, SITE_GATE_PASSWORD: "" }]) {
+test("gate is off only when both secrets are absent", async () => {
+  const env = { ASSETS: { fetch: () => new Response("asset") } };
+  assert.equal(await (await call("/app.js", env)).text(), "asset");
+  assert.equal((await call("/api/me", env)).status, 503);
+});
+
+test("half-configured or blank gate secrets refuse every route with 503", async () => {
+  for (const bindings of [{ SITE_GATE_USER: "owner" }, { SITE_GATE_PASSWORD: "password" },
+    { ...secrets, SITE_GATE_USER: "" }, { ...secrets, SITE_GATE_PASSWORD: "" },
+    { ...secrets, SITE_GATE_USER: "  " }, { ...secrets, SITE_GATE_PASSWORD: "\t" },
+    { SITE_GATE_USER: "", SITE_GATE_PASSWORD: "" }]) {
     const env = { ...bindings, ASSETS: { fetch: () => new Response("asset") } };
-    assert.equal(await (await call("/app.js", env)).text(), "asset");
-    assert.equal((await call("/api/me", env)).status, 503);
+    for (const path of paths) {
+      for (const authorization of [undefined, valid]) {
+        const response = await call(path, env, authorization);
+        assert.equal(response.status, 503, path);
+        assert.equal(response.headers.get("cache-control"), "no-store");
+        assert.equal(await response.text(), "Site gate is misconfigured.");
+      }
+    }
   }
 });
 

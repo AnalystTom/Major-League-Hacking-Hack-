@@ -7,7 +7,11 @@ export function constantTimeEqual(actual, expected) {
 }
 
 export function siteGate(request, env) {
-  if (!env.SITE_GATE_USER || !env.SITE_GATE_PASSWORD) return null;
+  const { SITE_GATE_USER: user, SITE_GATE_PASSWORD: password } = env;
+  if (user == null && password == null) return null;
+  if (!user?.trim() || !password?.trim()) {
+    return new Response("Site gate is misconfigured.", { status: 503, headers: { "cache-control": "no-store" } });
+  }
 
   const match = /^Basic\s+(\S+)$/i.exec(request.headers.get("authorization") ?? "");
   if (match) {
