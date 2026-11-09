@@ -4,32 +4,120 @@ on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name == 'schedule' && 'nightly' || 'change' }}
+  cancel-in-progress: true
+
+env:
+  CI: "true"
+  WRANGLER_SEND_METRICS: "false"
+
 jobs:
-  check:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - dir: server
-            steps: npm run typecheck && npm test
-          - dir: web
-            steps: npm test
-          - dir: deploy/processor
-            steps: npm run check
-    defaults:
-      run:
-        working-directory: ${{ matrix.dir }}
+  changes:
+    name: Change scope
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, X64, big-machine]
+    timeout-minutes: 3
+    outputs:
+      code: ${{ steps.scope.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: scope
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [[ -n "$BASE" && ! "$BASE" =~ ^0+$ ]] && ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$BASE"
+          fi
+          node ci/scope.js >> "$GITHUB_OUTPUT"
+
+  fast:
+    name: Fast checks
+    needs: changes
+    if: needs.changes.outputs.code == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: [self-hosted, Linux, X64, big-machine]
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: ${{ matrix.dir }}/package-lock.json
-      - run: npm ci
-      - run: ${{ matrix.steps }}
+      - run: npm ci && npm ci --prefix server && npm ci --prefix web && npm ci --prefix deploy/processor
+      - run: npm run format
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:fast
+      - run: npm run build --prefix server
+
+  required:
+    name: CI required
+    needs: [changes, fast]
+    if: always()
+    runs-on: [self-hosted, Linux, X64, big-machine]
+    timeout-minutes: 2
+    env:
+      FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+      SCOPE: ${{ needs.changes.result }}
+      CODE: ${{ needs.changes.outputs.code }}
+      FAST: ${{ needs.fast.result }}
+    steps:
+      - run: |
+          if [[ "$FORK" == true ]]; then
+            echo "::error::Fork PRs never run on the self-hosted runner. A maintainer must review it and re-run CI from a same-repo branch."
+            exit 1
+          fi
+          [[ "$SCOPE" == success ]]
+          [[ "$FAST" == success || ( "$CODE" == false && "$FAST" == skipped ) ]]
+
+  journey:
+    name: Journey and worker builds
+    needs: [changes, fast]
+    if: needs.changes.outputs.code == 'true' && needs.fast.result == 'success' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: [self-hosted, Linux, X64, big-machine]
+    timeout-minutes: 60
+    concurrency:
+      group: resurface-heavy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci && npm ci --prefix server && npm ci --prefix web && npm ci --prefix deploy/processor
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npx playwright install chromium
+      - name: Require render tools (never silently skip integration tests)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: |
+          ffmpeg -version
+          ffprobe -version
+          test -x /usr/bin/chromium || test -x /usr/bin/google-chrome
+      - name: Full server render integration (nightly or manual)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: npm test --prefix server
+      - run: npm run build
+      - run: npm run test:journey
+      - name: Upload synthetic-fixture UI evidence for human quality review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-x-journey-${{ github.run_id }}
+          path: test-results/
+          if-no-files-found: warn
+          retention-days: 7

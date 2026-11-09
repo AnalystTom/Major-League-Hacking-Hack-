@@ -1,0 +1,19 @@
+{
+  "name": "resurface-ci",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "format": "prettier --check .github/workflows/ci.yml .github/actionlint.yaml package.json server/package.json eslint.config.js playwright.config.js ci/*.js ci/*.md",
+    "lint": "eslint ci web/src web/public web/test deploy/processor/src deploy/processor/test-*.mjs playwright.config.js eslint.config.js",
+    "typecheck": "npm run typecheck --prefix server",
+    "test": "node --test ci/scope.test.js && npm test --prefix server && npm test --prefix web && npm test --prefix deploy/processor",
+    "build": "npm run build --prefix server && npm exec --prefix web -- wrangler deploy --config web/wrangler.jsonc --dry-run && npm run check --prefix deploy/processor",
+    "test:journey": "playwright test",
+    "test:fast": "node --test ci/scope.test.js && npm run test:fast --prefix server && npm test --prefix web && npm test --prefix deploy/processor"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "eslint": "9.39.1",
+    "prettier": "3.6.2"
+  }
+}
