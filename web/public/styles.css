@@ -675,14 +675,14 @@ a.reel-btn { text-decoration: none; }
 .app-page .reel-counter { color: var(--on-night-soft); }
 
 .frame-card {
-  --h: calc(100svh - var(--bar) - 24px - 30px);
-  width: calc(var(--h) * 9 / 16); max-width: 100%; height: var(--h); overflow-y: auto;
+  width: min(100%, 52rem); min-width: 0;
   display: flex; flex-direction: column; gap: 14px; padding: 28px 24px;
   background: var(--night-2); border-radius: 24px;
 }
-/* Centred while it fits; once ten links overflow the card, the spacers shrink to nothing and the
-   content starts at the top of the scroll area instead of being cut off above it. */
-.frame-card::before, .frame-card::after { content: ""; flex: 1 1 0; min-height: 0; }
+/* Forms and progress use document flow; only the video reel needs a portrait frame. */
+.stage:has([data-first]:not([hidden])) { height: auto; min-height: calc(100svh - var(--bar)); align-items: start; padding-block: 28px; }
+.stage-frame:has([data-first]:not([hidden])) { height: auto; align-items: start; }
+.frame-card .form-status:empty { display: none; }
 .frame-card h2 { font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 800; letter-spacing: -.025em; }
 .frame-lede { color: var(--on-night-soft); line-height: 1.5; }
 
@@ -757,8 +757,9 @@ a.reel-btn { text-decoration: none; }
   .app-page { --bar: 57px; }
   .app-page:has(.topbar-pill:not([hidden])) { --bar: 111px; }
   .stage { padding: 0; }
-  .app-page .reel, .frame-card { --h: calc(100svh - var(--bar)); width: 100vw; }
-  .app-page .reel-track, .frame-card { border-radius: 0; }
+  .app-page .reel { --h: calc(100svh - var(--bar)); width: 100vw; }
+  .stage:has([data-first]:not([hidden])) { padding: 16px; }
+  .app-page .reel-track { border-radius: 0; }
   .app-page .reel-counter { display: none; }
   /* Populated controls wrap to two rows while retaining their touch targets. */
   .app-bar .btn-small { padding: 9px 12px; }

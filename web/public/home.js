@@ -6,7 +6,7 @@ import { api } from "./api.js";
 import { connectX } from "./x-connect.js";
 import { createReel } from "./reel.js";
 import { createSkills } from "./skills.js";
-import { FAILED_STAGES, followImports, PROCESSOR, renderUnits } from "./units.js";
+import { FAILED_STAGES, followImports, PROCESSOR, renderUnits, settledNote } from "./units.js";
 
 const $ = (sel) => document.querySelector(sel);
 const reel = createReel($("[data-reel]"));
@@ -38,6 +38,9 @@ function summarize(units) {
 
 function render(units, items) {
   reel.render(items);
+  for (const note of document.querySelectorAll("[data-first-note], [data-run-note], [data-x-note]")) {
+    note.textContent = settledNote(note.textContent, units);
+  }
   const hasShorts = reel.count > 0;
 
   // Until the first short is ready the frame below lists every link, so the top-bar list would show each twice
@@ -172,6 +175,10 @@ $("[data-signout]").addEventListener("click", async () => {
     return;
   }
   if (!me.user) return location.assign("/start");
+  api("/api/capabilities").then(({ shorts }) => {
+    skills.setShortsEnabled(shorts);
+    if (shorts === false) $("[data-skills-hint]").textContent = "Choose the skills to keep.";
+  }).catch(() => {});
 
   // A new account sees the paste box straight away. Anyone with imports keeps the loading line until their
   // links and shorts arrive, so a slow or failed first load never looks like an empty account.

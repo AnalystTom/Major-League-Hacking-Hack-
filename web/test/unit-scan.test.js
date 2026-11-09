@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { unitScanState } from "../public/units.js";
+import { PROCESSOR, settledNote, unitScanState } from "../public/units.js";
 
 test("the scan follows backend stages without estimating completion", () => {
   assert.deepEqual(unitScanState({ stage: "queued", settled: false }), {
@@ -20,4 +20,16 @@ test("the scan follows backend stages without estimating completion", () => {
   assert.deepEqual(unitScanState({ stage: "unknown_provider_state", settled: false }), {
     label: "Waiting for a status update", phase: null, moving: false,
   });
+});
+
+test("completed imports clear only transient processing copy, including the X read summary", () => {
+  const note = `Read 3 bookmarks. ${PROCESSOR.requested}`;
+  assert.equal(settledNote(note, []), note);
+  assert.equal(settledNote(note, [{ settled: true }, { settled: false }]), note);
+  for (const stage of ["skill_ready", "ready", "failed", "limited"]) {
+    const units = [{ stage, settled: true }];
+    assert.equal(settledNote(note, units), "Read 3 bookmarks.");
+    assert.equal(settledNote(PROCESSOR.requested, units), "");
+    assert.equal(settledNote(PROCESSOR.unavailable, units), PROCESSOR.unavailable);
+  }
 });

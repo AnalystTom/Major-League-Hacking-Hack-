@@ -52,3 +52,18 @@ export async function requestVideoProcessing(env, fetchImpl = fetch) {
     return response.ok ? "requested" : "unavailable";
   } catch { return "unavailable"; }
 }
+
+/** Read the processor switch without waking its container; unknown preserves the existing control. */
+export async function processorCapabilities(env, fetchImpl = fetch) {
+  if (!env.PROCESSOR_URL) return {};
+  try {
+    const url = new URL(env.PROCESSOR_URL);
+    url.pathname = "/capabilities";
+    url.search = "";
+    const response = await processorFetch(env, fetchImpl)(url.toString(), {
+      headers: env.PROCESSOR_TOKEN ? { authorization: `Bearer ${env.PROCESSOR_TOKEN}` } : {},
+      signal: AbortSignal.timeout(8000),
+    });
+    return response.ok ? { shorts: (await response.json()).shorts } : {};
+  } catch { return {}; }
+}

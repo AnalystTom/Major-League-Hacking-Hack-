@@ -11,7 +11,7 @@ import { createUnits, parseImport, readUnits, userUnitIds } from "./imports.js";
 import { serveMedia } from "./media.js";
 import { saveSkillChoices } from "./skill-choices.js";
 import { readSkills } from "./skills.js";
-import { requestProcessing, requestVideoProcessing } from "./processor.js";
+import { processorCapabilities, requestProcessing, requestVideoProcessing } from "./processor.js";
 
 const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), {
@@ -112,6 +112,8 @@ async function api(request, env, url, sql) {
     return json(user ? await accountState(sql, user) : { user: null });
   }
   if (!user) return json(SIGNED_OUT, 401);
+
+  if (pathname === "/api/capabilities" && method === "GET") return json(await processorCapabilities(env));
 
   if (pathname === "/api/imports") {
     if (method === "POST") return startImport(request, env, sql, user);

@@ -39,6 +39,12 @@ test('a cold Worker preserves the process body and settings diagnostics do not n
     assert.deepEqual(await accepted.json(), { accepted: true, starting: true });
     assert.equal(body, undefined);
 
+    for (const [SHORTS, shorts] of [["off", false], ["on", true], [undefined, true]]) {
+      const response = await worker.fetch(new Request('https://processor/capabilities', { headers }), { ...env, SHORTS }, ctx);
+      assert.deepEqual(await response.json(), { shorts });
+    }
+    assert.deepEqual(paths, ['/api/ingest/process'], 'capabilities never wake the container');
+
     const settings = await worker.fetch(new Request('https://processor/settings-status', { headers }), env, ctx);
     assert.equal(settings.status, 200);
     assert.deepEqual(await settings.json(), { container: 'stopped', running: false });

@@ -32,6 +32,13 @@ export const PROCESSOR = {
   unavailable: "Your links are saved, but processing didn't answer. They're waiting in the queue.",
 };
 
+/** Drop the transient start message once the backend reports every imported link settled. */
+export function settledNote(note, units) {
+  return units.length && units.every((u) => u.settled)
+    ? note.replace(PROCESSOR.requested, "").trim()
+    : note;
+}
+
 const OPENABLE = /^https:\/\/(?:www\.youtube\.com\/watch\?v=[\w-]{11}|x\.com\/i\/status\/\d{1,19}|[a-z0-9-]+\.substack\.com\/p\/[\w-]+)$/;
 
 // The scan marks the reported phase, never elapsed time or estimated completion.
