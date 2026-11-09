@@ -55,12 +55,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            server/package-lock.json
-            web/package-lock.json
-            deploy/processor/package-lock.json
       - run: npm ci && npm ci --prefix server && npm ci --prefix web && npm ci --prefix deploy/processor
       - run: npm run format
       - run: npm run lint
@@ -102,12 +96,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            server/package-lock.json
-            web/package-lock.json
-            deploy/processor/package-lock.json
       - run: npm ci && npm ci --prefix server && npm ci --prefix web && npm ci --prefix deploy/processor
       - uses: actions/cache@v4
         with:

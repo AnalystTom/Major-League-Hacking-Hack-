@@ -3,7 +3,8 @@
 Every job that runs repository code uses `[self-hosted, Linux, X64, big-machine]`, including the no-checkout `CI required` aggregate. No deployments, paid
 provider calls, credentials or production databases are used. Node 22 is pinned
 by major version to match the application. Jobs install locked dependencies with
-`npm ci` and cache the npm download cache rather than mutable `node_modules`.
+`npm ci`, which reuses the persistent runner's local npm cache. `setup-node` remote
+caching is off: its post-step save stalled for 9 minutes and hit the job timeout.
 
 ## Fork pull requests
 
