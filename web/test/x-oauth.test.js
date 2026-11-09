@@ -7,7 +7,7 @@ import { X_PREPAID_CREDIT_CAP_USD } from '../src/x-oauth.js';
 assert.equal(X_PREPAID_CREDIT_CAP_USD,20);
 
 const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/x/${name}.json`, import.meta.url), 'utf8'));
-function setup() {
+function setup(gate = false) {
   const db = new DatabaseSync(':memory:');
   db.exec('PRAGMA foreign_keys=ON');
   for (const file of ['0002_application.sql','0003_video_duration.sql','0005_x_oauth.sql','0006_x_read_budget.sql']) db.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url),'utf8'));
@@ -23,7 +23,8 @@ function setup() {
       if (url.pathname.endsWith('/bookmarks')) return Response.json(fixture(url.searchParams.has('pagination_token')?'bookmarks-page-2':'bookmarks'));
       throw new Error('Unexpected provider call');
     }} };
-  const call = (path, cookie='', method='GET', body={}) => app.fetch(new Request(`http://localhost${path}`,{method,headers:{cookie,...(method==='POST'?{'content-type':'application/json'}:{})},...(method==='POST'?{body:JSON.stringify(body)}:{})}),env,{});
+  if (gate) Object.assign(env, { SITE_GATE_USER: 'fixture-owner', SITE_GATE_PASSWORD: 'fixture-password' });
+  const call = (path, cookie='', method='GET', body={}) => app.fetch(new Request(`http://localhost${path}`,{method,headers:{cookie,...(gate?{authorization:`Basic ${btoa(`${env.SITE_GATE_USER}:${env.SITE_GATE_PASSWORD}`)}`} : {}),...(method==='POST'?{'content-type':'application/json'}:{})},...(method==='POST'?{body:JSON.stringify(body)}:{})}),env,{});
   async function begin(cookie='') {
     const response = await call('/api/auth/x/start',cookie);
     const auth = new URL(response.headers.get('location'));
@@ -34,6 +35,21 @@ function setup() {
   }
   return {db,env,calls,call,begin,finish};
 }
+
+test('site gate preserves X callback nonce, state and application session after Basic authentication', async () => {
+  const t = setup(true);
+  try {
+    const flow = await t.begin();
+    const callback = `/api/auth/x/callback?state=${flow.auth.searchParams.get('state')}&code=fixture-code`;
+    const challenged = await app.fetch(new Request(`http://localhost${callback}`, { headers: { cookie: flow.nonce } }), t.env, {});
+    assert.equal(challenged.status, 401);
+    assert.equal(t.calls.length, 0);
+    const success = await t.finish(flow);
+    assert.equal(success.headers.get('location'), '/app?import=x');
+    const cookie = success.headers.get('set-cookie').match(/rs_session=[^;, ]+/)[0];
+    assert.equal((await (await t.call('/api/me', cookie)).json()).user.name, 'Fixture User');
+  } finally { t.db.close(); }
+});
 
 test('X sign-in uses PKCE, rejects another browser, consumes state once, imports paginated bookmarks and disconnects',async()=>{
   const t=setup();try {

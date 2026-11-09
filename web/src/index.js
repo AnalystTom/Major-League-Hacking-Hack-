@@ -2,6 +2,7 @@ import {
   cookieSecure, createSession, createUser, currentUser, endSession, login, parseLogin, parseSignup, sessionCookie,
 } from "./auth.js";
 import { xRoute } from "./x-oauth.js";
+import { siteGate } from "./site-gate.js";
 import { connect } from "./db.js";
 import waitlist from "./waitlist.js";
 import { rateLimit, requestIp } from "./rate-limit.js";
@@ -145,6 +146,8 @@ async function api(request, env, url, sql) {
 
 export default {
   async fetch(request, env, ctx) {
+    const challenge = siteGate(request, env);
+    if (challenge) return challenge;
     const url = new URL(request.url);
 
     if (url.pathname === "/api/waitlist") return waitlist.fetch(request, env);

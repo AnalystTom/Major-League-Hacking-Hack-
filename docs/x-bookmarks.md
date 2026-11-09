@@ -17,6 +17,23 @@ Apply migrations `web/migrations/0005_x_oauth.sql` and `0006_x_read_budget.sql` 
 
 Current official pricing is pay-per-use rather than a monthly Basic/Pro subscription. Public-user bookmark reads normally use the Post-read rate; the cheaper Owned Read rate is restricted to the developer app's own user. Confirm current [pricing](https://docs.x.com/x-api/getting-started/pricing) in the owner's signed-in console before enabling traffic. The full dated cost note is in the task evidence directory (`data/resurface-launch-kit/x-api-cost.md` under firstmate).
 
+## Private pre-launch site gate
+
+Set both `SITE_GATE_USER` and `SITE_GATE_PASSWORD` as secrets on the web Worker
+(`web/wrangler.jsonc`) through authenticated Cloudflare setup to require the
+browser's native HTTP Basic login for the entire site. Never commit or log their
+values. The gate covers HTML, static assets, `/available`, `/api`, `/media`, and
+the X callback. Authenticate on the site before starting X sign-in; the browser
+can reuse that authentication on return, while OAuth nonce/state cookies and
+application sessions still work as before. Use HTTPS outside local development.
+
+The gate is off when either secret is absent or empty. To open the site at
+launch, delete **both** `SITE_GATE_USER` and `SITE_GATE_PASSWORD` from the web
+Worker through authenticated Cloudflare secret management and publish that
+configuration through the normal authorized release process. Application sign-in
+and media permissions remain in force. No secret values are stored in Wrangler
+configuration, and adding this gate does not set secrets or deploy anything.
+
 ## Account and token handling
 
 The flow requests `tweet.read users.read bookmark.read offline.access`, uses S256 PKCE, and binds a single-use 10-minute state to an HttpOnly browser nonce. Linking an existing local account also requires the same authenticated local account on callback. Accounts are never merged by display name, username or email. The X numeric user ID is the identity. OAuth-only accounts use a reserved internal identifier in the legacy email column; the API exposes no invented email address.
