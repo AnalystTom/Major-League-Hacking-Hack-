@@ -15,10 +15,10 @@ nothing, and fails for a fork PR with a message that a maintainer must review th
 and re-run CI from a same-repo branch, so it never passes silently.
 
 The guards live in the workflow file, which a pull request can edit, so they are not a
-security boundary. The captain may additionally enable Settings → Actions → General →
-**Require approval for all outside collaborators** as a recommended control.
-That captain-owned setting is unchanged by this task; registration was separately
-authorized. Review outside contributions before allowing them onto the host.
+security boundary. Before this runner is relied on, the captain must enable Settings → Actions → General →
+**Require approval for all outside collaborators**. It is a mandatory prerequisite for
+runner use, and a captain-owned repository setting that this change does not alter.
+Review outside contributions before allowing them onto the host.
 
 ## Registered Big-Machine runner
 
@@ -37,8 +37,7 @@ The host already supplies ffmpeg, ffprobe, Google Chrome and Docker. Playwright
 installs its pinned Chromium without sudo or system package changes.
 
 No runner-registration step remains for the captain. Branch protection below
-still requires captain approval; the outside-collaborator approval setting above
-is an additional recommended captain-owned control, not a registration blocker.
+and the outside-collaborator approval setting above still require captain action.
 
 ## Check contract
 
