@@ -6,7 +6,7 @@ import { api } from "./api.js";
 import { connectX } from "./x-connect.js";
 import { createReel } from "./reel.js";
 import { createSkills } from "./skills.js";
-import { FAILED_STAGES, followImports, PROCESSOR, renderUnits } from "./units.js";
+import { FAILED_STAGES, followImports, PROCESSOR, renderUnits, settledNote } from "./units.js";
 
 const $ = (sel) => document.querySelector(sel);
 const reel = createReel($("[data-reel]"));
@@ -38,6 +38,9 @@ function summarize(units) {
 
 function render(units, items) {
   reel.render(items);
+  for (const note of document.querySelectorAll("[data-first-note], [data-run-note], [data-x-note]")) {
+    note.textContent = settledNote(note.textContent, units);
+  }
   const hasShorts = reel.count > 0;
 
   // Until the first short is ready the frame below lists every link, so the top-bar list would show each twice
