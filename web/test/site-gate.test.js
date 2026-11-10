@@ -6,7 +6,8 @@ import { constantTimeEqual } from "../src/site-gate.js";
 const secrets = { SITE_GATE_USER: "fixture-owner", SITE_GATE_PASSWORD: "fixture:password-é" };
 const basic = (user, password) => `Basic ${Buffer.from(`${user}:${password}`).toString("base64")}`;
 const valid = basic(secrets.SITE_GATE_USER, secrets.SITE_GATE_PASSWORD);
-const paths = ["/", "/app.js", "/favicon.svg", "/available", "/api/me", "/api/waitlist", "/media/test.mp4", "/api/auth/x/callback?state=s&code=c"];
+const paths = ["/", "/app.js", "/favicon.svg", "/available", "/api/me", "/api/waitlist", "/media/test.mp4"];
+const open = ["/privacy", "/terms", "/api/auth/x/callback?state=s&code=c"];
 const call = (path, env, authorization) => app.fetch(new Request(`https://resurface.test${path}`, {
   headers: authorization ? { authorization } : {},
 }), env, {});
@@ -31,6 +32,17 @@ test("gate challenges every route before accessing assets, database, or provider
       assert.equal(response.headers.get("cache-control"), "no-store");
       assert.equal(await response.text(), "Authentication required.");
     }
+  }
+});
+
+test("only the legal pages and X callback skip the gate, even with the gate misconfigured", async () => {
+  for (const bindings of [secrets, { SITE_GATE_USER: "owner" }]) {
+    const env = { ...bindings, ASSETS: { fetch: () => new Response("asset") } };
+    for (const path of ["/privacy", "/terms"]) assert.equal(await (await call(path, env)).text(), "asset", path);
+    assert.notEqual((await call(open[2], env)).status, 401);
+  }
+  for (const path of ["/privacy.html", "/privacy/", "/terms/x", "/api/auth/x/callback/", "/api/auth/x/start"]) {
+    assert.equal((await call(path, secrets)).status, 401, path);
   }
 });
 

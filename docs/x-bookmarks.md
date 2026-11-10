@@ -22,9 +22,10 @@ Current official pricing is pay-per-use rather than a monthly Basic/Pro subscrip
 Set both `SITE_GATE_USER` and `SITE_GATE_PASSWORD` as secrets on the web Worker
 (`web/wrangler.jsonc`) through authenticated Cloudflare setup to require the
 browser's native HTTP Basic login for the entire site. Never commit or log their
-values. The gate covers HTML, static assets, `/available`, `/api`, `/media`, and
-the X callback. Authenticate on the site before starting X sign-in; the browser
-can reuse that authentication on return, while OAuth nonce/state cookies and
+values. The gate covers HTML, static assets, `/available`, `/api` and `/media`. Only `/privacy`, `/terms` (required by the
+X developer console) and the X callback `/api/auth/x/callback` (X's redirect
+cannot send Basic credentials) are exempt. Authenticate on the site before
+starting X sign-in; while OAuth nonce/state cookies and
 application sessions still work as before. Use HTTPS outside local development.
 
 The gate is off only when both secrets are absent. If exactly one is set, or
