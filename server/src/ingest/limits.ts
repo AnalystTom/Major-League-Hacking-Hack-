@@ -3,7 +3,7 @@
 
 export interface Limits { daily: number; monthly: number }
 
-/** About $5 a month of provider spend at ~$0.12 a short (5-minute window), with room for a demo-day burst. */
+/** Code defaults; the deployed ceilings and cost estimate are in docs/go-live.md. */
 export const DEFAULT_LIMITS: Limits = { daily: 10, monthly: 40 };
 export const UNLIMITED: Limits = { daily: Infinity, monthly: Infinity };
 

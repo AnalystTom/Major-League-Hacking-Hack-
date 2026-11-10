@@ -47,7 +47,7 @@ Bookmark pages go through the existing pasted-link validator and import deduplic
 
 X does not expose a `since_id` bookmark filter. Firstmate approved bounded overlap: the boundary Post can be returned and billed again, about $0.005 per refresh at the public Post-read rate; the app never re-imports or reprocesses it. If no known boundary remains (for example it was unbookmarked), the daily budget still stops reads. A timeout/crash after an upstream response can also require retrying that page. Application dedupe does not guarantee zero repeated provider charges. No claim of zero-cost refresh is made. A per-connection lease prevents overlapping page reads. Empty results and provider errors are explicit; no placeholder bookmarks enter product results.
 
-The scan uses stored backend stages. A current ready skill with no video settles at “Skill ready”, while video generation remains paused. Generated skills are still reviewed/copied/downloaded through the existing Skills sheet.
+The scan uses stored backend stages. A current ready skill with no video settles at “Skill ready”, unless a video was explicitly requested (see [go-live](go-live.md)). Generated skills are still reviewed/copied/downloaded through the existing Skills sheet.
 
 ## Isolated fixture verification (no paid APIs)
 
