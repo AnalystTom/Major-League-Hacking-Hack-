@@ -46,7 +46,7 @@ Set the following on the correct Worker environment (production name `resurface`
 | `X_USER_DAILY_READ_REQUEST_LIMIT` | Worker variable | Default `55` bookmark requests/day per Resurface account; persists across reconnects/sessions |
 | `DB` | Existing D1 binding | Existing application database; apply migrations 0005 and 0006 through the authorized release process |
 | `AUTH_LIMITER`, `IMPORT_LIMITER` | Existing rate-limit bindings | Existing sign-in/import short-window limits; daily D1 budget is additional |
-| `PROCESSOR` / existing processor config | Existing service binding | Existing skill processing path; keep `SHORTS=off` |
+| `PROCESSOR` / existing processor config | Existing service binding | Existing processing path; release config uses `SHORTS=on` with explicit video opt-in; see [go-live](go-live.md) |
 
 There must be **no** `X_PROVIDER` or `X_TEST_AUTHORIZE_URL` test override in production. Local test configuration lives only in `web/test/fixtures/x/`; it uses synthetic credentials and no paid traffic.
 

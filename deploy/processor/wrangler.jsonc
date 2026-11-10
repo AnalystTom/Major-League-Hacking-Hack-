@@ -20,8 +20,8 @@
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Processor"] }],
   // Once a day, wake the processor so its sweeps retry pending work. Imports wake it immediately anyway.
   "triggers": { "crons": ["0 9 * * *"] },
-  // WINDOW_SECONDS: read only the first 5 minutes of each video. About $0.12 a short in provider costs,
-  // against about $0.21 at the processor's one-hour default, to keep the whole bill under $10 a month.
+  // WINDOW_SECONDS: read only the first 5 minutes of each video.
+  // Cost estimates and launch/rollback controls: ../../docs/go-live.md.
   "vars": {
     "D1_URL": "https://resurface-processor.thomasmann2001.workers.dev/internal/d1",
     "WEB_ORIGINS": "https://resurface.thomasmann2001.workers.dev",
@@ -35,13 +35,13 @@
     // Narration: gemini-3.8-flash-tts allows only 100 requests a day on this key's tier (~7 per short), and ran out on
     // 11 Oct. The lite TTS model works with the same request and voice and has its own quota.
     "GEMINI_TTS_MODEL": "gemini-3.8-flash-lite-tts",
-    // Hard cap on provider spend across all users, at ~$0.12 a short. Raised to 100/400 (about $48 a month at the cap)
-    // for the demo only: put it back to 10/40 afterwards.
+    // Global charged-start ceilings (UTC), shared by imports, digests and output retries.
+    // Not per-account dollar caps; see ../../docs/go-live.md for the cost estimate and limitations.
     "DAILY_VIDEO_LIMIT": "100",
     "MONTHLY_VIDEO_LIMIT": "400",
-    // Shorts paused 2026-11-07: the quality judge rejected all 97 shorts after #50 (~$0.45 each). Skills still run.
-    // Set to "on" once the judge passes a test batch.
-    "SHORTS": "off"
+    // Enabled for release; kept skills still require an explicit video request.
+    // Set to "off" to pause new renders while skills continue.
+    "SHORTS": "on"
   },
   // Secrets, set once with `npx wrangler secret put <NAME>`: GEMINI_API_KEY, OPENAI_API_KEY, TWITTERAPI_IO_KEY (X posts), INGEST_TOKEN
   // (checked here before waking the container; the web Worker's PROCESSOR_TOKEN must equal it).

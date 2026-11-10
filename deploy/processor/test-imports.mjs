@@ -8,9 +8,9 @@ test('a cold Worker preserves the process body and settings diagnostics do not n
   const forwarding = new Promise((resolve) => { entered = resolve; });
   const jobs = [], paths = [];
   const ctx = { waitUntil: (job) => jobs.push(job) };
-  let body, databaseCalls = 0;
+  let body, appliedSettings, databaseCalls = 0;
   const processor = {
-    async useSettings() {},
+    async useSettings(vars) { appliedSettings = vars; },
     async settingsStatus() { return { container: 'stopped', running: false }; },
     async fetch(request) {
       paths.push(new URL(request.url).pathname);
@@ -25,7 +25,7 @@ test('a cold Worker preserves the process body and settings diagnostics do not n
   const descriptor = Object.getOwnPropertyDescriptor(crypto.subtle, 'timingSafeEqual');
   Object.defineProperty(crypto.subtle, 'timingSafeEqual', { configurable: true, value: timingSafeEqual });
   const offline = () => { databaseCalls++; throw new Error('D1 offline'); };
-  const env = { DB: { prepare: offline, batch: offline }, INGEST_TOKEN: 'test-token', OPENAI_API_KEY: 'test-only', PROCESSOR: {} };
+  const env = { DB: { prepare: offline, batch: offline }, INGEST_TOKEN: 'test-token', OPENAI_API_KEY: 'test-only', PROCESSOR: {}, SHORTS: 'on', DAILY_VIDEO_LIMIT: '100', MONTHLY_VIDEO_LIMIT: '400' };
   const headers = { authorization: `Bearer ${env.INGEST_TOKEN}`, 'content-type': 'application/json' };
   const payload = { unit_ids: ['d3f4e253-c7ca-4b64-9b03-f064ee1953bb'] };
   let pending;
@@ -33,6 +33,9 @@ test('a cold Worker preserves the process body and settings diagnostics do not n
     t.mock.timers.enable({ apis: ['setTimeout'] });
     pending = worker.fetch(new Request('https://processor/api/ingest/process', { method: 'POST', headers, body: JSON.stringify(payload) }), env, ctx);
     await forwarding;
+    assert.equal(appliedSettings.SHORTS, 'on', 'shorts enablement reaches the container');
+    assert.equal(appliedSettings.DAILY_VIDEO_LIMIT, '100');
+    assert.equal(appliedSettings.MONTHLY_VIDEO_LIMIT, '400');
     t.mock.timers.tick(6000);
     const accepted = await pending;
     assert.equal(accepted.status, 202);

@@ -1,6 +1,6 @@
 # X sign-in and bookmark import
 
-The same launch branch includes the scan animation from https://github.com/AnalystTom/Major-League-Hacking-Hack-/pull/55 and a new journey: **Continue with X → authorize bookmark access → extract bookmarks → scan actual processing stages → open Skills**. Email sign-in and pasted links remain available. No narrated clips are promised and the processor's `SHORTS=off` setting remains unchanged. This change does not include skill retention/video opt-in from other branches.
+The same launch branch includes the scan animation from https://github.com/AnalystTom/Major-League-Hacking-Hack-/pull/55 and a new journey: **Continue with X → authorize bookmark access → extract bookmarks → scan actual processing stages → open Skills**. Email sign-in and pasted links remain available. The release configuration now enables explicitly requested videos for kept skills (`SHORTS=on`); deployment and real-provider verification remain separate release steps. See [go-live](go-live.md) for limits, gate removal and rollback.
 
 See the detailed [captain-operated setup runbook](x-setup-steps.md), including the unverified no-paste credential-transfer path and prepaid ceiling.
 
