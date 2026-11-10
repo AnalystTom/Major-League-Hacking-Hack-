@@ -89,8 +89,8 @@ Follow [the captain-operated X setup steps](x-setup-steps.md) as the source of t
    and creates/selects Resurface's confidential Web App. Enable OAuth 2.0 read
    authentication, with `tweet.read users.read bookmark.read offline.access`.
 2. Register the exact live callback:
-   `https://resurface.thomasmann2001.workers.dev/api/auth/x/callback`. Supply truthful
-   website/privacy/terms details; missing required policies block X enablement.
+   `https://resurface.thomasmann2001.workers.dev/api/auth/x/callback`. Supply the website and its
+   public `/privacy` and `/terms` pages; missing required policies block X enablement.
 3. Confirm current rates in the signed-in console. Only under the separate funding
    authorization, purchase the approved USD 20 once, leave auto-recharge off, and
    check balance/spending controls as described in that runbook.
