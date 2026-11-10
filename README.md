@@ -16,8 +16,8 @@ Built at AI Engineer NYC 2026.
 
 ## Features
 
-- **Shorts**: new video generation is paused (`SHORTS=off`); previously produced shorts remain. See the [processor flow](docs/proceed-and-media.md#the-processor).
-- **Keep**: choosing which generated skills to keep is not live yet.
+- **Shorts**: release configuration enables video generation (`SHORTS=on`) for kept skills with an explicit video request. Deployment and a real-short check are still required before calling this live. See the [processor flow](docs/proceed-and-media.md#the-processor).
+- **Keep**: choose which generated skills to keep; videos remain opt-in.
 - **Skills**: concise source-grounded SKILL.md files for your coding agent; see the [skill contract](docs/project-actions-spec.md#workflow-3-processed-skill-and-codex-use).
 - **Private reels**: sign in for your personal reel, or choose **View available reels & Skills** to browse the public catalogue at `/available`.
 - **Source checking**: before installing, Resurface pulls the linked repo, release notes, and open issues so outdated tips (such as a deprecated flag) don't ship.
@@ -64,6 +64,8 @@ npm test --prefix server
 
 Getting started is free: create an account at the live site.
 For import reuse and refreshing older X reads, see the [import rules](docs/project-actions-spec.md#http-api).
+
+Release operators: see [go-live, cost limits and rollback](docs/go-live.md). The pre-launch Basic-auth gate stays until the captain authorizes opening it.
 
 Task generation and agent-task handoffs are unavailable for now. Copy or download a skill from the Skills sheet.
 API access and deduplication follow the [HTTP contract](docs/project-actions-spec.md#http-api); legacy output refreshes follow the [processor policy](docs/proceed-and-media.md#the-processor).

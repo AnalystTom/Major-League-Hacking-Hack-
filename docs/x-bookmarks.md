@@ -1,6 +1,6 @@
 # X sign-in and bookmark import
 
-The same launch branch includes the scan animation from https://github.com/AnalystTom/Major-League-Hacking-Hack-/pull/55 and a new journey: **Continue with X → authorize bookmark access → extract bookmarks → scan actual processing stages → open Skills**. Email sign-in and pasted links remain available. No narrated clips are promised and the processor's `SHORTS=off` setting remains unchanged. This change does not include skill retention/video opt-in from other branches.
+The same launch branch includes the scan animation from https://github.com/AnalystTom/Major-League-Hacking-Hack-/pull/55 and a new journey: **Continue with X → authorize bookmark access → extract bookmarks → scan actual processing stages → open Skills**. Email sign-in and pasted links remain available. The release configuration now enables explicitly requested videos for kept skills (`SHORTS=on`); deployment and real-provider verification remain separate release steps. See [go-live](go-live.md) for limits, gate removal and rollback.
 
 See the detailed [captain-operated setup runbook](x-setup-steps.md), including the unverified no-paste credential-transfer path and prepaid ceiling.
 
@@ -47,7 +47,7 @@ Bookmark pages go through the existing pasted-link validator and import deduplic
 
 X does not expose a `since_id` bookmark filter. Firstmate approved bounded overlap: the boundary Post can be returned and billed again, about $0.005 per refresh at the public Post-read rate; the app never re-imports or reprocesses it. If no known boundary remains (for example it was unbookmarked), the daily budget still stops reads. A timeout/crash after an upstream response can also require retrying that page. Application dedupe does not guarantee zero repeated provider charges. No claim of zero-cost refresh is made. A per-connection lease prevents overlapping page reads. Empty results and provider errors are explicit; no placeholder bookmarks enter product results.
 
-The scan uses stored backend stages. A current ready skill with no video settles at “Skill ready”, while video generation remains paused. Generated skills are still reviewed/copied/downloaded through the existing Skills sheet.
+The scan uses stored backend stages. A current ready skill with no video settles at “Skill ready”, unless a video was explicitly requested (see [go-live](go-live.md)). Generated skills are still reviewed/copied/downloaded through the existing Skills sheet.
 
 ## Isolated fixture verification (no paid APIs)
 

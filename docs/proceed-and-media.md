@@ -43,6 +43,11 @@ remain visible; exact deduplication does not collapse overlapping source sets.
 
 ## The processor
 
+The release configuration sets `SHORTS=on`; there is no separate web-side shorts flag.
+The web stores per-account keep/video opt-in choices, and the processor checks them before claims.
+`SHORTS=off` pauses rendering while skills continue. See [go-live](go-live.md) for the
+unchanged global charged-start ceilings, cost estimate, deployment order and rollback.
+
 Node, in `server/src`. `POST /api/ingest/process` takes `{ "unit_ids": [...] }` with
 `Authorization: Bearer <INGEST_TOKEN>`, replies `202`, and works in the background. The web Worker calls it with
 `PROCESSOR_URL` and `PROCESSOR_TOKEN` (equal to `INGEST_TOKEN`). Timed sweeps pick up anything a request missed.
