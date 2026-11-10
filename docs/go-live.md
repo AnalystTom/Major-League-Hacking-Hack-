@@ -8,60 +8,78 @@ in this repository, chat, screenshots or command arguments.
 
 ## Shorts and cost controls
 
-`deploy/processor/wrangler.jsonc` sets `SHORTS=on`. The Worker forwards it to the
-container; `server/src/index.ts` enables shorts unless it is exactly `off`. There is
-no additional web-side enable flag. The existing web `generateVideos` choice remains
-opt-in: a video is eligible only for a kept revision requested by an account that
-owns all its source imports. Enabling shorts does not bypass the quality judge or
-make rejected videos public.
+`deploy/processor/wrangler.jsonc` sets `SHORTS=on`, `DAILY_VIDEO_LIMIT=20` and
+`MONTHLY_VIDEO_LIMIT=400`. The web config carries the same two limits for request
+admission. Keep both configs in sync. No other web-side enable flag is needed.
 
-Preserved limits:
+Each account has **one lifetime video slot**, recorded by the primary key on
+`user_video_requests.user_id`. Choose **Make my video** on one ready skill; it also
+keeps that skill. The server rejects a second selection, even with parallel requests,
+a new session or a different artifact version. Duplicate submissions for the same
+selection are idempotent. Retries work on that same video; a failure does not create
+a fresh account allowance. Historical allocations are backfilled without deleting
+existing videos or media. Shared source/approved-video reuse and the public catalogue
+remain available.
 
-- Imports: 5 requests per account per minute (`IMPORT_LIMITER`); absent/failing
-  limiter bindings refuse requests. Each paste accepts up to 20 YouTube, 100 X and
-  20 Substack links. These are request limits, not daily account spending limits.
-- Processor: `DAILY_VIDEO_LIMIT=100` and `MONTHLY_VIDEO_LIMIT=400` charged starts
-  across **all accounts**, resetting at UTC day/month boundaries. Code defaults
-  without overrides are 10/40. Zero stops charged starts. D1 reserves atomically;
-  the tighter ceiling wins and excess work waits until the next allowed boundary.
-- Charged starts include extraction, digests not covered by that extraction, and
-  output retries (including stale-claim takeovers and versioned refreshes). Retry
-  charging is merged in https://github.com/AnalystTom/Major-League-Hacking-Hack-/pull/14.
-  A retry with no budget consumes neither a provider call nor another attempt.
-  Permanent provider/configuration failures and final quality rejections settle.
-- Optional X reads also retain their global 60/day and account 55/day request
-  budgets, 50-bookmark first-import cap and the externally controlled $20 prepaid
-  authorization; see [X setup](x-setup-steps.md). This PR does not enable X reads.
+Two atomic database controls bound new work across all accounts:
+
+- The web reserves at most **20 account video requests per UTC day and 400 per UTC
+  month**, also refusing admissions when actual video starts have used the budget.
+  A full day returns `429` with a `Retry-After` header and a precise UTC retry time;
+  a full month gives the next month boundary. No account slot is consumed on refusal.
+- The processor records **every video claim** in `video_starts`, including covered
+  first attempts, backlog, failed retries, stale takeovers and versioned refreshes.
+  The claim and reservation share a serialized D1 transaction, so competing workers
+  cannot spend the same last slot. At most **20 render attempts start per UTC day**
+  and **400 per UTC month**; retries/refreshes also retain the existing charged-start
+  check in `processing_starts`. The tighter limit wins. A running render may finish
+  after a boundary; this is a start limit, not a billing-date ledger.
+
+Existing import limits remain: 5 requests per account per minute, up to 20 YouTube,
+100 X and 20 Substack links per paste. The original global processing ledger also
+uses 20/day and 400/month for extractions/digests/retries; those limits can defer
+processing earlier than the video allowance. Missing/failing import limiters refuse
+traffic. Optional X retains its separate 60 global/55 account read requests per day,
+50-bookmark initial cap and externally controlled USD 20 prepaid authorization.
+This PR does not enable X reads or change the quality judge/publication gate.
+
+The Skills sheet reports the real saved state: a full-day message with the UTC retry
+time, the already-made message with **Watch your video** linking to approved media,
+and a plain generation-failure message. A transient failure says the same video will
+retry; a final failure leaves skills usable. Provider internals are not shown in these
+messages. The account reservation persists across reloads and retention changes.
+
+### Cost estimate
 
 The last recorded operational unit cost is **about USD 0.45 per rejected short**:
-the [processor configuration's 7 November pause note](https://github.com/AnalystTom/Major-League-Hacking-Hack-/blob/d8a27d8/deploy/processor/wrangler.jsonc) recorded 97 rejected shorts
-after short 50 at that cost. It is an observed approximate cost, not a new measurement
-or provider price guarantee. The older USD 0.12 estimate is obsolete for launch.
-At that observed rate, consuming 100/400 charged attempts suggests **about USD 45/day
-and USD 180/month globally**. A single account could consume the entire available
-global allowance; there is no smaller per-account allocation or dollar cap.
+the [7 November configuration note](https://github.com/AnalystTom/Major-League-Hacking-Hack-/blob/d8a27d8/deploy/processor/wrangler.jsonc)
+recorded 97 rejected shorts after short 50 at that cost. It is historical evidence,
+not a new paid measurement or a guaranteed unit price.
 
-Those dollar figures are **non-guaranteed planning estimates, not worst-case billing
-ceilings**. The global ceilings count charged starts, not dollars or every provider
-call: first skill/video attempts remain covered by their digest, can fan out into
-several artifacts and can run from older backlog on a later day. Internal validation
-retries and two render/judge rounds can use several calls per attempt. Token use,
-narration, extraction, hosting/storage and optional X reads vary or add cost. Actual
-worst-case per-account dollars/day cannot be established from these counters. Check
-`usage_events` and provider billing after the authorized real-short test; retain
-failed-attempt costs when estimating launch spend.
+At that observed rate, a fully used allowance of **20 video starts × USD 0.45 is
+about USD 9/day globally**; **400 × USD 0.45 is about USD 180/month**. This is the
+worst-case allowance calculation **at the observed unit rate**, not a hard dollar
+ceiling. One account gets one video, with retries of that same allocation counted
+against these global limits. Do not quote USD 9 as a guaranteed per-user bill cap.
 
-The captain can lower the two **global charged-start knobs** in the checked-in config
-before release (example restores the code defaults; run from the repository root):
+Token/narration length, internal validation calls, two render/judge rounds,
+extraction/digestion, hosting/storage and optional X reads can vary or add cost.
+Inspect `usage_events` and actual provider billing after firstmate's authorized
+real-short check; retain failed-attempt costs. No real generation or deployment was
+performed for this change.
+
+The captain can lower both configs together before release (example: 10/day and
+40/month). Run from the repository root, review and commit the diff, then follow the
+deploy order below:
 
 ```sh
-python3 -c 'from pathlib import Path; import re; p=Path("deploy/processor/wrangler.jsonc"); s=p.read_text(); s=re.sub(r"(\"DAILY_VIDEO_LIMIT\":\s*\")100(\")", r"\g<1>10\2", s); s=re.sub(r"(\"MONTHLY_VIDEO_LIMIT\":\s*\")400(\")", r"\g<1>40\2", s); p.write_text(s)'
+python3 -c 'from pathlib import Path; import re; paths=[Path("web/wrangler.jsonc"),Path("deploy/processor/wrangler.jsonc")]; [(p.write_text(re.sub(r"(\"MONTHLY_VIDEO_LIMIT\":\s*\")400(\")",r"\g<1>40\2",re.sub(r"(\"DAILY_VIDEO_LIMIT\":\s*\")20(\")",r"\g<1>10\2",p.read_text())))) for p in paths]'
 ```
 
-Review and commit the resulting diff, then deploy the processor through the release
-process below. This edit is local until deployment. Lowering limits does not stop
-already running work or covered first-output attempts; use `SHORTS=off` to pause new
-video claims. No new spending subsystem is introduced here.
+Zero or invalid admission limits refuse new video requests. Zero processing limits
+pause charged starts/video starts. Use `SHORTS=off` to pause new renders while skills
+continue; no config change interrupts already running work. Code processing defaults
+without release overrides remain 10/40; the web admission defaults are 20/400.
 
 ## X developer console: sign-in only
 
@@ -99,7 +117,7 @@ npm exec --prefix deploy/processor -- wrangler deployments list --config deploy/
    and the intended unchanged caps or reviewed lower values. Preserve existing
    secrets, X settings and bindings. Never print secret values. Verify required
    migrations with `npm exec --prefix web -- wrangler d1 migrations list resurface-waitlist --remote --config web/wrangler.jsonc`; review pending migrations before applying them. The account
-   choices, processing ledger and X tables are shared by both Workers.
+   choices, processing ledger and X tables are shared by both Workers. Apply `0007_video_limits.sql` before deploying either Worker: it adds the lifetime reservations and video-start ledger. Back up and review historical allocations first. The migration retains existing media and can reduce multiple old request flags to the single preserved allocation.
 2. Apply reviewed pending migrations before either code release:
    `npm run db:migrate:remote --prefix web`. Preserve all existing data.
 3. Deploy the web Worker, retaining both gate secrets:

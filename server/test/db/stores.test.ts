@@ -29,9 +29,22 @@ async function setup() {
     return id;
   }
   const prompt=await store.registerPrompt('test',[]);
+  const videoOwners=new Map<string,string>();
   async function artifact(ids: string[]) {
     const a = (await store.saveArtifacts([{ name:'Check first',source_ids:ids,category:'Evals',processed_text:'content',selection_reason:'reason',evidence:[] }],[],prompt))[0];
     await db.query('INSERT INTO user_skill_choices(user_id,artifact_id,artifact_version,kept,video_requested) VALUES(?1,?2,?3,1,1) ON CONFLICT DO NOTHING',[user,a.id,a.version]);
+    // Independent video fixtures use independent accounts; duplicate artifacts reuse their owner.
+    let videoOwner=videoOwners.get(a.id);
+    if (!videoOwner) {
+      videoOwner=videoOwners.size===0 ? user : randomUUID();
+      videoOwners.set(a.id,videoOwner);
+      if (videoOwner!==user) {
+        await db.query("INSERT INTO users(id,email,password_hash) VALUES(?1,?2,'test')",[videoOwner,`video-${videoOwner}@example.test`]);
+        await db.query('INSERT INTO user_imports(user_id,unit_id) SELECT ?1,id FROM ingested_units WHERE id IN (SELECT value FROM json_each(?2))',[videoOwner,JSON.stringify(ids)]);
+        await db.query('INSERT INTO user_skill_choices(user_id,artifact_id,artifact_version,kept,video_requested) VALUES(?1,?2,?3,1,1)',[videoOwner,a.id,a.version]);
+      }
+    }
+    await db.query('INSERT INTO user_video_requests(user_id,artifact_id,artifact_version) VALUES(?1,?2,?3) ON CONFLICT DO NOTHING',[videoOwner,a.id,a.version]);
     return a;
   }
   return { db,sqlite,store,outputs,handoffs,user,unit,prompt,artifact };
@@ -417,14 +430,14 @@ test('stale output claims and versioned refreshes are charged, and unchargeable 
     const claim=(await s.outputs.claim('video',a))!;
     await s.db.query("UPDATE video_results SET updated_at='2000-01-01'");
     assert.equal(await s.outputs.claim('video',a,{daily:0,monthly:0}),null);
-    const takeover=(await s.outputs.claim('video',a,{daily:1,monthly:1}))!;
+    const takeover=(await s.outputs.claim('video',a,{daily:2,monthly:2}))!;
     assert.ok(takeover);
     assert.notEqual(takeover.token,claim.token);
     assert.equal(await s.outputs.fail('video',claim,'late failure'),false);
     await s.outputs.fail('video',takeover,'temporary failure');
     await s.db.query("UPDATE video_results SET review_feedback='{}',updated_at='2000-01-01'");
-    assert.equal(await s.outputs.claim('video',a,{daily:1,monthly:1}),null,'refresh also requires budget');
-    assert.ok(await s.outputs.claim('video',a,{daily:2,monthly:2}));
+    assert.equal(await s.outputs.claim('video',a,{daily:2,monthly:2}),null,'first attempts and takeover already used two video starts');
+    assert.ok(await s.outputs.claim('video',a,{daily:3,monthly:3}));
     assert.equal((await s.db.query("SELECT count(*) AS n FROM processing_starts WHERE kind='retry' AND charged=1")).rows[0].n,2);
     const orphan=await s.artifact([randomUUID()]);
     const first=(await s.outputs.claim('skill',orphan))!;
@@ -448,3 +461,28 @@ test('permanent output failure settles D1 attempts while preserving full review 
     assert.equal(await s.outputs.claim('video',a),null);
   } finally {s.sqlite.close();}
 });
+
+for (const limits of [{daily:20,monthly:400},{daily:20,monthly:2}]) {
+  test(`all video claims reserve daily/monthly slots atomically (${JSON.stringify(limits)})`,async()=>{
+    const s=await setup();
+    try {
+      const artifacts=[];
+      for(let i=0;i<23;i++) {
+        const a=await s.artifact([await s.unit('ready')]);
+        const user=(await s.db.query("INSERT INTO users(email,password_hash) VALUES(?1,'test') RETURNING id",[`video-${i}@example.test`])).rows[0].id;
+        await s.db.query('INSERT INTO user_imports(user_id,unit_id) VALUES(?1,?2)',[user,a.source_ids[0]]);
+        await s.db.query('INSERT INTO user_skill_choices(user_id,artifact_id,artifact_version,kept,video_requested) VALUES(?1,?2,?3,1,1)',[user,a.id,a.version]);
+        await s.db.query('INSERT INTO user_video_requests(user_id,artifact_id,artifact_version) VALUES(?1,?2,?3)',[user,a.id,a.version]);
+        artifacts.push(a);
+      }
+      const claims=await Promise.all(artifacts.map(a=>s.outputs.claim('video',a,limits)));
+      assert.equal(claims.filter(Boolean).length,Math.min(limits.daily,limits.monthly));
+      assert.equal((await s.db.query('SELECT count(*) AS n FROM video_starts')).rows[0].n,Math.min(limits.daily,limits.monthly));
+      await s.outputs.fail('video',claims[0]!,'temporary provider error');
+      await s.db.query("UPDATE video_results SET updated_at='2000-01-01' WHERE id=?1",[claims[0]!.id]);
+      assert.equal(await s.outputs.claim('video',artifacts[0],limits),null,'retries cannot bypass the video start cap');
+      await s.db.query("UPDATE video_starts SET created_at='2000-01-01'");
+      assert.ok(await s.outputs.claim('video',artifacts[0],limits),'the same video can retry after the budget resets');
+    } finally {s.sqlite.close();}
+  });
+}

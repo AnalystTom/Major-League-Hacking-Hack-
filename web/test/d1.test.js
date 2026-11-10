@@ -16,6 +16,7 @@ function database() {
   sqlite.exec(readFileSync(new URL('../migrations/0002_application.sql',import.meta.url),'utf8'));
   sqlite.exec(readFileSync(new URL('../migrations/0003_video_duration.sql',import.meta.url),'utf8'));
   sqlite.exec(readFileSync(new URL('../migrations/0005_skill_choices.sql',import.meta.url),'utf8'));
+  sqlite.exec(readFileSync(new URL('../migrations/0007_video_limits.sql',import.meta.url),'utf8'));
   const env={AUTH_LIMITER:{async limit(){return {success:true}}},IMPORT_LIMITER:{async limit(){return {success:true}}},DB:{prepare(sql){return {bind(...params){return {async all(){return {results:sqlite.prepare(sql).all(...params)}}}}}}}};
   return {sqlite,env,sql:connect(env)};
 }
@@ -384,4 +385,99 @@ test('imports enforce the account window under concurrency, isolate accounts and
     assert.equal((await sql`SELECT count(*) AS n FROM user_imports`)[0].n, 0);
     assert.equal((await sql`SELECT count(*) AS n FROM ingested_units`)[0].n, 0);
   } finally { sqlite.close(); }
+});
+
+async function videoAccount(env,sql,email) {
+  const signup=await app.fetch(new Request('http://localhost/api/auth/signup',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email,password:'isolated-test-password'})}),env,{});
+  const {user}=await signup.json(),cookie=signup.headers.get('set-cookie').split(';')[0];
+  const ids=[];
+  for(let i=0;i<2;i++) {
+    const [unit]=await sql`INSERT INTO ingested_units(submitted_url,source_url,status,transcript) VALUES('test',${`https://x.com/i/status/${100+i}`},'ready','{}') RETURNING id`;
+    await sql`INSERT INTO user_imports(user_id,unit_id) VALUES(${user.id},${unit.id})`;
+    const [a]=await sql`INSERT INTO artifacts(name,source_url,source_ids,processed_text,ingestion_status) VALUES('Check first',${`https://x.com/i/status/${100+i}`},${JSON.stringify([unit.id])},'Read the saved source','ready') RETURNING id`;
+    await sql`INSERT INTO skill_results(artifact_id,artifact_version,status,skill_markdown,review_feedback) VALUES(${a.id},1,'ready','---\nname: check-first\ndescription: Check the saved source\n---\nRun the check.',${JSON.stringify({prompt_revision:SKILL_PROMPT_REVISION})})`;
+    ids.push(a.id);
+  }
+  const request=(id)=>app.fetch(new Request('http://localhost/api/skills/choices',{method:'POST',headers:{cookie,'content-type':'application/json'},body:JSON.stringify({choices:[{id,version:1,keep:true}],generateVideos:true})}),env,{});
+  return {user,cookie,ids,request};
+}
+
+test('one lifetime video slot survives concurrent requests, retries, failure and a changed selection',async()=>{
+  const {sqlite,env,sql}=database();
+  try {
+    const a=await videoAccount(env,sql,'one-video@example.test');
+    const responses=await Promise.all(Array.from({length:12},(_,i)=>a.request(a.ids[i%2])));
+    assert.ok(responses.some(r=>r.status===200));
+    assert.ok(responses.some(r=>r.status===409));
+    const [slot]=await sql`SELECT * FROM user_video_requests WHERE user_id=${a.user.id}`;
+    assert.equal((await sql`SELECT * FROM user_video_requests`).length,1);
+    assert.equal((await a.request(slot.artifact_id)).status,200,'same request is idempotent');
+    const other=a.ids.find(id=>id!==slot.artifact_id);
+    assert.equal((await a.request(other)).status,409,'a second selection is refused server-side');
+    await sql`INSERT INTO video_results(artifact_id,artifact_version,status,attempts,error) VALUES(${slot.artifact_id},1,'failed',3,'fixture-provider-failure')`;
+    const failed=await (await a.request(other)).json();
+    assert.equal(failed.video.status,'failed');
+    assert.match(failed.video.message,/couldn't be made/);
+    assert.doesNotMatch(failed.video.message,/fixture-provider/);
+    await sql`UPDATE video_results SET status='ready',media_ref='r2:videos/one/short.mp4',caption_ref='r2:captions/one.vtt',narration_ref='r2:audio/one.m4a',duration_seconds=25,review_status='approved',review_feedback=${JSON.stringify({judge:'short-judge-v1',passed:true,captions_burned:true})}`;
+    const ready=await (await a.request(other)).json();
+    assert.equal(ready.video.url,'/media/videos/one/short.mp4');
+    assert.match(ready.error,/already made/);
+    assert.equal((await sql`SELECT * FROM user_video_requests`).length,1);
+  } finally {sqlite.close();}
+});
+
+for(const [daily,monthly] of [[20,400],[20,1]]) {
+  test(`video admission respects daily/monthly ceilings under parallel requests (${daily}/${monthly})`,async()=>{
+    const {sqlite,env,sql}=database();
+    Object.assign(env,{DAILY_VIDEO_LIMIT:String(daily),MONTHLY_VIDEO_LIMIT:String(monthly)});
+    try {
+      const accounts=[];
+      for(let i=0;i<22;i++) accounts.push(await videoAccount(env,sql,`budget-${i}@example.test`));
+      const responses=await Promise.all(accounts.map(a=>a.request(a.ids[0])));
+      assert.equal(responses.filter(r=>r.status===200).length,Math.min(daily,monthly));
+      const denied=responses.find(r=>r.status===429);
+      const detail=await denied.json();
+      assert.match(detail.error,/video limit.*Try again after .*UTC/);
+      assert.ok(detail.retryAt);
+      assert.equal((await sql`SELECT * FROM user_video_requests`).length,Math.min(daily,monthly));
+    } finally {sqlite.close();}
+  });
+}
+
+test('migration preserves historical ready videos and assigns only one lifetime slot',async()=>{
+  const {sqlite,env,sql}=database();
+  try {
+    sqlite.exec('DROP TABLE video_starts; DROP TABLE user_video_requests');
+    const a=await videoAccount(env,sql,'historical-video@example.test');
+    for(const [i,id] of a.ids.entries()) {
+      await sql`INSERT INTO user_skill_choices(user_id,artifact_id,artifact_version,kept,video_requested) VALUES(${a.user.id},${id},1,1,1)`;
+      await sql`INSERT INTO video_results(artifact_id,artifact_version,status,attempts,media_ref,caption_ref,narration_ref,duration_seconds,review_status,review_feedback) VALUES(${id},1,'ready',0,${`r2:videos/history-${i}/short.mp4`},'r2:captions/history.vtt','audio',25,'approved',${JSON.stringify({judge:'short-judge-v1',passed:true,captions_burned:true})})`;
+    }
+    sqlite.exec(readFileSync(new URL('../migrations/0007_video_limits.sql',import.meta.url),'utf8'));
+    const [slot]=await sql`SELECT * FROM user_video_requests`;
+    assert.ok(slot);
+    assert.equal((await sql`SELECT * FROM user_video_requests`).length,1);
+    assert.equal((await sql`SELECT * FROM video_results`).length,2,'no historical media row is deleted');
+    assert.equal((await sql`SELECT * FROM user_skill_choices WHERE video_requested=1`).length,1);
+    const response=await a.request(a.ids.find(id=>id!==slot.artifact_id));
+    assert.equal(response.status,409);
+    const body=await response.json();
+    assert.match(body.error,/already made/);
+    assert.match(body.video.url,/^\/media\/videos\/history-/);
+  } finally {sqlite.close();}
+});
+
+test('zero and invalid video admission limits fail closed without consuming an account slot',async()=>{
+  const {sqlite,env,sql}=database();
+  try {
+    const a=await videoAccount(env,sql,'paused-video@example.test');
+    for(const value of ['0','invalid','-1']) {
+      env.DAILY_VIDEO_LIMIT=value;
+      const response=await a.request(a.ids[0]);
+      assert.equal(response.status,503);
+      assert.match((await response.json()).error,/paused/);
+      assert.equal((await sql`SELECT * FROM user_video_requests`).length,0);
+    }
+  } finally {sqlite.close();}
 });

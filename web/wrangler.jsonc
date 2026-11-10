@@ -30,5 +30,6 @@
       "migrations_dir": "migrations"
     }
   ],
+  "vars": { "DAILY_VIDEO_LIMIT": "20", "MONTHLY_VIDEO_LIMIT": "400" },
   "observability": { "enabled": true }
 }

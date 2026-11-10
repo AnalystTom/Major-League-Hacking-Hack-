@@ -8,7 +8,7 @@ import { skillStatus } from "./skill-policy.js";
  * One row per artifact revision whose processing is ready and whose video is rendered. With unit ids, only artifacts built from those units; without, the curated demo feed,
  * which also needs a team-assigned feed_order.
  */
-export async function readFeed(sql, unitIds = null) {
+export async function readFeed(sql, unitIds = null, target = null) {
   if (unitIds && unitIds.length === 0) return [];
   const rows = await sql`
     SELECT a.id, a.version, a.name, a.category, a.source_url, a.sources, a.selection_reason, a.created_at,
@@ -21,6 +21,7 @@ export async function readFeed(sql, unitIds = null) {
       AND json_extract(iif(json_valid(v.review_feedback),v.review_feedback,'{}'), '$.passed') = 1 AND json_extract(iif(json_valid(v.review_feedback),v.review_feedback,'{}'), '$.captions_burned') = 1
     LEFT JOIN skill_results s ON s.artifact_id = a.id AND s.artifact_version = a.version
     WHERE a.ingestion_status = 'ready'
+      AND (${target === null ? 1 : 0}=1 OR (a.id=${target?.id ?? null} AND a.version=${target?.version ?? null}))
       AND (${unitIds === null ? 1 : 0} = 1 OR NOT EXISTS (
         SELECT 1 FROM json_each(a.source_ids) WHERE value NOT IN (SELECT value FROM json_each(${JSON.stringify(unitIds ?? [])}))))
       AND (${unitIds === null ? 1 : 0} = 0 OR v.feed_order IS NOT NULL)

@@ -17,6 +17,7 @@ export async function readSkills(sql, unitIds, userId = null, includeDiscarded =
     SELECT a.id AS artifact_id, a.version AS artifact_version, a.name AS artifact_name, a.category, a.created_at,
       s.id, s.status, s.error, s.attempts, s.skill_markdown, s.review_feedback,
       a.source_url, c.kept, c.video_requested,
+      EXISTS(SELECT 1 FROM user_video_requests r WHERE r.user_id=${userId} AND r.artifact_id=a.id AND r.artifact_version=a.version) AS video_reserved,
       (SELECT json_group_array(json_object('source_url',u.source_url,'start_seconds',u.start_seconds)) FROM json_each(a.source_ids) src JOIN ingested_units u ON u.id=src.value) AS source_units,
       (SELECT json_group_array(json(item)) FROM (
         SELECT json_object('id', u.id, 'url', u.source_url, 'title', u.title) AS item
@@ -32,7 +33,7 @@ export async function readSkills(sql, unitIds, userId = null, includeDiscarded =
   return dedupeContent([
     ...rows.filter((row) => displayed.has(`${row.artifact_id}:${row.artifact_version}`)),
     ...rows.filter((row) => !displayed.has(`${row.artifact_id}:${row.artifact_version}`)),
-  ]).filter((row) => includeDiscarded || row.kept !== 0).map(serializeSkill);
+  ]).filter((row) => includeDiscarded || row.kept !== 0 || row.video_reserved).map(serializeSkill);
 }
 
 /** name and description from SKILL.md frontmatter; null when absent. */

@@ -132,10 +132,11 @@ export function followImports({ onUnits, onItems, onSkills, onError }) {
       // Skills are read separately: if /api/skills fails, links and shorts still update, the last skills stay, and
       // the next check retries them.
       let skills = [];
+      let video = null;
       let skillsError = null;
       if (onSkills) {
         try {
-          ({ skills } = await api("/api/skills"));
+          ({ skills, video = null } = await api("/api/skills"));
         } catch (err) {
           if (err.status === 401) throw err;
           skillsError = err;
@@ -144,10 +145,10 @@ export function followImports({ onUnits, onItems, onSkills, onError }) {
       const skillsFailed = skillsError !== null;
       onUnits(units);
       onItems(items);
-      if (onSkills && !skillsFailed) onSkills(skills);
+      if (onSkills && !skillsFailed) onSkills(skills, video);
       // Reported after the shorts, so a page that clears its error note on fresh shorts still shows this one.
       if (skillsFailed) onError?.(skillsError);
-      const waiting = units.some((u) => !u.settled) || skills.some(skillWriting) || skillsFailed;
+      const waiting = units.some((u) => !u.settled) || skills.some(skillWriting) || ["queued", "running", "retrying"].includes(video?.status) || skillsFailed;
       const skillDue = onSkills && items.some((i) => !i.skill) && skillChecks < SKILL_WAIT_CHECKS;
       if (waiting) skillChecks = 0;
       else if (skillDue) skillChecks++;

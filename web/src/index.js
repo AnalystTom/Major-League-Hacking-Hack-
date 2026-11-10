@@ -9,6 +9,7 @@ import { rateLimit, requestIp } from "./rate-limit.js";
 import { canReadMedia, readFeed } from "./feed.js";
 import { createUnits, parseImport, readUnits, userUnitIds } from "./imports.js";
 import { serveMedia } from "./media.js";
+import { readVideoRequest } from "./video-requests.js";
 import { saveSkillChoices } from "./skill-choices.js";
 import { readSkills } from "./skills.js";
 import { requestProcessing, requestVideoProcessing } from "./processor.js";
@@ -128,15 +129,16 @@ async function api(request, env, url, sql) {
   if (pathname === "/api/skills/choices" && method === "POST") {
     const { body, error } = await readJson(request, 256_000);
     if (error) return error;
-    const result = await saveSkillChoices(sql, user.id, body);
+    const result = await saveSkillChoices(sql, user.id, body, env);
     if (!result.error && body.generateVideos && body.choices.some((c) => c.keep)) {
       result.processor = await requestVideoProcessing(env);
     }
-    return json(result.error ? { error: result.error } : result, result.status ?? 200);
+    return json(result, result.status ?? 200, result.retryAt ? { "retry-after": String(Math.max(1, Math.ceil((Date.parse(result.retryAt) - Date.now()) / 1000))) } : {});
   }
 
   if (pathname === "/api/skills" && method === "GET") {
-    return json({ skills: await readSkills(sql, await userUnitIds(sql, user.id), user.id) });
+    const video = await readVideoRequest(sql, user.id, env);
+    return json({ skills: await readSkills(sql, await userUnitIds(sql, user.id), user.id), ...(video ? { video } : {}) });
   }
 
   if (pathname.startsWith("/api/handoffs")) return json({ error: "Task generation is unavailable. Download a skill instead." }, 410);
