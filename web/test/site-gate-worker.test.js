@@ -31,7 +31,7 @@ test("Wrangler routes real static assets through the gate", { timeout: 60000 }, 
       logLevel: "error",
       experimental: { disableExperimentalWarning: true, disableDevRegistry: true, watch: false },
     });
-    for (const path of ["/", "/app.js", "/favicon.svg", "/available", "/api/me", "/media/test.mp4"]) {
+    for (const path of ["/", "/app.js", "/favicon.svg", "/available", "/api/me", "/media/test.mp4", "/api/auth/x/callback?state=s&code=c"]) {
       assert.equal((await worker.fetch(path)).status, 401, path);
     }
     for (const path of ["/privacy", "/terms"]) {
@@ -39,8 +39,6 @@ test("Wrangler routes real static assets through the gate", { timeout: 60000 }, 
       assert.equal(response.status, 200, path);
       assert.match(await response.text(), /tom@thomasmannai\.com/, path);
     }
-    // The callback is past the gate: without D1 configured it fails 503 rather than 401.
-    assert.notEqual((await worker.fetch("/api/auth/x/callback?state=s&code=c")).status, 401);
     const headers = { authorization: `Basic ${btoa("fixture-owner:fixture-password")}` };
     for (const path of ["/", "/app.js", "/favicon.svg", "/available"]) {
       const response = await worker.fetch(path, { headers });

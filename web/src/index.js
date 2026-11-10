@@ -146,12 +146,12 @@ async function api(request, env, url, sql) {
   return json({ error: "Not found." }, 404);
 }
 
-const PUBLIC_PATHS = new Set(["/privacy", "/terms", "/api/auth/x/callback"]);
+const PUBLIC_PATHS = new Set(["/privacy", "/terms"]);
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    // Public so X's developer console can reach them; X's OAuth redirect cannot send Basic credentials.
+    // Public so X's developer console can reach them.
     const challenge = PUBLIC_PATHS.has(url.pathname) ? null : siteGate(request, env);
     if (challenge) return challenge;
 
