@@ -14,7 +14,7 @@ const sheet = $("[data-add-sheet]");
 const skillsSheet = $("[data-skills-sheet]");
 const skills = createSkills({
   skillsList: $("[data-skills]"), picker: $("[data-agent]"),
-  skillsStatus: $("[data-skills-status]"), review: true, onSaved: showSkills,
+  skillsStatus: $("[data-skills-status]"), review: true, onSaved: (list, video) => { showSkills(list, video); follower?.refresh(); },
 });
 const form = $("[data-add-template]").content.firstElementChild.cloneNode(true);
 let follower = null;
@@ -85,8 +85,8 @@ let units = [];
 let items = [];
 
 // Skills: counts on the top-bar buttons, the lists in the sheet.
-function showSkills(list) {
-  skills.update(list);
+function showSkills(list, video) {
+  skills.update(list, video);
   const c = skills.counts;
   for (const [key, n] of Object.entries({ skills: c.skills })) {
     const b = $(`[data-count="${key}"]`);

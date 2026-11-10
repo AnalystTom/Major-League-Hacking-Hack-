@@ -37,7 +37,7 @@
     "GEMINI_TTS_MODEL": "gemini-3.8-flash-lite-tts",
     // Global charged-start ceilings (UTC), shared by imports, digests and output retries.
     // Not per-account dollar caps; see ../../docs/go-live.md for the cost estimate and limitations.
-    "DAILY_VIDEO_LIMIT": "100",
+    "DAILY_VIDEO_LIMIT": "20",
     "MONTHLY_VIDEO_LIMIT": "400",
     // Enabled for release; kept skills still require an explicit video request.
     // Set to "off" to pause new renders while skills continue.

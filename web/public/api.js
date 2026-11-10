@@ -12,6 +12,8 @@ export async function api(path, { method = "GET", body } = {}) {
     const err = new Error(data.error || "Something went wrong. Try again in a minute.");
     err.status = res.status;
     err.invalid = data.invalid;
+    err.video = data.video;
+    err.retryAt = data.retryAt;
     throw err;
   }
   return data;

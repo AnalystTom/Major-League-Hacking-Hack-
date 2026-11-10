@@ -42,28 +42,29 @@ export function createSkills({ skillsList, picker, skillsStatus, review = false,
   let skills = [];
   const selected = new Map();
   let saving = false;
-  const video = el("input", { type: "checkbox" });
+  let videoState = null;
+  const videoStatus = el("p", { class: "form-status video-status", role: "status", "aria-live": "polite", "data-video-status": "", hidden: true });
   const save = el("button", { type: "button", class: "btn btn-small", text: "Keep selected", onclick: async () => {
     saving = true;
     render();
     try {
       const choices = skills.filter((s) => s.status === "ready").map((s) => ({ id: s.artifact.id, version: s.artifact.version, keep: selected.get(s.id) ?? s.kept !== false }));
-      const generateVideos = video.checked && choices.some((c) => c.keep);
+      const generateVideos = false;
       const result = await api("/api/skills/choices", { method: "POST", body: { choices, generateVideos } });
       skills = result.skills;
       selected.clear();
-      onSaved(skills);
-      skillsStatus.textContent = generateVideos ? "Selected skills kept. Videos requested; rendering may be paused." : choices.some((c) => c.keep) ? "Selected skills kept." : "No skills kept.";
+      videoState = result.video;
+      onSaved(skills, videoState);
+      skillsStatus.textContent = choices.some((c) => c.keep) ? "Selected skills kept." : "No skills kept.";
       skillsStatus.dataset.tone = "ok";
-      video.checked = false;
+
     } catch (err) {
       skillsStatus.textContent = err.message;
       skillsStatus.dataset.tone = "error";
     } finally { saving = false; render(); }
   } });
-  const actions = el("div", { class: "skill-review-actions", hidden: true },
-    el("label", { class: "skill-choice" }, video, "Request videos for selected skills"), save);
-  if (review) skillsList.before(actions);
+  const actions = el("div", { class: "skill-review-actions", hidden: true }, save);
+  if (review) skillsList.before(videoStatus, actions);
   let agent = "claude-code";
   try { agent = agentOrDefault(localStorage.getItem(AGENT_KEY)); } catch {}
 
@@ -102,7 +103,21 @@ export function createSkills({ skillsList, picker, skillsStatus, review = false,
         "aria-label": `Keep ${s.name ?? s.artifact.name}`, disabled: saving, onchange: (e) => selected.set(s.id, e.currentTarget.checked) });
       head.prepend(el("label", { class: "skill-choice" }, keep, "Keep"));
     }
-    if (review && s.videoRequested) head.append(el("p", { class: "skill-state", text: "Video requested" }));
+    if (review && !videoState?.artifact) head.append(el("button", { type: "button", class: "btn-line", text: "Make my video", disabled: saving,
+      onclick: async () => {
+        if (saving) return;
+        saving = true;
+        render();
+        try {
+          const result = await api("/api/skills/choices", { method: "POST", body: { choices: [{ id: s.artifact.id, version: s.artifact.version, keep: true }], generateVideos: true } });
+          skills = result.skills;
+          videoState = result.video;
+          selected.clear();
+          onSaved(skills, videoState);
+        } catch (err) {
+          videoState = err.video ?? { status: "limited", message: err.message };
+        } finally { saving = false; render(); }
+      } }));
     const file = skillFile(s, agent);
     const md = el("pre", { class: "skill-md", hidden: true }, el("code", { text: file.content }));
     const toggle = el("button", { type: "button", class: "btn-line", "aria-expanded": "false", text: "Show SKILL.md",
@@ -133,16 +148,23 @@ export function createSkills({ skillsList, picker, skillsStatus, review = false,
   function render() {
     save.disabled = saving || !skills.some((s) => s.status === "ready");
     save.textContent = saving ? "Keeping…" : "Keep selected";
-    video.disabled = saving;
+    videoStatus.hidden = !review || !videoState;
+    videoStatus.dataset.tone = ["failed", "limited", "cancelled"].includes(videoState?.status) ? "error" : "ok";
+    videoStatus.replaceChildren();
+    if (videoState) {
+      videoStatus.append(document.createTextNode(videoState.message));
+      if (videoState.url) videoStatus.append(" ", el("a", { href: videoState.url, text: "Watch your video" }));
+    }
     actions.hidden = !skills.some((s) => s.status === "ready");
     skillsList.replaceChildren(...skills.map(skillCard));
   }
 
   return {
     /** Re-renders only when something changed, so polling doesn't close an open SKILL.md or move focus. */
-    update(next) {
-      const same = JSON.stringify(next) === JSON.stringify(skills);
+    update(next, video) {
+      const same = JSON.stringify(next) === JSON.stringify(skills) && (video === undefined || JSON.stringify(video) === JSON.stringify(videoState));
       skills = next;
+      if (video !== undefined) videoState = video;
       if (!same) render();
     },
     get counts() {

@@ -928,3 +928,6 @@ a.reel-btn { text-decoration: none; }
 .skill-choice input { width: 1.15rem; height: 1.15rem; accent-color: var(--accent, #c54b26); }
 .skill-head > .skill-choice { margin-bottom: .75rem; }
 @media (max-width: 600px) { .skill-review-actions { flex-direction: column; align-items: stretch; } }
+
+.video-status { margin-block: 12px; max-width: 65ch; overflow-wrap: anywhere; }
+.video-status a { text-underline-offset: .2em; }

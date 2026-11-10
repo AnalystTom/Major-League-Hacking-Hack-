@@ -69,7 +69,8 @@ export function skillCardOf(markdown: string): SkillCard | null {
   return { name, description: description.replace(/\s+/g, " ").trim() };
 }
 
-const VIDEO_REQUESTED = `EXISTS (SELECT 1 FROM user_skill_choices c
+const VIDEO_REQUESTED = `EXISTS (SELECT 1 FROM user_skill_choices c JOIN user_video_requests request
+  ON request.user_id=c.user_id AND request.artifact_id=c.artifact_id AND request.artifact_version=c.artifact_version
   WHERE c.artifact_id=a.id AND c.artifact_version=a.version AND c.kept=1 AND c.video_requested=1
     AND NOT EXISTS (SELECT 1 FROM json_each(a.source_ids) src
       WHERE NOT EXISTS (SELECT 1 FROM user_imports ui WHERE ui.user_id=c.user_id AND ui.unit_id=src.value)))`;
@@ -107,6 +108,8 @@ export class D1OutputStore implements OutputStore {
     const [claimed] = await this.db.batch([{ sql: `INSERT INTO ${t}(artifact_id,artifact_version,status,updated_at,claim_token,attempts,review_feedback)
       SELECT ?1,?2,'running',${NOW},?3,1,${kind === 'video' ? `json_object('generator_revision','${VIDEO_GENERATOR_REVISION}')` : 'NULL'}
       FROM artifacts a WHERE a.id=?1 AND a.version=?2 ${kind === 'video' ? `AND ${VIDEO_REQUESTED}` : ''}
+        ${kind === 'video' ? `AND (SELECT count(*) FROM video_starts WHERE created_at>=strftime('%Y-%m-%dT00:00:00.000Z','now'))<?4
+          AND (SELECT count(*) FROM video_starts WHERE created_at>=strftime('%Y-%m-01T00:00:00.000Z','now'))<?5` : ''}
         AND (NOT EXISTS(SELECT 1 FROM ${t} r WHERE r.artifact_id=a.id AND r.artifact_version=a.version AND r.attempts>0)
           OR (${available('?4','?5')} AND EXISTS(SELECT 1 FROM ingested_units u WHERE u.id=json_extract(a.source_ids,'$[0]'))))
       ON CONFLICT(artifact_id,artifact_version) DO UPDATE SET
@@ -118,6 +121,8 @@ export class D1OutputStore implements OutputStore {
         SELECT json_extract(a.source_ids,'$[0]'),'retry',1,?1 FROM ${t} r
         JOIN artifacts a ON a.id=r.artifact_id AND a.version=r.artifact_version
         WHERE r.claim_token=?1 AND r.attempts>1`, params: [token] },
+    ...(kind === 'video' ? [{ sql: `INSERT INTO video_starts(claim_token,artifact_id,artifact_version)
+        SELECT claim_token,artifact_id,artifact_version FROM video_results WHERE claim_token=?1`, params: [token] }] : []),
     ]);
     return claimed.rows[0] ? { id: claimed.rows[0].id as string,token: claimed.rows[0].claim_token as string } : null;
   }

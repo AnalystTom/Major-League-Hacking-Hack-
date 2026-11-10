@@ -25,7 +25,7 @@ test('a cold Worker preserves the process body and settings diagnostics do not n
   const descriptor = Object.getOwnPropertyDescriptor(crypto.subtle, 'timingSafeEqual');
   Object.defineProperty(crypto.subtle, 'timingSafeEqual', { configurable: true, value: timingSafeEqual });
   const offline = () => { databaseCalls++; throw new Error('D1 offline'); };
-  const env = { DB: { prepare: offline, batch: offline }, INGEST_TOKEN: 'test-token', OPENAI_API_KEY: 'test-only', PROCESSOR: {}, SHORTS: 'on', DAILY_VIDEO_LIMIT: '100', MONTHLY_VIDEO_LIMIT: '400' };
+  const env = { DB: { prepare: offline, batch: offline }, INGEST_TOKEN: 'test-token', OPENAI_API_KEY: 'test-only', PROCESSOR: {}, SHORTS: 'on', DAILY_VIDEO_LIMIT: '20', MONTHLY_VIDEO_LIMIT: '400' };
   const headers = { authorization: `Bearer ${env.INGEST_TOKEN}`, 'content-type': 'application/json' };
   const payload = { unit_ids: ['d3f4e253-c7ca-4b64-9b03-f064ee1953bb'] };
   let pending;
@@ -34,7 +34,7 @@ test('a cold Worker preserves the process body and settings diagnostics do not n
     pending = worker.fetch(new Request('https://processor/api/ingest/process', { method: 'POST', headers, body: JSON.stringify(payload) }), env, ctx);
     await forwarding;
     assert.equal(appliedSettings.SHORTS, 'on', 'shorts enablement reaches the container');
-    assert.equal(appliedSettings.DAILY_VIDEO_LIMIT, '100');
+    assert.equal(appliedSettings.DAILY_VIDEO_LIMIT, '20');
     assert.equal(appliedSettings.MONTHLY_VIDEO_LIMIT, '400');
     t.mock.timers.tick(6000);
     const accepted = await pending;
