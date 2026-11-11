@@ -43,7 +43,7 @@
     // Set to "off" to pause new renders while skills continue.
     "SHORTS": "on"
   },
-  // Secrets, set once with `npx wrangler secret put <NAME>`: GEMINI_API_KEY, OPENAI_API_KEY, TWITTERAPI_IO_KEY (X posts), INGEST_TOKEN
+  // Secrets, set once with `npx wrangler secret put <NAME>`: GEMINI_API_KEY, OPENAI_API_KEY, TWITTERAPI_IO_KEY (X posts), NIMBLE_API_KEY (Substack posts), INGEST_TOKEN
   // (checked here before waking the container; the web Worker's PROCESSOR_TOKEN must equal it).
   // Then point the web Worker at it: PROCESSOR_URL=https://resurface-processor.<subdomain>.workers.dev/api/ingest/process
   "d1_databases": [{ "binding": "DB", "database_name": "resurface-waitlist",
