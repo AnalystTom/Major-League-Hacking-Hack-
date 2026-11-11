@@ -91,13 +91,13 @@ test('cached X reads from an older extractor are replaced on submit, then the cu
   }finally{sqlite.close();}
 });
 
-test('readUnits flags only an X Article read from the public preview',async()=>{
+test('readUnits flags exactly the units whose transcript is marked preview_only',async()=>{
   const {sqlite,sql}=database();
   try {
-    const add=async(n,overview,method)=>(await sql`INSERT INTO ingested_units(submitted_url,source_url,content_type,status,transcript,extraction_method)
-      VALUES(${`https://x.com/i/status/${n}`},${`https://x.com/i/status/${n}`},'x_post','ready',${JSON.stringify({overview})},${method}) RETURNING id`)[0].id;
-    const ids=[await add(1,'X Article by A.','x-embed:tweet-result:v2'),await add(2,'X post by A.','x-embed:tweet-result:v2'),await add(3,'X Article by A.','twitterapi.io:tweets:v2')];
-    assert.deepEqual((await readUnits(sql,ids)).map((u)=>u.preview_only),[true,false,false]);
+    const add=async(n,transcript,method)=>(await sql`INSERT INTO ingested_units(submitted_url,source_url,content_type,status,transcript,extraction_method)
+      VALUES(${`https://x.com/i/status/${n}`},${`https://x.com/i/status/${n}`},'x_post','ready',${JSON.stringify(transcript)},${method}) RETURNING id`)[0].id;
+    const ids=[await add(1,{overview:'X Article by A.',preview_only:true},'x-embed:tweet-result:v2'),await add(2,{overview:'X post by A.'},'x-embed:tweet-result:v2'),await add(3,{overview:'X Article by A.',preview_only:true},'twitterapi.io:tweets:v2'),await add(4,{overview:'X Article by A.'},'twitterapi.io:tweets:v2')];
+    assert.deepEqual((await readUnits(sql,ids)).map((u)=>u.preview_only),[true,false,true,false]);
   }finally{sqlite.close();}
 });
 

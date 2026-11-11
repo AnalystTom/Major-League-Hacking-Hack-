@@ -80,3 +80,24 @@ test("a 429 on the article request is retried, then the article is read", async 
   assert.equal(articleCalls, 2);
   assert.equal(r.transcript.evidence_items[0].observed_spoken_content, "Article: T\n\nBody");
 });
+
+test("an Article read only from preview text is marked preview_only, a full read is not", async () => {
+  const full = routes({
+    "/twitter/tweets": { body: tweet("https://t.co/x") },
+    "/twitter/article": { body: { status: "success", article: { title: "T", preview_text: "P", contents: [{ type: "unstyled", text: "Body" }] } } },
+  });
+  assert.equal((await extractXPost({ apiKey: "k", postId: "42", fetchImpl: full.f })).transcript.preview_only, undefined);
+
+  const previewOnly = routes({
+    "/twitter/tweets": { body: tweet("https://t.co/x") },
+    "/twitter/article": { body: { status: "success", article: { title: "T", preview_text: "Only a preview" } } },
+  });
+  assert.equal((await extractXPost({ apiKey: "k", postId: "42", fetchImpl: previewOnly.f })).transcript.preview_only, true);
+
+  const embed = routes({
+    "/twitter/tweets": { body: tweet("https://t.co/x") },
+    "/twitter/article": { status: 404, body: {} },
+    "tweet-result": { body: { text: "https://t.co/x", article: { title: "T", preview_text: "Embed preview" } } },
+  });
+  assert.equal((await extractXPost({ apiKey: "k", postId: "42", fetchImpl: embed.f })).transcript.preview_only, true);
+});
