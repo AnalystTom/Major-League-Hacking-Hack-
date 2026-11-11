@@ -96,6 +96,13 @@ export function renderUnits(list, units) {
       li.append(scan);
     }
     li.querySelector(".unit-error")?.remove();
+    li.querySelector(".unit-note")?.remove();
+    if (u.preview_only && u.stage !== "failed") {
+      const note = document.createElement("p");
+      note.className = "unit-note";
+      note.textContent = "Only a preview of this X Article could be read, so what Resurface made from it is based on the preview.";
+      li.append(note);
+    }
     if (u.error || FAILED_STAGES.has(u.stage)) {
       const why = document.createElement("p");
       why.className = "unit-error";

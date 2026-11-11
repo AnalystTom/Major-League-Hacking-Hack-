@@ -137,6 +137,7 @@ export async function readUnits(sql, ids, visible = ids) {
   if (ids.length === 0) return [];
   const rows = await sql`
     SELECT u.id, u.source_url, u.start_seconds, u.title, u.content_type, u.status, u.error, u.deferred_until,
+      (u.extraction_method='x-embed:tweet-result:v2' AND json_extract(iif(json_valid(u.transcript),u.transcript,'{}'),'$.overview') LIKE 'X Article%') AS preview_only,
       (SELECT json_group_array(reason) FROM
         (SELECT reason FROM artifact_exclusions e WHERE e.unit_id = u.id ORDER BY e.created_at)) AS exclusions,
       (SELECT json_group_array(json(item)) FROM (
@@ -195,6 +196,7 @@ export function describeUnit(row, now = new Date()) {
     start_seconds: row.start_seconds,
     title: row.title ?? null,
     content_type: row.content_type ?? "youtube_video",
+    preview_only: row.preview_only === 1 || row.preview_only === true,
   };
   const at = (stage, settled, error = null) => ({ ...base, stage, settled, error: plainReason(error, stage) });
 
