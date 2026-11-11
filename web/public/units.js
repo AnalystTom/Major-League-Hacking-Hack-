@@ -22,7 +22,7 @@ export const STAGE = {
   failed: "Couldn't read this source",
   render_failed: "Rendering failed",
   render_retrying: "Rendering failed, trying again",
-  not_selected: "Nothing in it was worth a short",
+  not_selected: "No skill came out of this",
 };
 
 export const PROCESSOR = {

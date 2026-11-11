@@ -161,8 +161,14 @@ export const willRetry = (r) => r?.status === "failed" && Number.isInteger(r.att
 
 // Provider and tool failures (an HTTP status, a JSON body, a key name, an ffmpeg exit) are for the logs, not for people.
 const TECHNICAL = /HTTP \d{3}|[{}]|_KEY\b|\bAPI\b|JSON|token|Gemini|OpenAI|twitterapi|Nimble|ffmpeg|chromium|exit(?:ed)? \d|\bgpt-|Digestion/i;
+// Known provider failures with a short, safe reason a person can act on (the raw text stays in the logs).
+const KNOWN_REASONS = [
+  [/NIMBLE_API_KEY is not configured/, "Reading Substack posts isn't switched on yet, so this one can't be read. Try again later."],
+  [/^Nimble /, "Couldn't read this Substack post right now. Try again later."],
+  [/TWITTERAPI_IO_KEY is not configured|^twitterapi\.io|^X embed/, "Couldn't read this X post right now. Try again later."],
+];
 const PLAIN_FAILURE = {
-  failed: "Resurface couldn't turn this into a short.",
+  failed: "Resurface couldn't turn this into a skill.",
   render_failed: "The short couldn't be finished.",
   render_retrying: "The short hit a snag and is being tried again.",
 };
@@ -181,6 +187,7 @@ export function plainReason(error, stage) {
       }
     } catch {}
   }
+  if (stage === "failed") for (const [pattern, reason] of KNOWN_REASONS) if (error && pattern.test(error)) return reason;
   return stage !== "not_selected" && error && (error.length > 200 || TECHNICAL.test(error)) ? PLAIN_FAILURE[stage] ?? PLAIN_FAILURE.failed : error;
 }
 
@@ -219,7 +226,8 @@ export function describeUnit(row, now = new Date()) {
     const v = a.video;
     if (a.ingestion_status === "failed") return at("failed", true, a.error ?? null);
     if (a.ingestion_status !== "ready") return at("digesting", false);
-    if (skillStatus(a.skill?.status, a.skill?.review_feedback) === "ready" && !v) return at("skill_ready", true);
+    // A ready skill is the result; a video row still pending or running must not keep the card on "rendering".
+    if (skillStatus(a.skill?.status, a.skill?.review_feedback) === "ready" && (!v || v.status === "pending" || v.status === "running")) return at("skill_ready", true);
     if (!v || v.status === "pending" || v.status === "running") return at("rendering", false);
     if (willRetry(v)) return at("render_retrying", false, v.error ?? null);
     if (v.status === "failed") return at("render_failed", true, v.error ?? null);

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { parseXLink } from "../src/xpost.js";
 import { parseYouTubeLink } from "../src/youtube.js";
 import { describeUnit, parseImport, parseUnitIds } from "../src/imports.js";
+import { SKILL_PROMPT_REVISION } from "../src/skill-policy.js";
 import { isMediaKey, parseRange, resolveMediaRef } from "../src/media.js";
 import { serializeItem } from "../src/feed.js";
 import { requestProcessing, requestVideoProcessing } from "../src/processor.js";
@@ -60,7 +61,7 @@ test("describeUnit never shows a raw provider error", () => {
   const raw = 'Gemini HTTP 400: {\n  "error": {\n    "code": 400,\n    "message": "Unsupported MIME type: text/html; charset=UTF-8",\n    "status": "INVALID_ARGUMENT"\n  }\n}';
   const unit = { id: ID, source_url: "https://x.com/i/status/2104216919033192746", content_type: "x_post", status: "failed", error: raw, artifacts: [], exclusions: [] };
   const failed = describeUnit(unit);
-  assert.equal(failed.error, "Resurface couldn't turn this into a short.");
+  assert.equal(failed.error, "Resurface couldn't turn this into a skill.");
   assert.doesNotMatch(JSON.stringify(failed), /Gemini|MIME|INVALID_ARGUMENT|HTTP/);
   // Reasons already written in plain English pass through, including a short that isn't worth making.
   assert.equal(describeUnit({ ...unit, error: "X post unavailable: not found, deleted or protected" }).error, "X post unavailable: not found, deleted or protected");
@@ -91,7 +92,16 @@ test("describeUnit reports the furthest real stage", () => {
   assert.equal(describeUnit(unit({})).stage, "digesting");
   assert.equal(describeUnit(unit({ exclusions: ["Off topic."] })).stage, "not_selected");
   assert.equal(describeUnit(unit({ artifacts: [art({})] })).stage, "rendering");
-  assert.equal(describeUnit(unit({ artifacts: [art({ ingestion_status: "failed", error: "Digestion HTTP 500" })] })).error, "Resurface couldn't turn this into a short.");
+  const skill = { status: "ready", review_feedback: JSON.stringify({ prompt_revision: SKILL_PROMPT_REVISION }) };
+  for (const video of [null, { status: "pending" }, { status: "running" }]) {
+    const d = describeUnit(unit({ artifacts: [art({ skill, video })] }));
+    assert.deepEqual([d.stage, d.settled], ["skill_ready", true]);
+  }
+  const failedSubstack = (error) => describeUnit(unit({ status: "failed", content_type: "substack_post", error })).error;
+  assert.match(failedSubstack("NIMBLE_API_KEY is not configured"), /Substack posts isn't switched on/);
+  assert.match(failedSubstack("Nimble HTTP 500: {}"), /Couldn't read this Substack post/);
+  assert.match(describeUnit(unit({ status: "failed", error: "TWITTERAPI_IO_KEY is not configured" })).error, /Couldn't read this X post/);
+  assert.equal(describeUnit(unit({ artifacts: [art({ ingestion_status: "failed", error: "Digestion HTTP 500" })] })).error, "Resurface couldn't turn this into a skill.");
   assert.equal(describeUnit(unit({ artifacts: [art({ video: { status: "failed", error: "ffmpeg exit 1", attempts: 3 } })] })).error, "The short couldn't be finished.");
   const retrying = describeUnit(unit({ artifacts: [art({ video: { status: "failed", error: "Gemini HTTP 503", attempts: 1 } })] }));
   assert.deepEqual([retrying.stage, retrying.settled, retrying.error], ["render_retrying", false, "The short hit a snag and is being tried again."]);
