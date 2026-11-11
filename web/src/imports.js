@@ -24,7 +24,7 @@ function hostOf(line) {
   }
 }
 
-/** Validates a Proceed submission: { links: string[] | string, company?: honeypot }. */
+/** Validates a Proceed submission: { links: string[] | string, company?: honeypot }. Invalid lines ride along in value.invalid. */
 export function parseImport(body) {
   if (!body || typeof body !== "object") return { ok: false, status: 400, error: "Send a JSON body with a links field." };
   if (typeof body.company === "string" && body.company.trim() !== "") return { ok: false, status: 202, error: "ignored" };
@@ -43,7 +43,8 @@ export function parseImport(body) {
     if (parsed.ok) links.push(parsed.value);
     else invalid.push({ link: line.trim(), error: parsed.error });
   }
-  if (invalid.length) return { ok: false, status: 400, error: "Some links can't be imported.", invalid };
+  // Valid lines still import; each invalid one comes back with its reason. Only an all-invalid batch is an error.
+  if (invalid.length && !links.length) return { ok: false, status: 400, error: "None of those links can be imported.", invalid };
 
   const seen = new Set();
   const unique = links.filter((l) => {
@@ -54,7 +55,7 @@ export function parseImport(body) {
   if (count("youtube_video") > MAX_YOUTUBE_LINKS) return { ok: false, status: 400, error: `Paste at most ${MAX_YOUTUBE_LINKS} YouTube videos at a time.` };
   if (count("x_post") > MAX_X_LINKS) return { ok: false, status: 400, error: `Paste at most ${MAX_X_LINKS} X posts at a time.` };
   if (count("substack_post") > MAX_SUBSTACK_LINKS) return { ok: false, status: 400, error: `Paste at most ${MAX_SUBSTACK_LINKS} Substack posts at a time.` };
-  return { ok: true, value: { links: unique } };
+  return { ok: true, value: { links: unique, invalid } };
 }
 
 /** Comma-separated unit ids from a query string, or null when any id is malformed. */

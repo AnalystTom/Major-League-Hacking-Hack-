@@ -39,9 +39,17 @@ test("parseImport validates, reports every bad line, and de-duplicates", () => {
   assert.equal(ok.ok, true);
   assert.equal(ok.value.links.length, 1);
 
-  const bad = parseImport({ links: ["https://youtu.be/VQy50fuxI34", "https://vimeo.com/1"] });
+  // One bad line no longer rejects the batch: the valid line imports and the bad one is reported with its reason.
+  const mixed = parseImport({ links: ["https://youtu.be/VQy50fuxI34", "https://vimeo.com/1", "https://a.substack.com/"] });
+  assert.equal(mixed.ok, true);
+  assert.deepEqual(mixed.value.links.map((l) => l.source_url), ["https://www.youtube.com/watch?v=VQy50fuxI34"]);
+  assert.deepEqual(mixed.value.invalid.map((i) => i.link), ["https://vimeo.com/1", "https://a.substack.com/"]);
+  assert.ok(mixed.value.invalid.every((i) => i.error));
+  assert.deepEqual(parseImport({ links: ["https://youtu.be/VQy50fuxI34"] }).value.invalid, []);
+  const bad = parseImport({ links: ["https://vimeo.com/1", "https://vimeo.com/2"] });
   assert.equal(bad.status, 400);
-  assert.deepEqual(bad.invalid.map((i) => i.link), ["https://vimeo.com/1"]);
+  assert.match(bad.error, /None of those links/);
+  assert.deepEqual(bad.invalid.map((i) => i.link), ["https://vimeo.com/1", "https://vimeo.com/2"]);
 
   assert.equal(parseImport({ links: [] }).status, 400);
   assert.equal(parseImport({ links: Array(141).fill("https://youtu.be/VQy50fuxI34") }).status, 400);
@@ -225,8 +233,8 @@ test("parseImport accepts YouTube and X links together and de-duplicates X posts
   assert.deepEqual(r.value.links.map((l) => l.source_url), ["https://www.youtube.com/watch?v=VQy50fuxI34", "https://x.com/i/status/12"]);
 
   const bad = parseImport({ links: ["https://x.com/a/status/12", "https://x.com/a"] });
-  assert.equal(bad.ok, false);
-  assert.deepEqual(bad.invalid.map((i) => i.link), ["https://x.com/a"]);
+  assert.equal(bad.ok, true);
+  assert.deepEqual(bad.value.invalid.map((i) => i.link), ["https://x.com/a"]);
 });
 
 test("parseImport caps 20 YouTube videos and 100 X posts independently", () => {
@@ -289,6 +297,7 @@ test("parseImport accepts YouTube and Substack together and de-duplicates posts"
   const bad = parseImport({ links: ["https://a.substack.com/", "https://vimeo.com/1"] });
   assert.equal(bad.ok, false);
   assert.equal(bad.invalid.length, 2);
+  assert.equal(parseImport({ links: ["https://a.substack.com/", "https://youtu.be/VQy50fuxI34"] }).value.invalid.length, 1);
 });
 
 test("parseImport caps Substack posts at 20 independently of videos and X posts", () => {
