@@ -34,6 +34,11 @@ test("Wrangler routes real static assets through the gate", { timeout: 60000 }, 
     for (const path of ["/", "/app.js", "/favicon.svg", "/available", "/api/me", "/media/test.mp4", "/api/auth/x/callback?state=s&code=c"]) {
       assert.equal((await worker.fetch(path)).status, 401, path);
     }
+    for (const path of ["/privacy", "/terms"]) {
+      const response = await worker.fetch(path);
+      assert.equal(response.status, 200, path);
+      assert.match(await response.text(), /tom@thomasmannai\.com/, path);
+    }
     const headers = { authorization: `Basic ${btoa("fixture-owner:fixture-password")}` };
     for (const path of ["/", "/app.js", "/favicon.svg", "/available"]) {
       const response = await worker.fetch(path, { headers });

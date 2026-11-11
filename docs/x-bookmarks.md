@@ -23,13 +23,15 @@ Set both `SITE_GATE_USER` and `SITE_GATE_PASSWORD` as secrets on the web Worker
 (`web/wrangler.jsonc`) through authenticated Cloudflare setup to require the
 browser's native HTTP Basic login for the entire site. Never commit or log their
 values. The gate covers HTML, static assets, `/available`, `/api`, `/media`, and
-the X callback. Authenticate on the site before starting X sign-in; the browser
-can reuse that authentication on return, while OAuth nonce/state cookies and
-application sessions still work as before. Use HTTPS outside local development.
+the X callback; only `/privacy` and `/terms` (required by the X developer
+console) are exempt. Authenticate on the site before starting X sign-in; the
+browser can reuse that authentication on return, while OAuth nonce/state cookies
+and application sessions still work as before. Use HTTPS outside local
+development.
 
 The gate is off only when both secrets are absent. If exactly one is set, or
-either is empty or whitespace, every route returns 503 (misconfigured gate)
-rather than serving the site. Set both secrets before or together with the
+either is empty or whitespace, every route except `/privacy` and `/terms`
+returns 503 (misconfigured gate) rather than serving the site. Set both secrets before or together with the
 deploy. To open the site at
 launch, delete **both** `SITE_GATE_USER` and `SITE_GATE_PASSWORD` from the web
 Worker through authenticated Cloudflare secret management and publish that

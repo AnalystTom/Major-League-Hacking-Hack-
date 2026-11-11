@@ -34,6 +34,16 @@ test("gate challenges every route before accessing assets, database, or provider
   }
 });
 
+test("only the legal pages skip the gate, even with the gate misconfigured", async () => {
+  for (const bindings of [secrets, { SITE_GATE_USER: "owner" }]) {
+    const env = { ...bindings, ASSETS: { fetch: () => new Response("asset") } };
+    for (const path of ["/privacy", "/terms"]) assert.equal(await (await call(path, env)).text(), "asset", path);
+  }
+  for (const path of ["/privacy.html", "/privacy/", "/terms/x", "/api/auth/x/callback", "/api/auth/x/start"]) {
+    assert.equal((await call(path, secrets)).status, 401, path);
+  }
+});
+
 test("gate is off only when both secrets are absent", async () => {
   const env = { ASSETS: { fetch: () => new Response("asset") } };
   assert.equal(await (await call("/app.js", env)).text(), "asset");
