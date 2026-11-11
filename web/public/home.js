@@ -139,10 +139,15 @@ form.addEventListener("submit", async (e) => {
   try {
     const body = await api("/api/imports", { method: "POST", body: { links } });
     // Beside the form while the frame is showing, in the status list once shorts have taken the frame's place.
-    $($("[data-status]").hidden ? "[data-first-note]" : "[data-run-note]").textContent = PROCESSOR[body.processor] ?? "";
+    const skipped = body.invalid?.length
+      ? `${body.invalid.length} link${body.invalid.length === 1 ? "" : "s"} couldn't be added: ${body.invalid.map((i) => `${i.link} (${i.error})`).join("; ")}`
+      : "";
+    $($("[data-status]").hidden ? "[data-first-note]" : "[data-run-note]").textContent = [PROCESSOR[body.processor], skipped].filter(Boolean).join(" ");
     status.textContent = "";
     form.reset();
-    if (sheet.open) sheet.close();
+    // The skipped lines stay in the box so they can be fixed and sent again.
+    if (skipped) form.querySelector("textarea").value = body.invalid.map((i) => i.link).join("\n");
+    else if (sheet.open) sheet.close();
     follower.refresh();
   } catch (err) {
     const detail = err.invalid?.map((i) => `${i.link}: ${i.error}`).join(" ");
