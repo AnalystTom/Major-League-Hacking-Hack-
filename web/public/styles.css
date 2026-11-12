@@ -463,7 +463,7 @@ button { font: inherit; color: inherit; }
   .units .unit-scan [data-current="true"]::after { animation: none; display: none; }
 }
 @keyframes pulse { 50% { opacity: .25; } }
-.unit-error { grid-column: 1 / -1; font-size: .875rem; color: var(--ink-soft); }
+.unit-error, .unit-note { grid-column: 1 / -1; font-size: .875rem; color: var(--ink-soft); }
 
 .reel { --h: min(78svh, 720px); width: calc(var(--h) * 9 / 16); }
 .reel-track {
@@ -694,7 +694,7 @@ a.reel-btn { text-decoration: none; }
 .app-page .form-status[data-tone="error"] { color: var(--late-on-night); }
 
 .app-page .units li { background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .1); color: var(--on-night); }
-.app-page .unit-stage, .app-page .unit-error, .app-page .hint { color: var(--on-night-soft); }
+.app-page .unit-stage, .app-page .unit-error, .app-page .unit-note, .app-page .hint { color: var(--on-night-soft); }
 .app-page .units li[data-stage="ready"] .unit-stage { color: var(--accent); }
 .app-page .units li:is([data-stage="failed"], [data-stage="render_failed"], [data-stage="not_selected"]) .unit-stage { color: var(--late-on-night); }
 .frame-units { margin: 0; }

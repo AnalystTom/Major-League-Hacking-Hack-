@@ -25,7 +25,7 @@ export type ContentType = "youtube_video" | "x_post" | "substack_post";
 
 /** A numbered chunk of a text source; digests cite it by `index`. */
 export interface TextSection { index: number; text: string }
-export type VideoTranscript = { overview?: string; window: [number, number]; evidence_items: EvidenceItem[] };
+export type VideoTranscript = { overview?: string; preview_only?: boolean; window: [number, number]; evidence_items: EvidenceItem[] };
 export type TextTranscript = { overview?: string; sections: TextSection[] };
 export const isTextTranscript = (t: unknown): t is TextTranscript => !!t && typeof t === "object" && "sections" in t;
 

@@ -65,7 +65,7 @@ async function pacedGet(get: () => Promise<Response>): Promise<Response> {
 }
 
 /** Reads the post's X Article (GET /twitter/article); null when the post has none. Other failures throw. */
-async function readArticle(o: XPostOptions, get: (url: string) => Promise<Response>): Promise<{ title: string | null; text: string } | null> {
+async function readArticle(o: XPostOptions, get: (url: string) => Promise<Response>): Promise<{ title: string | null; text: string; preview?: boolean } | null> {
   const res = await pacedGet(() => get(`https://api.twitterapi.io/twitter/article?tweet_id=${encodeURIComponent(o.postId)}`));
   const text = await res.text();
   if (res.status === 404) return null;
@@ -78,7 +78,7 @@ async function readArticle(o: XPostOptions, get: (url: string) => Promise<Respon
   const blocks = (a.contents ?? []).map((b) => (b.text ?? "").trim()).filter(Boolean);
   if (!blocks.length && !a.preview_text) return null;
   const parts = [a.title?.trim() && `Article: ${a.title.trim()}`, ...(blocks.length ? blocks : [a.preview_text!.trim()])].filter(Boolean);
-  return { title: a.title?.trim() || null, text: parts.join("\n\n").slice(0, MAX_ARTICLE_CHARS) };
+  return { title: a.title?.trim() || null, text: parts.join("\n\n").slice(0, MAX_ARTICLE_CHARS), preview: !blocks.length };
 }
 
 export interface XPostOptions {
@@ -121,7 +121,7 @@ export async function extractXPost(o: XPostOptions): Promise<{ title: string; tr
 
 interface PostParts {
   own: string;
-  article: { title: string | null; text: string } | null;
+  article: { title: string | null; text: string; preview?: boolean } | null;
   quoted?: string;
   quotedHandle?: string;
   author?: { userName?: string; name?: string };
@@ -140,7 +140,7 @@ function shape(p: PostParts): { title: string; transcript: NonNullable<IngestedU
   const item: EvidenceItem = { start_seconds: 0, end_seconds: 0, observed_spoken_content: content };
   return {
     title: `${handle ? `@${handle}` : "X post"}: ${(p.article?.title ?? (p.own || content)).replace(/\s+/g, " ").slice(0, 80)}`,
-    transcript: { overview: `${p.article ? "X Article" : "X post"} by ${byline}${created ? ` on ${created}` : ""}.`, window: [0, 0], evidence_items: [item] },
+    transcript: { overview: `${p.article ? "X Article" : "X post"} by ${byline}${created ? ` on ${created}` : ""}.`, window: [0, 0], evidence_items: [item], ...(p.article?.preview && { preview_only: true }) },
   };
 }
 
@@ -175,7 +175,7 @@ async function readPublicPost(o: Pick<XPostOptions, "postId" | "fetchImpl" | "ti
   const own = (post.text ?? "").trim();
   const a = post.article;
   const preview = [a?.title?.trim() && `Article: ${a.title.trim()}`, a?.preview_text?.trim()].filter(Boolean).join("\n\n");
-  const article = a && preview ? { title: a.title?.trim() || null, text: preview } : null;
+  const article = a && preview ? { title: a.title?.trim() || null, text: preview, preview: true } : null;
   const quoted = post.quoted_tweet?.text?.trim();
   return { own, article, quoted, quotedHandle: post.quoted_tweet?.user?.screen_name, author: { userName: post.user?.screen_name, name: post.user?.name }, createdAt: post.created_at };
 }
