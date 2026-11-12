@@ -30,6 +30,15 @@
       "migrations_dir": "migrations"
     }
   ],
-  "vars": { "DAILY_VIDEO_LIMIT": "20", "MONTHLY_VIDEO_LIMIT": "400" },
+  // Abuse caps (UTC days). Placeholders until the captain sets launch values; an invalid value blocks, it never allows.
+  // SIGNUPS=off pauses new accounts (503) while the site stays public.
+  "vars": {
+    "DAILY_VIDEO_LIMIT": "20",
+    "MONTHLY_VIDEO_LIMIT": "400",
+    "USER_DAILY_IMPORT_LIMIT": "5",
+    "SIGNUP_DAILY_LIMIT": "200",
+    "SIGNUP_IP_DAILY_LIMIT": "5",
+    "SIGNUPS": "on"
+  },
   "observability": { "enabled": true }
 }

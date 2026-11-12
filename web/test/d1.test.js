@@ -17,7 +17,8 @@ function database() {
   sqlite.exec(readFileSync(new URL('../migrations/0003_video_duration.sql',import.meta.url),'utf8'));
   sqlite.exec(readFileSync(new URL('../migrations/0005_skill_choices.sql',import.meta.url),'utf8'));
   sqlite.exec(readFileSync(new URL('../migrations/0007_video_limits.sql',import.meta.url),'utf8'));
-  const env={AUTH_LIMITER:{async limit(){return {success:true}}},IMPORT_LIMITER:{async limit(){return {success:true}}},DB:{prepare(sql){return {bind(...params){return {async all(){return {results:sqlite.prepare(sql).all(...params)}}}}}}}};
+  sqlite.exec(readFileSync(new URL('../migrations/0008_signup_events.sql',import.meta.url),'utf8'));
+  const env={USER_DAILY_IMPORT_LIMIT:'1000',SIGNUP_IP_DAILY_LIMIT:'1000',AUTH_LIMITER:{async limit(){return {success:true}}},IMPORT_LIMITER:{async limit(){return {success:true}}},DB:{prepare(sql){return {bind(...params){return {async all(){return {results:sqlite.prepare(sql).all(...params)}}}}}}}};
   return {sqlite,env,sql:connect(env)};
 }
 

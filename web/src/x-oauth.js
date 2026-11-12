@@ -3,6 +3,7 @@ import { cookieSecure, createSession, readCookie, sessionCookie } from './auth.j
 import { createUnits, parseImport, readUnits, userUnitIds } from './imports.js';
 import { requestProcessing } from './processor.js';
 import { rateLimit, requestIp } from './rate-limit.js';
+import { importCapResponse, importsLeft, reserveSignup, signupsPaused } from './limits.js';
 
 const enc = new TextEncoder();
 const b64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)));
@@ -108,6 +109,8 @@ async function callback(request, env, sql, user) {
     if (user && linked && linked.user_id !== user.id) return redirect('/app?x=conflict', [clear]);
     let userId = user?.id ?? linked?.user_id;
     if (!userId) {
+      if (signupsPaused(env)) return redirect('/start?x=paused', [clear]);
+      if (await reserveSignup(env, sql, requestIp(request))) return redirect('/start?x=full', [clear]);
       // Internal namespace cannot collide with valid signup emails. Never displayed as an email.
       const [created] = await sql`INSERT INTO users(email,name,password_hash) VALUES(${'oauth:x:' + data.id},${String(data.name ?? data.username).slice(0,80)},'')
         ON CONFLICT(email) DO UPDATE SET name=excluded.name RETURNING id`;
@@ -151,6 +154,10 @@ async function importBookmarks(env, sql, user, request) {
       await sql`UPDATE x_connections SET initial_complete=1,import_state='complete',cursor=NULL WHERE user_id=${user.id} AND lease_token=${lease}`;
       return json({ complete: true, read: row.read_count, capped: true });
     }
+    // The daily import cap also bounds the page, so no paid read fetches more links than the account may add today.
+    const left = await importsLeft(env, sql, user.id);
+    const overCap = importCapResponse(left, 1);
+    if (overCap) return overCap;
     if (!(await reserveRead(env, sql, user.id))) {
       const message = 'X reads are paused today. Paste links or try tomorrow.';
       await sql`UPDATE x_connections SET import_state='failed',error=${message} WHERE user_id=${user.id} AND lease_token=${lease}`;
@@ -174,7 +181,8 @@ async function importBookmarks(env, sql, user, request) {
       const [updated] = await sql`UPDATE x_connections SET access_token=${await seal(env, access)},refresh_token=${await seal(env, token.refresh_token)},expires_at=${now() + Math.min(token.expires_in, 86400)} WHERE user_id=${user.id} AND lease_token=${lease} RETURNING user_id`;
       if (!updated) return json({ error: 'X was disconnected.' }, 409);
     }
-    const params = new URLSearchParams({ max_results: String(remaining) });
+    const pageSize = Math.min(remaining, left);
+    const params = new URLSearchParams({ max_results: String(pageSize) });
     if (row.cursor) params.set('pagination_token', row.cursor);
     const response = await provider(env, `/2/users/${row.x_user_id}/bookmarks?${params}`, { headers: { authorization: `Bearer ${access}` } });
     if (!response.ok) {
@@ -183,7 +191,7 @@ async function importBookmarks(env, sql, user, request) {
       return json({ error: message }, response.status === 429 ? 429 : 502);
     }
     const page = await response.json();
-    if (!Number.isInteger(page.meta?.result_count) || page.meta.result_count !== (page.data ?? []).length || (page.data !== undefined && !Array.isArray(page.data)) || (page.data ?? []).length > remaining ||
+    if (!Number.isInteger(page.meta?.result_count) || page.meta.result_count !== (page.data ?? []).length || (page.data !== undefined && !Array.isArray(page.data)) || (page.data ?? []).length > pageSize ||
         !(page.data ?? []).every(p => typeof p.id === 'string' && /^\d{1,19}$/.test(p.id)) || page.errors?.length) throw new Error('Invalid bookmarks response');
     const posts = page.data ?? [];
     const next = page.meta?.next_token;
