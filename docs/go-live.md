@@ -18,7 +18,7 @@ keeps that skill. The server rejects a second selection, even with parallel requ
 a new session or a different artifact version. Duplicate submissions for the same
 selection are idempotent. Retries work on that same video; a failure does not create
 a fresh account allowance. Historical allocations are backfilled without deleting
-existing videos or media. Shared source/approved-video reuse and the public catalogue
+existing videos or media; a failed historical video does not use the slot. Shared source/approved-video reuse and the public catalogue
 remain available.
 
 Two atomic database controls bound new work across all accounts:
@@ -134,7 +134,7 @@ npm exec --prefix deploy/processor -- wrangler deployments list --config deploy/
    and the intended unchanged caps or reviewed lower values. Preserve existing
    secrets, X settings and bindings. Never print secret values. Verify required
    migrations with `npm exec --prefix web -- wrangler d1 migrations list resurface-waitlist --remote --config web/wrangler.jsonc`; review pending migrations before applying them. The account
-   choices, processing ledger and X tables are shared by both Workers. Apply `0007_video_limits.sql` and `0008_signup_events.sql` before deploying either Worker: it adds the lifetime reservations and video-start ledger. Back up and review historical allocations first. The migration retains existing media and can reduce multiple old request flags to the single preserved allocation.
+   choices, processing ledger and X tables are shared by both Workers. Apply `0007_video_limits.sql` and `0008_signup_events.sql` before deploying either Worker: it adds the lifetime reservations and video-start ledger. Back up and review historical allocations first. The migration retains existing media and can reduce multiple old request flags to the single preserved allocation, and failed videos do not count as an allocation.
 2. Apply reviewed pending migrations before either code release:
    `npm run db:migrate:remote --prefix web`. Preserve all existing data.
 3. Deploy the web Worker, retaining both gate secrets:
