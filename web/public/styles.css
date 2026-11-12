@@ -904,7 +904,7 @@ a.reel-btn { text-decoration: none; }
 .public-catalogue > section { margin-top: 32px; scroll-margin-top: calc(var(--bar, 64px) + 16px); }
 .public-catalogue .reel { margin: 20px auto; max-width: 100%; }
 .public-catalogue .section-head .btn { margin-top: 16px; }
-.app-bar a.topbar-pill { text-decoration: none; text-align: center; font-size: .75rem; max-width: 160px; }
+.app-bar a.topbar-pill { text-decoration: none; text-align: center; font-size: .75rem; }
 
 .public-catalogue .topbar-pill { color: var(--ink); }
 
