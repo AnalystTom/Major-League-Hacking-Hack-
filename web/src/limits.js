@@ -20,7 +20,7 @@ export const signupsPaused = (env) =>
 
 /**
  * Reserves one new-account slot (global and per-IP, per UTC day) with a single conditional insert.
- * Returns null when reserved, else the 429 to send. Rows older than two days are dropped.
+ * Returns { id } when reserved, else { full } with the 429 to send. Rows older than two days are dropped.
  */
 export async function reserveSignup(env, sql, ip) {
   const day = utcDay();
@@ -31,8 +31,11 @@ export async function reserveSignup(env, sql, ip) {
   const reserved = await sql`INSERT INTO signup_events(ip_hash) SELECT ${ipHash}
     WHERE (SELECT count(*) FROM signup_events WHERE created_at >= ${day}) < ${global}
     AND (SELECT count(*) FROM signup_events WHERE ip_hash = ${ipHash} AND created_at >= ${day}) < ${perIp} RETURNING id`;
-  return reserved.length ? null : limited("Sign-ups are full for today. Try again tomorrow.");
+  return reserved.length ? { id: reserved[0].id } : { full: limited("Sign-ups are full for today. Try again tomorrow.") };
 }
+
+/** Gives a reserved slot back when no new account was created. */
+export const refundSignup = (sql, id) => sql`DELETE FROM signup_events WHERE id = ${id}`;
 
 // shortcut: check-then-write, so parallel pastes can overshoot by at most one paste per IMPORT_LIMITER window; make it a conditional insert if that matters.
 /** Links this account may still import today (UTC), counted from user_imports. */

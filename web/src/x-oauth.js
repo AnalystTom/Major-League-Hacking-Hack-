@@ -3,7 +3,7 @@ import { cookieSecure, createSession, readCookie, sessionCookie } from './auth.j
 import { createUnits, parseImport, readUnits, userUnitIds } from './imports.js';
 import { requestProcessing } from './processor.js';
 import { rateLimit, requestIp } from './rate-limit.js';
-import { importCapResponse, importsLeft, reserveSignup, signupsPaused } from './limits.js';
+import { importCapResponse, importsLeft, refundSignup, reserveSignup, signupsPaused } from './limits.js';
 
 const enc = new TextEncoder();
 const b64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)));
@@ -110,11 +110,17 @@ async function callback(request, env, sql, user) {
     let userId = user?.id ?? linked?.user_id;
     if (!userId) {
       if (signupsPaused(env)) return redirect('/start?x=paused', [clear]);
-      if (await reserveSignup(env, sql, requestIp(request))) return redirect('/start?x=full', [clear]);
+      const slot = await reserveSignup(env, sql, requestIp(request));
+      if (slot.full) return redirect('/start?x=full', [clear]);
       // Internal namespace cannot collide with valid signup emails. Never displayed as an email.
-      const [created] = await sql`INSERT INTO users(email,name,password_hash) VALUES(${'oauth:x:' + data.id},${String(data.name ?? data.username).slice(0,80)},'')
-        ON CONFLICT(email) DO UPDATE SET name=excluded.name RETURNING id`;
-      userId = created.id;
+      const email = 'oauth:x:' + data.id;
+      const [created] = await sql`INSERT INTO users(email,name,password_hash) VALUES(${email},${String(data.name ?? data.username).slice(0,80)},'')
+        ON CONFLICT(email) DO NOTHING RETURNING id`;
+      if (created) userId = created.id;
+      else {
+        await refundSignup(sql, slot.id);
+        [{ id: userId }] = await sql`SELECT id FROM users WHERE email=${email}`;
+      }
     }
     const encrypted = await seal(env, token.access_token);
     const refresh = typeof token.refresh_token === 'string' && token.refresh_token.length <= 8000 ? await seal(env, token.refresh_token) : null;

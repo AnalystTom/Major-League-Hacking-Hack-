@@ -94,3 +94,12 @@ test("an invalid import limit var fails closed and the default is 5", async () =
   assert.equal((await t.post("/api/imports", yt(...ids.slice(0, 5)), { cookie: c })).status, 201);
   assert.equal((await t.post("/api/imports", yt(ids[5]), { cookie: c })).status, 429);
 });
+
+test("a duplicate-email signup (409) does not consume the daily or per-IP cap", async () => {
+  const t = setup({ SIGNUP_DAILY_LIMIT: "2", SIGNUP_IP_DAILY_LIMIT: "2" });
+  assert.equal((await t.signup(1, "192.0.2.1")).status, 201);
+  for (let i = 0; i < 5; i++) assert.equal((await t.signup(1, "192.0.2.1")).status, 409);
+  assert.equal(t.db.prepare("SELECT count(*) n FROM signup_events").get().n, 1);
+  assert.equal((await t.signup(2, "192.0.2.1")).status, 201);
+  assert.equal((await t.signup(3, "192.0.2.1")).status, 429);
+});
