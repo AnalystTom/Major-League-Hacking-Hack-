@@ -6,6 +6,7 @@ import { siteGate } from "./site-gate.js";
 import { connect } from "./db.js";
 import waitlist from "./waitlist.js";
 import { rateLimit, requestIp } from "./rate-limit.js";
+import { checkImportCap, refundSignup, reserveSignup, signupsPaused } from "./limits.js";
 import { canReadMedia, readFeed } from "./feed.js";
 import { createUnits, parseImport, readUnits, userUnitIds } from "./imports.js";
 import { serveMedia } from "./media.js";
@@ -40,14 +41,21 @@ async function accountState(sql, user) {
 }
 
 async function signup(request, env, sql) {
+  const paused = signupsPaused(env);
+  if (paused) return paused;
   const rejection = await rateLimit(env.AUTH_LIMITER, requestIp(request));
   if (rejection) return rejection;
   const { body, error } = await readJson(request);
   if (error) return error;
   const parsed = parseSignup(body);
   if (!parsed.ok) return json({ error: parsed.error }, 400);
+  const slot = await reserveSignup(env, sql, requestIp(request));
+  if (slot.full) return slot.full;
   const user = await createUser(sql, parsed.value);
-  if (!user) return json({ error: "There's already an account with that email. Sign in instead." }, 409);
+  if (!user) {
+    await refundSignup(sql, slot.id);
+    return json({ error: "There's already an account with that email. Sign in instead." }, 409);
+  }
   const token = await createSession(sql, user.id);
   return json(await accountState(sql, user), 201, { "set-cookie": sessionCookie(token, undefined, cookieSecure(request.url)) });
 }
@@ -76,6 +84,8 @@ async function startImport(request, env, sql, user) {
     if (parsed.status === 202) return json({ units: [], processor: "not_needed" }, 200);
     return json({ error: parsed.error, invalid: parsed.invalid }, parsed.status);
   }
+  const capped = await checkImportCap(env, sql, user.id, parsed.value.links.length);
+  if (capped) return capped;
   const units = await createUnits(sql, parsed.value.links, { userId: user.id });
   const processor = await requestProcessing(env, units.filter((u) => u.linked).map((u) => u.id));
   return json({ units: await readUnits(sql, units.map((u) => u.id), await userUnitIds(sql, user.id)), processor, invalid: parsed.value.invalid }, 201);

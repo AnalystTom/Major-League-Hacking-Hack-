@@ -104,6 +104,22 @@ Follow [the captain-operated X setup steps](x-setup-steps.md) as the source of t
    checks are complete. Test X only under separate authorization; keep the site gate
    on and authenticate before starting OAuth so the browser can return through it.
 
+## Abuse and spend caps (web Worker vars)
+
+Set in `web/wrangler.jsonc` `vars`; the committed numbers are placeholders for the captain
+to set at deploy. A day is a UTC day. An invalid (non-integer) value blocks instead of
+allowing. Apply `0008_signup_events.sql` before deploying the web Worker.
+
+| Var | Default | Effect |
+|---|---|---|
+| `USER_DAILY_IMPORT_LIMIT` | 5 | Links one account may import per day (pasted and X bookmarks), counted from `user_imports.created_at`. Over the cap: 429 with `Retry-After`. |
+| `SIGNUP_DAILY_LIMIT` | 200 | New accounts per day across everyone (email and X). Over: 429 "Sign-ups are full for today. Try again tomorrow." |
+| `SIGNUP_IP_DAILY_LIMIT` | 5 | New accounts per IP per day. The IP is stored only as a SHA-256 hash in `signup_events`; rows older than two days are deleted. |
+| `SIGNUPS` | on | `off` returns 503 "Sign-ups are paused." for email sign-up and for X sign-in that would create an account. Existing accounts still sign in and the site stays public. Change the var and redeploy the web Worker to flip it. |
+
+The processor stays protected by its bearer `INGEST_TOKEN` service auth, not by the site gate.
+Processor caps (`DAILY_VIDEO_LIMIT`, `MONTHLY_VIDEO_LIMIT`) are unchanged.
+
 ## Deploy order (after merge, by firstmate)
 
 Commands below run from the repository root, using the approved signed-in Cloudflare
@@ -118,7 +134,7 @@ npm exec --prefix deploy/processor -- wrangler deployments list --config deploy/
    and the intended unchanged caps or reviewed lower values. Preserve existing
    secrets, X settings and bindings. Never print secret values. Verify required
    migrations with `npm exec --prefix web -- wrangler d1 migrations list resurface-waitlist --remote --config web/wrangler.jsonc`; review pending migrations before applying them. The account
-   choices, processing ledger and X tables are shared by both Workers. Apply `0007_video_limits.sql` before deploying either Worker: it adds the lifetime reservations and video-start ledger. Back up and review historical allocations first. The migration retains existing media and can reduce multiple old request flags to the single preserved allocation.
+   choices, processing ledger and X tables are shared by both Workers. Apply `0007_video_limits.sql` and `0008_signup_events.sql` before deploying either Worker: it adds the lifetime reservations and video-start ledger. Back up and review historical allocations first. The migration retains existing media and can reduce multiple old request flags to the single preserved allocation.
 2. Apply reviewed pending migrations before either code release:
    `npm run db:migrate:remote --prefix web`. Preserve all existing data.
 3. Deploy the web Worker, retaining both gate secrets:

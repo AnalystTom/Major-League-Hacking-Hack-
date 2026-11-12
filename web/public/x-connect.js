@@ -3,6 +3,8 @@ import { PROCESSOR } from './units.js';
 
 const ERRORS = {
   budget: 'X reads are paused for today. Use email or paste links, or try again tomorrow.',
+  paused: 'Sign-ups are paused. Try again later.',
+  full: 'Sign-ups are full for today. Try again tomorrow.',
   unavailable: 'X sign-in is unavailable. Use email and paste links instead.',
   denied: 'X permission was declined. Try again or paste links instead.',
   invalid: 'That X sign-in expired. Try again.',

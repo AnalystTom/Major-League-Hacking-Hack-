@@ -10,10 +10,10 @@ const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/x/${name}.js
 function setup(gate = false) {
   const db = new DatabaseSync(':memory:');
   db.exec('PRAGMA foreign_keys=ON');
-  for (const file of ['0002_application.sql','0003_video_duration.sql','0005_x_oauth.sql','0006_x_read_budget.sql']) db.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url),'utf8'));
+  for (const file of ['0002_application.sql','0003_video_duration.sql','0005_x_oauth.sql','0006_x_read_budget.sql','0008_signup_events.sql']) db.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url),'utf8'));
   const calls = [];
   const allow={async limit(){return {success:true}}};
-  const env = { AUTH_LIMITER:allow,IMPORT_LIMITER:allow,X_CLIENT_ID:'fixture-client',X_CLIENT_SECRET:'fixture-secret',X_CALLBACK_URL:'http://localhost/api/auth/x/callback',X_READS_ENABLED:'true',
+  const env = { USER_DAILY_IMPORT_LIMIT:'1000',SIGNUP_IP_DAILY_LIMIT:'1000',AUTH_LIMITER:allow,IMPORT_LIMITER:allow,X_CLIENT_ID:'fixture-client',X_CLIENT_SECRET:'fixture-secret',X_CALLBACK_URL:'http://localhost/api/auth/x/callback',X_READS_ENABLED:'true',
     DB:{prepare(q){return {bind(...p){return {async all(){return {results:db.prepare(q).all(...p)}}}}}}},
     X_PROVIDER:{async fetch(input, options){
       const url = new URL(input); calls.push({url,options});
@@ -306,4 +306,33 @@ test('X start, callback and bookmark import are throttled with Retry-After and f
   }
   assert.equal(t.calls.length,before);
   assert.equal(t.db.prepare('SELECT count(*) n FROM x_oauth_attempts').get().n,0);
+});
+
+test('SIGNUPS=off and the signup caps stop X-created accounts but not existing X sign-ins',async()=>{
+ const t=setup();try {
+  const first=await t.finish(await t.begin());const me=first.headers.get('set-cookie').match(/rs_session=[^;, ]+/)[0];
+  t.env.SIGNUPS='off';
+  assert.equal((await t.finish(await t.begin())).headers.get('set-cookie')?.includes('rs_session='),true,'linked X account still signs in');
+  t.db.exec("DELETE FROM x_connections;DELETE FROM users");
+  assert.equal((await t.finish(await t.begin())).headers.get('location'),'/start?x=paused');
+  assert.equal(t.db.prepare('SELECT count(*) n FROM users').get().n,0);
+  delete t.env.SIGNUPS;t.env.SIGNUP_DAILY_LIMIT='1';
+  assert.equal((await t.finish(await t.begin())).headers.get('location'),'/start?x=full');
+  assert.ok(me);
+ }finally{t.db.close();}
+});
+
+test('the daily import cap bounds the X page size and stops reads at the cap',async()=>{
+ const t=setup();try {
+  t.env.USER_DAILY_IMPORT_LIMIT='1';
+  const signed=await t.finish(await t.begin());const cookie=signed.headers.get('set-cookie').match(/rs_session=[^;, ]+/)[0];
+  const first=await t.call('/api/x/bookmarks',cookie,'POST');
+  assert.equal(first.status,200);
+  assert.equal(t.calls.filter(c=>c.url.pathname.endsWith('/bookmarks'))[0].url.searchParams.get('max_results'),'1');
+  const reads=t.calls.length;
+  const over=await t.call('/api/x/bookmarks',cookie,'POST');
+  assert.equal(over.status,429);assert.ok(over.headers.get('retry-after'));assert.equal(t.calls.length,reads,'no paid read after the cap');
+  t.env.USER_DAILY_IMPORT_LIMIT='oops';
+  assert.equal((await t.call('/api/x/bookmarks',cookie,'POST')).status,429);
+ }finally{t.db.close();}
 });
