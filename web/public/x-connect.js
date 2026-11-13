@@ -57,7 +57,7 @@ export async function connectX(root, { onImported, onReady, onError } = {}) {
     const state = await api('/api/x');
     const error = ERRORS[new URLSearchParams(location.search).get('x')];
     onReady?.(state);
-    if (!state.available) { note.textContent = 'X sign-in is unavailable. Use email or paste links instead.'; disconnect.hidden = !state.connected; return state; }
+    if (!state.available) { note.hidden = true; disconnect.hidden = !state.connected; return state; }
     start.hidden = false;
     note.textContent = error ?? 'Sign in to import your newest 50 X bookmarks.';
     if (state.connected) {
