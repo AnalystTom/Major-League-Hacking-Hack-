@@ -1,7 +1,3 @@
-// The signed-in home is the reel, full screen. Until the first short is ready, the reel's frame holds the
-// paste box (new account) or what's happening to the links. Link stages otherwise live in the top-bar
-// status popover, more videos come in through the Add videos sheet, and Skills open in a sheet.
-
 import { api } from "./api.js";
 import { connectX } from "./x-connect.js";
 import { createReel } from "./reel.js";
@@ -43,8 +39,6 @@ function render(units, items) {
   }
   const hasShorts = reel.count > 0;
 
-  // Until the first short is ready the frame below lists every link, so the top-bar list would show each twice
-  // and, on a phone, cover the paste box.
   const status = $("[data-status]");
   status.hidden = units.length === 0 || !hasShorts;
   if (status.hidden) status.open = false;
@@ -76,7 +70,6 @@ function render(units, items) {
   const list = $("[data-first-units]");
   list.hidden = units.length === 0;
   renderUnits(list, units);
-  // While links are processing, more videos go through the sheet so the card stays about progress.
   if (!waiting && !sheet.open) placeForm("first");
   else if (waiting && form.parentElement === $("[data-first-form-slot]")) placeForm("sheet");
 }
@@ -84,7 +77,6 @@ function render(units, items) {
 let units = [];
 let items = [];
 
-// Skills: counts on the top-bar buttons, the lists in the sheet.
 function showSkills(list, video) {
   skills.update(list, video);
   const c = skills.counts;
@@ -100,14 +92,11 @@ function showSkills(list, video) {
 
 function openSkills(target) {
   if (!skillsSheet.open) skillsSheet.showModal();
-  // location.replace (not replaceState) so .skill:target applies, without adding a history entry.
   if (target?.startsWith("skill-")) location.replace(`#${target}`);
   const el = target && document.getElementById(target);
   (el ?? skillsSheet.querySelector("#skills-title"))?.scrollIntoView({ block: "start" });
 }
 
-// A short's "View skill" link (#skill-<id>-<version>) opens the sheet at that card; the hash makes
-// .skill:target highlight it. Coming back to /app with that hash does the same once the skills have loaded.
 function openPendingSkill() {
   const id = location.hash.slice(1);
   if (id.startsWith("skill-") && document.getElementById(id) && !skillsSheet.open) openSkills(id);
@@ -138,14 +127,12 @@ form.addEventListener("submit", async (e) => {
   button.disabled = true;
   try {
     const body = await api("/api/imports", { method: "POST", body: { links } });
-    // Beside the form while the frame is showing, in the status list once shorts have taken the frame's place.
     const skipped = body.invalid?.length
       ? `${body.invalid.length} link${body.invalid.length === 1 ? "" : "s"} couldn't be added: ${body.invalid.map((i) => `${i.link} (${i.error})`).join("; ")}`
       : "";
     $($("[data-status]").hidden ? "[data-first-note]" : "[data-run-note]").textContent = [PROCESSOR[body.processor], skipped].filter(Boolean).join(" ");
     status.textContent = "";
     form.reset();
-    // The skipped lines stay in the box so they can be fixed and sent again.
     if (skipped) form.querySelector("textarea").value = body.invalid.map((i) => i.link).join("\n");
     else if (sheet.open) sheet.close();
     follower.refresh();
@@ -171,6 +158,24 @@ $("[data-signout]").addEventListener("click", async () => {
   location.assign("/");
 });
 
+const deleteSheet = $("[data-delete-sheet]");
+$("[data-open-delete]").addEventListener("click", () => deleteSheet.showModal());
+$("[data-close-delete]").addEventListener("click", () => deleteSheet.close());
+$("[data-confirm-delete]").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  const status = $("[data-delete-status]");
+  button.disabled = true;
+  status.textContent = "";
+  try {
+    await api("/api/me", { method: "DELETE", body: {} });
+    location.assign("/");
+  } catch (err) {
+    status.textContent = err.message;
+    status.dataset.tone = "error";
+    button.disabled = false;
+  }
+});
+
 (async () => {
   let me;
   try {
@@ -181,8 +186,6 @@ $("[data-signout]").addEventListener("click", async () => {
   }
   if (!me.user) return location.assign("/start");
 
-  // A new account sees the paste box straight away. Anyone with imports keeps the loading line until their
-  // links and shorts arrive, so a slow or failed first load never looks like an empty account.
   let shown = false;
   const reveal = () => {
     if (shown) return;
@@ -195,8 +198,6 @@ $("[data-signout]").addEventListener("click", async () => {
     reveal();
     if (form.querySelector("[data-paste-fallback]").open) form.querySelector("textarea").focus({ preventScroll: true });
   }
-  // A failed check is shown wherever the user is looking: the loading line before the page appears, the reel's
-  // frame for a new account (the status chip only exists once there are links), else the status list.
   let erroring = false;
   const showError = (err) => {
     const message = `${err.message} Retrying…`;

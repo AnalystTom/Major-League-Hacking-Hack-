@@ -754,6 +754,7 @@ a.reel-btn { text-decoration: none; }
 .add-sheet::backdrop { background: rgba(0, 0, 0, .6); }
 .add-sheet h2 { font-size: 1.5rem; font-weight: 800; letter-spacing: -.02em; }
 .add-sheet .linkish { justify-self: start; color: var(--on-night-soft); }
+.add-sheet .delete-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
 
 @media (max-width: 640px) {
   .app-page { --bar: 57px; }
