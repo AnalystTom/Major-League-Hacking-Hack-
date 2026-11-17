@@ -1,43 +1,24 @@
 # CI operations
 
-Every job uses `[self-hosted, Linux, X64, big-machine]`, including the no-checkout `CI required` aggregate. No deployments, paid
+Every job runs on GitHub-hosted `ubuntu-latest` runners, including the no-checkout `CI required` aggregate. No deployments, paid
 provider calls, credentials or production databases are used. Node 22 is pinned
 by major version to match the application. Jobs install locked dependencies with
-`npm ci`, which reuses the persistent runner's local npm cache. `setup-node` remote
-caching is off: its post-step save stalled for 9 minutes and hit the job timeout.
+`npm ci` on a fresh runner. `setup-node` remote caching is off: its post-step save
+stalled for 9 minutes and hit the job timeout. Third-party actions are pinned to full
+commit SHAs.
+
+No self-hosted runner is used. Nothing in this workflow registers, removes or administers
+a runner, and no repository setting is changed by it.
 
 ## Fork pull requests
 
-The repository is public and the runner is a private machine, so fork PRs must never
-execute on it. `Change scope`, `Fast checks` and `Journey` each carry a same-repository
-guard and are skipped for fork PRs. `CI required` always runs on the runner, checks out
-nothing, and fails for a fork PR with a message that a maintainer must review the change
-and re-run CI from a same-repo branch, so it never passes silently.
+Fork PRs are not run in CI. `Change scope`, `Fast checks` and `Journey` each carry a
+same-repository guard and are skipped for fork PRs. `CI required` checks out nothing and
+fails for a fork PR with a message that a maintainer must review the change and re-run CI
+from a same-repo branch, so it never passes silently.
 
-The guards live in the workflow file, which a pull request can edit, so they are not a
-security boundary. Before this runner is relied on, the captain must enable Settings → Actions → General →
-**Require approval for all outside collaborators**. It is a mandatory prerequisite for
-runner use, and a captain-owned repository setting that this change does not alter.
-Review outside contributions before allowing them onto the host.
-
-## Registered Big-Machine runner
-
-On 9 November 2026, the dedicated repository runner `big-machine-resurface` was
-registered and verified online through the repository runner API. It runs GitHub
-Actions Runner 2.338.2 as a persistent, enabled systemd service:
-`actions.runner.AnalystTom-Major-League-Hacking-Hack-.big-machine-resurface.service`.
-Its private directory is `/home/russki/actions-runner-resurface` (mode `700`).
-The verified labels are `self-hosted`, `Linux`, `X64`, `big-machine`, exactly
-matching every job in this workflow. No existing runner was changed.
-
-The official Linux x64 archive was checked against its published SHA-256.
-Registration used a temporary token obtained directly from the authenticated
-GitHub CLI and retained only in process memory; no token was printed or logged.
-The host already supplies ffmpeg, ffprobe, Google Chrome and Docker. Playwright
-installs its pinned Chromium without sudo or system package changes.
-
-No runner-registration step remains for the captain. Branch protection below
-and the outside-collaborator approval setting above still require captain action.
+The guards live in the workflow file, which a pull request can edit, so they are a policy
+gate rather than a security boundary.
 
 ## Check contract
 
@@ -69,8 +50,8 @@ skipping. The four integration files (`render`, `motion-skill`,
 automatically enter the required fast suite. No real X account, AI generation or rendered-video quality
 is claimed by synthetic fixtures.
 
-The optional journey/build job runs on relevant PRs, main pushes, manual dispatch and at
-03:23 UTC daily. Full ffmpeg/Chromium server render integration runs only in the
+The journey/build job runs on relevant PRs, main pushes, manual dispatch and at
+03:25 UTC daily. Full ffmpeg/Chromium server render integration runs only in the
 nightly/manual step, avoiding repeated video renders on every PR. Only `CI required` should be required by branch protection; the
 heavy job remains visible but does not delay that aggregate. A per-PR/ref
 concurrency group cancels obsolete runs, and `resurface-heavy` allows one expensive
@@ -93,7 +74,7 @@ aid, not a pixel-diff pass. This CI-only change does not alter product UI.
 ## Branch protection (owner approval required)
 
 Settings are unchanged. Exact required check context: **CI required**.
-After the runner is online and the workflow has reported that context, the owner
+After the workflow has reported that context, the owner
 can approve this one-line command:
 
 ```sh
@@ -114,7 +95,7 @@ npm run lint
 npm run typecheck
 npm test
 npm run build
-npx playwright install chromium
+npx playwright install --with-deps chromium
 npm run test:journey
 ```
 
