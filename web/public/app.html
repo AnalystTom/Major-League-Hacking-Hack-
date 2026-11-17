@@ -30,6 +30,7 @@
       <button type="button" class="btn btn-small add-open" data-open-add aria-label="Add links" hidden><span aria-hidden="true">+</span><span class="add-label">Add links</span></button>
       <a class="topbar-pill" href="/available">View available reels &amp; Skills</a>
       <button type="button" class="btn btn-small btn-quiet-top" data-signout>Sign out</button>
+      <button type="button" class="btn btn-small btn-quiet-top" data-open-delete>Delete account</button>
     </div>
   </header>
 
@@ -56,6 +57,16 @@
     <h2 id="add-title">Add links</h2>
     <div data-sheet-form-slot></div>
     <button type="button" class="linkish" data-close-add>Close</button>
+  </dialog>
+
+  <dialog class="add-sheet" data-delete-sheet aria-labelledby="delete-title">
+    <h2 id="delete-title">Delete your account?</h2>
+    <p>This permanently deletes your account, your saved links, skills and videos, and your X connection. It can't be undone.</p>
+    <p class="form-status" role="status" aria-live="polite" data-delete-status></p>
+    <div class="delete-actions">
+      <button type="button" class="btn btn-small" data-confirm-delete>Delete account</button>
+      <button type="button" class="linkish" data-close-delete>Keep my account</button>
+    </div>
   </dialog>
 
   <dialog class="skills-sheet" data-skills-sheet aria-labelledby="skills-title">
