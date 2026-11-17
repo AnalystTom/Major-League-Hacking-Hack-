@@ -93,8 +93,7 @@ export function createSkills({ skillsList, picker, skillsStatus, review = false,
     );
     const li = el("li", { class: "skill", id: skillAnchor(s.artifact.id, s.artifact.version), "data-status": s.status }, head);
     if (s.status !== "ready") {
-      const reason = s.error || "Reason unknown.";
-      const failed = s.retrying ? `${reason} Trying again in a few minutes.` : reason;
+      const failed = s.retrying ? `${s.error} Trying again in a few minutes.` : s.error;
       const message = s.status === "regenerating" && s.error ? "Regeneration couldn't finish; the old skill is unavailable." : SKILL_STATE[s.status] ?? s.status;
       li.append(el("p", { class: "skill-state", text: s.status === "failed" ? failed : message }));
       return li;
