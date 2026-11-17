@@ -38,7 +38,7 @@ test("a skill that isn't ready shows no markdown or tasks, and only a failure sh
   assert.equal(running.markdown, null);
   assert.deepEqual(running.action_items, []);
   assert.equal(running.error, null);
-  assert.equal(serializeSkill(row({ status: "failed", error: "OpenAI HTTP 500", skill_markdown: null })).error, "OpenAI HTTP 500");
+  assert.equal(serializeSkill(row({ status: "failed", error: "OpenAI HTTP 500", skill_markdown: null })).error, "Resurface couldn't turn this into a skill.");
   assert.equal(serializeSkill(row({ status: "failed", error: "x", attempts: 1, skill_markdown: null })).retrying, true);
   assert.equal(serializeSkill(row({ status: "failed", error: "x", attempts: 3, skill_markdown: null })).retrying, false);
   assert.equal(serializeSkill(row({ status: "running", attempts: 1 })).retrying, false);
@@ -149,4 +149,21 @@ test("X post evidence links to the post without a timestamp, and never borrows a
   const onlyVideo = s.videos.slice(0, 1);
   assert.equal(evidenceLink({ source_id: POST, passage: "p", start_seconds: 0, end_seconds: 0 }, onlyVideo), null, "no fallback to the video for a post's evidence");
   assert.equal(evidenceLink({ source_id: null, passage: "p", start_seconds: 30, end_seconds: null }, onlyVideo).url, "https://www.youtube.com/watch?v=VQy50fuxI34&t=30s");
+});
+
+test("a failed skill never shows a provider's error text, only a plain reason", () => {
+  const providerErrors = [
+    "You exceeded your current quota, please check your plan and billing details. Insufficient credits on invoice org-8f2a",
+    "OpenAI HTTP 429: {\"error\":{\"code\":\"insufficient_quota\",\"message\":\"Billing hard limit reached\"}}",
+    "Your credit balance is too low to access the API. Add funds at billing.example.com",
+    `Provider says: ${"x".repeat(290)}`,
+  ];
+  for (const error of providerErrors) {
+    const serialized = JSON.stringify(serializeSkill(row({ status: "failed", error, skill_markdown: null })));
+    assert.equal(serializeSkill(row({ status: "failed", error, skill_markdown: null })).error, "Resurface couldn't turn this into a skill.");
+    assert.doesNotMatch(serialized, /quota|billing|credit|invoice|OpenAI|HTTP \d|insufficient|org-|provider/i);
+  }
+  assert.equal(serializeSkill(row({ status: "failed", error: null, skill_markdown: null })).error, "Resurface couldn't turn this into a skill.");
+  assert.equal(serializeSkill(row({ status: "failed", error: "Nimble HTTP 503", skill_markdown: null })).error, "Couldn't read this Substack post right now. Try again later.");
+  assert.equal(serializeSkill(row({ status: "running", error: "OpenAI quota", skill_markdown: null })).error, null);
 });

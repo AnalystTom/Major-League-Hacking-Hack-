@@ -1,16 +1,11 @@
-// GET /api/skills: the skills the processor wrote for a user's imports (workflow 3). Skill readiness
-// is separate from the video: a skill can be ready while its short is still rendering, or after it failed.
-
 import { dedupeContent } from "./content.js";
 import { FRONTMATTER } from "../public/agents.js";
-import { willRetry } from "./imports.js";
+import { plainReason, willRetry } from "./imports.js";
 import { readFeed } from "./feed.js";
 import { skillStatus } from "./skill-policy.js";
 
-/**
- * The newest skill result per ready artifact revision built only from these units (all of the user's imports),
- * newest artifact first, with its contributing sources. Public reads require a team-assigned feed_order.
- */
+const SKILL_FAILED = "Resurface couldn't turn this into a skill.";
+
 export async function readSkills(sql, unitIds, userId = null, includeDiscarded = false) {
   if (unitIds && unitIds.length === 0) return [];
   const rows = await sql`
@@ -36,7 +31,6 @@ export async function readSkills(sql, unitIds, userId = null, includeDiscarded =
   ]).filter((row) => includeDiscarded || row.kept !== 0 || row.video_reserved).map(serializeSkill);
 }
 
-/** name and description from SKILL.md frontmatter; null when absent. */
 export function frontmatter(markdown) {
   const m = FRONTMATTER.exec(markdown ?? "");
   const out = { name: null, description: null };
@@ -53,20 +47,23 @@ export function frontmatter(markdown) {
   return out;
 }
 
+function skillFailureReason(error) {
+  const reason = plainReason(error, "failed");
+  return reason && reason !== error ? reason : SKILL_FAILED;
+}
+
 export function serializeSkill(row) {
-  // A failed skill with attempts left is written again by the processor's sweep.
   const retrying = willRetry(row);
   const status = skillStatus(row.status, row.review_feedback);
   const ready = status === "ready" && typeof row.skill_markdown === "string";
   const { name, description } = ready ? frontmatter(row.skill_markdown) : { name: null, description: null };
-  // The artifact's sources: YouTube videos, X posts and Substack posts, only in their canonical forms.
   const videos = (row.videos ?? []).filter((v) => /^https:\/\/(?:www\.youtube\.com\/watch\?v=[\w-]{11}|x\.com\/i\/status\/\d{1,19}|[a-z0-9-]+\.substack\.com\/p\/[\w-]+)$/.test(v.url));
   return {
     id: row.id,
     kept: row.kept == null ? null : Boolean(row.kept),
     videoRequested: Boolean(row.video_requested),
     status,
-    error: row.status === "failed" ? row.error ?? null : null,
+    error: row.status === "failed" ? skillFailureReason(row.error) : null,
     retrying,
     artifact: { id: row.artifact_id, version: row.artifact_version, name: row.artifact_name, category: row.category ?? null },
     name,
