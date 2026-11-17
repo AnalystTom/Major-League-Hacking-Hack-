@@ -349,7 +349,7 @@ TigerData is based on PostgreSQL. The mentioned Voyager harness is unidentified;
 
 Fetched documents are evidence, never instructions to the pipeline. Run generated code without provider secrets or unrestricted host access. Keep credentials out of commits, public responses, clips, and errors. Share only project material approved for the demo audience.
 
-The landing page currently collects early-access emails through `/api/waitlist` in the existing D1 `waitlist`. Production uses `web/wrangler.waitlist.jsonc` and redirects onboarding to the form. The full product configuration remains available for development: TigerData stores content records and R2 stores media.
+The landing page currently collects early-access emails through `/api/waitlist` in the existing D1 `waitlist`. Production deploys from `web/wrangler.jsonc` only, the same configuration as development. TigerData stores content records and R2 stores media.
 
 ## Test inputs and current evidence
 
