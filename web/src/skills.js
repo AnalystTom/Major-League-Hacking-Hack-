@@ -1,10 +1,8 @@
 import { dedupeContent } from "./content.js";
 import { FRONTMATTER } from "../public/agents.js";
-import { plainReason, willRetry } from "./imports.js";
+import { PLAIN_FAILURE, plainReason, willRetry } from "./imports.js";
 import { readFeed } from "./feed.js";
 import { skillStatus } from "./skill-policy.js";
-
-const SKILL_FAILED = "Resurface couldn't turn this into a skill.";
 
 export async function readSkills(sql, unitIds, userId = null, includeDiscarded = false) {
   if (unitIds && unitIds.length === 0) return [];
@@ -49,7 +47,7 @@ export function frontmatter(markdown) {
 
 function skillFailureReason(error) {
   const reason = plainReason(error, "failed");
-  return reason && reason !== error ? reason : SKILL_FAILED;
+  return reason && reason !== error ? reason : PLAIN_FAILURE.failed;
 }
 
 export function serializeSkill(row) {

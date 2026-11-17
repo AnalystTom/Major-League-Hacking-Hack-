@@ -169,7 +169,7 @@ const KNOWN_REASONS = [
   [/^Nimble /, "Couldn't read this Substack post right now. Try again later."],
   [/TWITTERAPI_IO_KEY is not configured|^twitterapi\.io|^X embed/, "Couldn't read this X post right now. Try again later."],
 ];
-const PLAIN_FAILURE = {
+export const PLAIN_FAILURE = {
   failed: "Resurface couldn't turn this into a skill.",
   render_failed: "The short couldn't be finished.",
   render_retrying: "The short hit a snag and is being tried again.",
