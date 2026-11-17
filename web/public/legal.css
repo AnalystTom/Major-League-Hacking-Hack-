@@ -6,4 +6,6 @@ main{max-width:46rem;margin:0 auto;padding:32px 20px 48px}
 h1{font:800 clamp(2rem,5vw,3rem)/1.05 "Funnel Display","Funnel Sans",system-ui,sans-serif;letter-spacing:-.03em;margin:0}
 h2{margin:28px 0 0;font-size:1.25rem}p,ul{margin:10px 0 0;color:var(--ink-soft);line-height:1.6}ul{padding-left:1.25rem}
 code{font-family:"Martian Mono",ui-monospace,monospace;font-size:.85em;overflow-wrap:anywhere}
+table{width:100%;border-collapse:collapse;margin-top:12px;font-size:.9375rem;color:var(--ink-soft)}
+th,td{text-align:left;vertical-align:top;padding:10px 8px;border-bottom:1px solid var(--rule)}th{color:var(--ink)}
 footer{padding:28px clamp(16px,4vw,48px) 40px;border-top:1px solid var(--rule);color:var(--ink-soft);font-size:.9375rem}footer p{margin:0}

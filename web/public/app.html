@@ -53,6 +53,11 @@
     </div>
   </main>
 
+  <footer class="footer">
+    <p>Resurface.</p>
+    <p><a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></p>
+  </footer>
+
   <dialog class="add-sheet" data-add-sheet aria-labelledby="add-title">
     <h2 id="add-title">Add links</h2>
     <div data-sheet-form-slot></div>
@@ -93,6 +98,7 @@
   <template data-add-template>
     <form class="add-links" data-add novalidate>
       <div class="x-connect" data-x-connect></div>
+      <p class="hint consent">By continuing you agree to the <a href="/terms">Terms</a> and <a href="/privacy">Privacy Policy</a>.</p>
       <details data-paste-fallback>
       <summary>Paste links instead</summary>
       <label for="add-links">YouTube, X post or Substack links, one per line (up to 20 videos, 100 X posts and 20 Substack posts)</label>
