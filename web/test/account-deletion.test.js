@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import app from '../src/index.js';
 import { connect } from '../src/db.js';
 import { createSession } from '../src/auth.js';
+import { readFeed } from '../src/feed.js';
 
 const MIGRATIONS = [
   '0002_application.sql', '0003_video_duration.sql', '0004_usage_events.sql', '0005_skill_choices.sql',
@@ -70,7 +71,7 @@ function seed(sqlite) {
   insert(sqlite, 'ingested_units', [
     { id: 'unit-a', submitted_url: 'https://x.com/a/status/1', source_url: 'https://x.com/a/status/1' },
     { id: 'unit-a2', submitted_url: 'https://x.com/a/status/2', source_url: 'https://x.com/a/status/2' },
-    { id: 'unit-shared', submitted_url: 'https://youtu.be/shared', source_url: 'https://youtu.be/shared' },
+    { id: 'unit-shared', submitted_url: 'https://youtu.be/shared?si=a-share-token', source_url: 'https://youtu.be/shared' },
     { id: 'unit-b', submitted_url: 'https://x.com/b/status/3', source_url: 'https://x.com/b/status/3' },
   ]);
   insert(sqlite, 'user_imports', [
@@ -98,6 +99,7 @@ function seed(sqlite) {
     { id: 'vid-a', artifact_id: 'art-a', artifact_version: 1, status: 'ready', duration_seconds: 12, media_ref: 'r2:videos/art-a/1/short.mp4', caption_ref: 'r2:captions/art-a/1/short.vtt', narration_ref: 'r2:videos/art-a/1/narration.mp3', music_ref: 'https://example.com/music.mp3' },
     { id: 'vid-shared', artifact_id: 'art-shared', artifact_version: 1, status: 'ready', duration_seconds: 12, media_ref: 'r2:videos/art-shared/1/short.mp4', caption_ref: 'r2:captions/art-shared/1/short.vtt', narration_ref: 'r2:videos/art-shared/1/narration.mp3' },
     { id: 'vid-b', artifact_id: 'art-b', artifact_version: 1, status: 'ready', duration_seconds: 12, media_ref: 'r2:videos/art-b/1/short.mp4', caption_ref: 'r2:captions/art-b/1/short.vtt', narration_ref: 'r2:videos/art-b/1/narration.mp3' },
+    { id: 'vid-mixed', artifact_id: 'art-mixed', artifact_version: 1, status: 'ready', duration_seconds: 12, media_ref: 'r2:videos/art-mixed/1/short.mp4', caption_ref: 'r2:captions/art-mixed/1/short.vtt', narration_ref: 'r2:videos/art-mixed/1/narration.mp3', review_status: 'approved', review_feedback: { judge: 'short-judge-v1', passed: 1, captions_burned: 1 }, feed_order: 1 },
   ]);
   insert(sqlite, 'skill_results', [
     { id: 'skill-a', artifact_id: 'art-a', artifact_version: 1, status: 'ready', skill_markdown: '# a' },
@@ -146,6 +148,15 @@ function seed(sqlite) {
 
 const count = (sqlite, text, ...params) => sqlite.prepare(text).get(...params).n;
 
+function rowsMentioning(sqlite, text) {
+  const tables = sqlite.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map((r) => r.name);
+  return tables.flatMap((table) => sqlite.prepare(`SELECT * FROM ${table}`).all()
+    .filter((row) => JSON.stringify(row).includes(text))
+    .map(() => table));
+}
+
+const publicFeedSources = async (sql) => (await readFeed(sql)).map((item) => ({ id: item.id, source_url: item.source_url }));
+
 function userRowCounts(sqlite, userId) {
   return Object.fromEntries([
     'sessions', 'user_imports', 'agent_briefs', 'x_connections', 'x_seen_bookmarks',
@@ -169,6 +180,8 @@ test('DELETE /api/me removes every row the account owns and only the content no 
     const cookieA = `rs_session=${tokenA}`;
     const cookieB = `rs_session=${tokenB}`;
 
+    assert.ok((await publicFeedSources(sql)).some((item) => item.id === 'art-mixed'), 'mixed artifact is public before deletion');
+
     const response = await app.fetch(request('DELETE', '/api/me', { cookie: cookieA }), env, {});
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { deleted: true });
@@ -182,7 +195,9 @@ test('DELETE /api/me removes every row the account owns and only the content no 
 
     for (const [table, where] of [
       ['artifacts', "id = 'art-a'"],
+      ['artifacts', "id = 'art-mixed'"],
       ['video_results', "artifact_id = 'art-a'"],
+      ['video_results', "artifact_id = 'art-mixed'"],
       ['skill_results', "artifact_id = 'art-a'"],
       ['action_items', "skill_result_id = 'skill-a'"],
       ['handoffs', "skill_result_id = 'skill-a'"],
@@ -192,25 +207,31 @@ test('DELETE /api/me removes every row the account owns and only the content no 
       ['artifact_exclusions', "unit_id = 'unit-a'"],
       ['processing_starts', "unit_id = 'unit-a'"],
       ['ingested_units', "id = 'unit-a'"],
+      ['ingested_units', "id = 'unit-a2'"],
     ]) {
       assert.equal(count(sqlite, `SELECT count(*) AS n FROM ${table} WHERE ${where}`), 0, `${table} still holds ${where}`);
     }
 
     assert.deepEqual([...deleted].sort(), [
-      'captions/art-a/1/short.vtt', 'videos/art-a/1/narration.mp3', 'videos/art-a/1/short.mp4',
+      'captions/art-a/1/short.vtt', 'captions/art-mixed/1/short.vtt', 'videos/art-a/1/narration.mp3',
+      'videos/art-a/1/short.mp4', 'videos/art-mixed/1/narration.mp3', 'videos/art-mixed/1/short.mp4',
     ]);
 
     assert.deepEqual(userRowCounts(sqlite, B), {
       sessions: 1, user_imports: 2, agent_briefs: 1, x_connections: 1, x_seen_bookmarks: 1,
       x_oauth_attempts: 1, user_skill_choices: 2, user_video_requests: 1,
     });
-    for (const artifactId of ['art-mixed', 'art-shared', 'art-b']) {
+    for (const artifactId of ['art-shared', 'art-b']) {
       assert.equal(count(sqlite, 'SELECT count(*) AS n FROM artifacts WHERE id = ?', artifactId), 1, artifactId);
     }
-    for (const unitId of ['unit-a2', 'unit-shared', 'unit-b']) {
+    for (const unitId of ['unit-shared', 'unit-b']) {
       assert.equal(count(sqlite, 'SELECT count(*) AS n FROM ingested_units WHERE id = ?', unitId), 1, unitId);
     }
     assert.equal(count(sqlite, "SELECT count(*) AS n FROM video_results WHERE id IN ('vid-shared','vid-b')"), 2);
+    assert.equal(sqlite.prepare("SELECT submitted_url FROM ingested_units WHERE id = 'unit-shared'").get().submitted_url, 'https://youtu.be/shared');
+    assert.deepEqual(rowsMentioning(sqlite, 'a-share-token'), []);
+    assert.deepEqual(rowsMentioning(sqlite, 'https://x.com/a/status/'), []);
+    assert.deepEqual((await publicFeedSources(sql)).filter((item) => item.id === 'art-mixed'), []);
     assert.equal(count(sqlite, "SELECT count(*) AS n FROM skill_results WHERE id IN ('skill-shared','skill-b')"), 2);
     assert.equal(count(sqlite, "SELECT count(*) AS n FROM handoffs WHERE id IN ('handoff-b')"), 1);
     assert.equal(count(sqlite, "SELECT count(*) AS n FROM artifact_exclusions WHERE unit_id = 'unit-b'"), 1);
