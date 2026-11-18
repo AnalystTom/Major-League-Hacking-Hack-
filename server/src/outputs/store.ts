@@ -182,7 +182,6 @@ type Row = {
 export class MemoryOutputStore implements OutputStore {
   artifacts: ReadyArtifact[] = [];
   videoRequests = new Set<string>();
-  private rejectionReleased = false;
   async videoRequested(a: ReadyArtifact) { return this.videoRequests.has(this.key(a)); }
   rows: Record<Kind, Map<string, Row>> = { skill: new Map(), video: new Map() };
   constructor(private retryAfterMs = RETRY_AFTER_MINUTES * 60_000) {}
@@ -227,10 +226,6 @@ export class MemoryOutputStore implements OutputStore {
     if (!row) return false;
     const rejected = error.startsWith(JUDGE_REJECTION_PREFIX);
     Object.assign(row, { status: row.status === "ready" ? "ready" : "failed", token: null, error, ...(review ? { rejectedReview: review } : {}), failedAt: Date.now(), ...(final || row.regenerating || rejected ? { attempts: Math.max(row.attempts,MAX_OUTPUT_ATTEMPTS) } : {}) });
-    if (kind === "video" && rejected && row.status === "failed" && !this.rejectionReleased) {
-      this.rejectionReleased = true;
-      this.videoRequests.delete(this.key(row.artifact));
-    }
     return true;
   }
   async finishSkill(c: Claim, s: GeneratedSkill) {
