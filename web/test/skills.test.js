@@ -169,3 +169,22 @@ test("a failed skill never shows a provider's error text, only a plain reason", 
   assert.equal(serializeSkill(row({ status: "failed", error: "Nimble HTTP 503", skill_markdown: null })).error, "Couldn't read this Substack post right now. Try again later.");
   assert.equal(serializeSkill(row({ status: "running", error: "OpenAI quota", skill_markdown: null })).error, null);
 });
+
+test("a stopped follower ignores the sign-out 401 that would send the page to /start", async (t) => {
+  let release;
+  const pending = new Promise((resolve) => (release = resolve));
+  t.mock.method(globalThis, "fetch", async () => {
+    await pending;
+    return Response.json({ error: "Sign in to continue." }, { status: 401 });
+  });
+  globalThis.document = { hidden: false };
+  t.after(() => delete globalThis.document);
+  const errors = [];
+  const follower = followImports({ onUnits: () => {}, onItems: () => {}, onSkills: () => {}, onError: (err) => errors.push(err.status) });
+  follower.stop();
+  release();
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+  assert.deepEqual(errors, []);
+  await follower.refresh();
+  assert.deepEqual(errors, [401]);
+});

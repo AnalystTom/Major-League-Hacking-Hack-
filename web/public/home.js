@@ -15,7 +15,6 @@ const skills = createSkills({
 const form = $("[data-add-template]").content.firstElementChild.cloneNode(true);
 let follower = null;
 
-
 function placeForm(where) {
   const slot = $(where === "sheet" ? "[data-sheet-form-slot]" : "[data-first-form-slot]");
   if (form.parentElement !== slot) slot.append(form);
@@ -154,6 +153,7 @@ $("[data-close-add]").addEventListener("click", () => sheet.close());
 sheet.addEventListener("close", () => render(units, items));
 
 $("[data-signout]").addEventListener("click", async () => {
+  follower?.stop();
   await api("/api/auth/logout", { method: "POST", body: {} }).catch(() => {});
   location.assign("/");
 });
@@ -166,10 +166,12 @@ $("[data-confirm-delete]").addEventListener("click", async (event) => {
   const status = $("[data-delete-status]");
   button.disabled = true;
   status.textContent = "";
+  follower?.stop();
   try {
     await api("/api/me", { method: "DELETE", body: {} });
     location.assign("/");
   } catch (err) {
+    follower?.refresh();
     status.textContent = err.message;
     status.dataset.tone = "error";
     button.disabled = false;
