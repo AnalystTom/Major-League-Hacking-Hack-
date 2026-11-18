@@ -26,3 +26,18 @@ test('processor R2 bridge stores a valid key and rejects bad keys and sizes', as
   assert.equal((await media(put('videos/x/1/a.mp4'), {})).status, 503);
   assert.equal((await media(put('videos/x/1/a.mp4'), { MEDIA: { put() { throw new Error('offline'); } } })).status, 500);
 });
+
+test('processor R2 bridge deletes a stored key and reports a failed delete', async () => {
+  const stored = new Map([['audio/abc-123/1/render-123/narration.m4a', 'x']]);
+  const env = { MEDIA: {
+    async delete(key) { if (key === 'videos/x/1/fail.mp4') throw new Error('offline'); stored.delete(key); },
+  } };
+  const del = (key) => new Request(`http://processor/internal/media?key=${encodeURIComponent(key)}`, { method: 'DELETE' });
+  const removed = await media(del('audio/abc-123/1/render-123/narration.m4a'), env);
+  assert.equal(removed.status, 200);
+  assert.deepEqual(await removed.json(), { deleted: true });
+  assert.equal(stored.has('audio/abc-123/1/render-123/narration.m4a'), false);
+  assert.equal((await media(del('../videos/x/1/a.mp4'), env)).status, 400);
+  assert.equal((await media(del('videos/x/1/fail.mp4'), env)).status, 500);
+  assert.equal((await media(del('videos/x/1/a.mp4'), {})).status, 503);
+});

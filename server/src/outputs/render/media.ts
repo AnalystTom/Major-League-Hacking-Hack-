@@ -4,6 +4,7 @@ import { readFile, stat, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run } from "./ffmpeg.js";
+import { recordError } from "../../activity.js";
 
 /** How a stored file is referenced in D1 (media_ref, caption_ref, narration_ref); the web Worker resolves it. */
 export const r2Ref = (key: string) => `r2:${key}`;
@@ -11,6 +12,18 @@ export const r2Ref = (key: string) => `r2:${key}`;
 export interface MediaStore {
   /** Uploads a local file under key and checks it's there with the same size. Returns `r2:<key>`. */
   put(key: string, file: string, contentType: string): Promise<string>;
+  delete(key: string): Promise<void>;
+}
+
+/** Removes stored files that no row will reference. A failed delete is recorded, not thrown over the error that caused the cleanup. */
+export async function discardMedia(media: MediaStore, refs: string[]) {
+  await Promise.all(refs.map(async (ref) => {
+    try {
+      await media.delete(ref.slice("r2:".length));
+    } catch (e) {
+      recordError(`couldn't remove ${ref}`, e);
+    }
+  }));
 }
 
 /** R2 through the processor Worker's /internal/media bridge, which holds the R2 binding; the container only has its bearer token. */
@@ -24,6 +37,12 @@ export class WorkerMedia implements MediaStore {
     if (!res.ok) throw new Error(`R2 upload of ${key} failed: HTTP ${res.status} ${(await res.text()).slice(0, 200)}`);
     if ((await res.json() as { size?: number }).size !== body.length) throw new Error(`R2 has no complete copy of ${key} after upload`);
     return r2Ref(key);
+  }
+  async delete(key: string) {
+    const res = await (this.o.fetchImpl ?? fetch)(`${this.o.url}?key=${encodeURIComponent(key)}`, {
+      method: "DELETE", headers: { authorization: `Bearer ${this.o.token}` }, signal: AbortSignal.timeout(120_000),
+    });
+    if (!res.ok) throw new Error(`R2 delete of ${key} failed: HTTP ${res.status}`);
   }
 }
 
@@ -49,6 +68,9 @@ export class WranglerLocalMedia implements MediaStore {
       await rm(dir, { recursive: true, force: true });
     }
     return r2Ref(key);
+  }
+  async delete(key: string) {
+    await this.wrangler(["r2", "object", "delete", `${this.o.bucket}/${key}`]);
   }
 }
 

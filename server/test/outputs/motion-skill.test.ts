@@ -88,7 +88,7 @@ test("renders a motion short with the narration over the engine's music", { skip
   try {
     const a = artifact();
     const keys: string[] = [];
-    const media: MediaStore = { put: async (key, file) => { keys.push(key); await copyFile(file, join(out, key.replace(/\//g, "_"))); return `r2:${key}`; } };
+    const media: MediaStore = { put: async (key, file) => { keys.push(key); await copyFile(file, join(out, key.replace(/\//g, "_"))); return `r2:${key}`; }, delete: async () => {} };
     const card = { name: "write-the-check-first", description: "Write a failing check before starting an agent task." };
     const { impl } = outputsFetch(a);
     let judged = false;

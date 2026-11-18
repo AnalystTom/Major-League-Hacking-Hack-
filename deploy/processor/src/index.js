@@ -131,7 +131,7 @@ const ANSWER_WITHIN_MS = 6000;
 // Allow processing, handoff, health and settings requests, plus the container's D1, media and narration bridges.
 // Anything else (such as the processor's dev import route, which skips the processing limits) never
 // reaches the container.
-const ROUTES = new Set(["GET /health", "POST /api/ingest/process", "POST /api/ingest/handoff", "GET /settings-status", "POST /internal/d1", "PUT /internal/media", "POST /internal/tts"]);
+const ROUTES = new Set(["GET /health", "POST /api/ingest/process", "POST /api/ingest/handoff", "GET /settings-status", "POST /internal/d1", "PUT /internal/media", "DELETE /internal/media", "POST /internal/tts"]);
 
 export default {
   async fetch(request, env, ctx) {
