@@ -10,17 +10,20 @@ in this repository, chat, screenshots or command arguments.
 ## Shorts and cost controls
 
 `deploy/processor/wrangler.jsonc` sets `SHORTS=on`, `DAILY_VIDEO_LIMIT=20` and
-`MONTHLY_VIDEO_LIMIT=400`. The web config carries the same two limits for request
-admission. Keep both configs in sync. No other web-side enable flag is needed.
+`MONTHLY_VIDEO_LIMIT=400`. `web/wrangler.jsonc` sets `SHORTS=on` and the same two limits
+for request admission. The web refuses new video requests while its `SHORTS` is off, and
+the processor skips rendering while its own is off. Keep both configs in sync.
 
 Each account has **one lifetime video slot**, recorded by the primary key on
 `user_video_requests.user_id`. Choose **Make my video** on one ready skill; it also
 keeps that skill. The server rejects a second selection, even with parallel requests,
 a new session or a different artifact version. Duplicate submissions for the same
 selection are idempotent. Retries work on that same video; a failure does not create
-a fresh account allowance. Historical allocations are backfilled without deleting
-existing videos or media; a failed historical video does not use the slot. Shared source/approved-video reuse and the public catalogue
-remain available.
+a fresh account allowance. A video the quality judge rejects releases the slot once,
+so the account can choose another kept skill; the release is recorded in
+`video_rejection_releases` (migration `0009`). Historical allocations are backfilled
+without deleting existing videos or media; a failed historical video does not use the
+slot. Shared source/approved-video reuse and the public catalogue remain available.
 
 Two atomic database controls bound new work across all accounts:
 
@@ -60,8 +63,9 @@ not a new paid measurement or a guaranteed unit price.
 At that observed rate, a fully used allowance of **20 video starts × USD 0.45 is
 about USD 9/day globally**; **400 × USD 0.45 is about USD 180/month**. This is the
 worst-case allowance calculation **at the observed unit rate**, not a hard dollar
-ceiling. One account gets one video, with retries of that same allocation counted
-against these global limits. Do not quote USD 9 as a guaranteed per-user bill cap.
+ceiling. One account gets one video at a time, with retries of that same allocation
+counted against these global limits; a judge-rejected video releases its slot once.
+Do not quote USD 9 as a guaranteed per-user bill cap.
 
 Token/narration length, internal validation calls, two render/judge rounds,
 extraction/digestion, hosting/storage and optional X reads can vary or add cost.
@@ -78,9 +82,10 @@ python3 -c 'from pathlib import Path; import re; paths=[Path("web/wrangler.jsonc
 ```
 
 Zero or invalid admission limits refuse new video requests. Zero processing limits
-pause charged starts/video starts. Use `SHORTS=off` to pause new renders while skills
-continue; no config change interrupts already running work. Code processing defaults
-without release overrides remain 10/40; the web admission defaults are 20/400.
+pause charged starts/video starts. Use `SHORTS=off` in both configs to pause new video
+requests and renders while skills continue; no config change interrupts already running
+work. Code processing defaults without release overrides remain 10/40; the web admission
+defaults are 20/400.
 
 ## X developer console: sign-in only
 
@@ -135,7 +140,7 @@ npm exec --prefix deploy/processor -- wrangler deployments list --config deploy/
    and the intended unchanged caps or reviewed lower values. Preserve existing
    secrets, X settings and bindings. Never print secret values. Verify required
    migrations with `npm exec --prefix web -- wrangler d1 migrations list resurface-waitlist --remote --config web/wrangler.jsonc`; review pending migrations before applying them. The account
-   choices, processing ledger and X tables are shared by both Workers. Apply `0007_video_limits.sql` and `0008_signup_events.sql` before deploying either Worker: it adds the lifetime reservations and video-start ledger. Back up and review historical allocations first. The migration retains existing media and can reduce multiple old request flags to the single preserved allocation, and failed videos do not count as an allocation.
+   choices, processing ledger and X tables are shared by both Workers. Apply `0007_video_limits.sql`, `0008_signup_events.sql` and `0009_video_rejection_releases.sql` before deploying either Worker: they add the lifetime reservations, video-start ledger and per-account rejection releases. Back up and review historical allocations first. The migration retains existing media and can reduce multiple old request flags to the single preserved allocation, and failed videos do not count as an allocation.
 2. Apply reviewed pending migrations before either code release:
    `npm run db:migrate:remote --prefix web`. Preserve all existing data.
 3. Deploy the web Worker: `npm run deploy --prefix web`. `wrangler deploy` replaces
@@ -183,9 +188,10 @@ than the site's Basic challenge. Close the verification context afterward.
 
 ## Rollback
 
-- To pause new videos while keeping skills working, change only `SHORTS` back to
-  `off` in `deploy/processor/wrangler.jsonc`, review/commit, and redeploy the
-  processor. In-flight work may finish; confirm hashes once it becomes idle.
+- To pause new videos while keeping skills working, change `SHORTS` back to `off` in
+  both `web/wrangler.jsonc` and `deploy/processor/wrangler.jsonc`, review/commit, and
+  redeploy the web and the processor. In-flight work may finish; confirm hashes once it
+  becomes idle.
   Preserve both usage limits, existing artifacts and media. A quick version rollback
   to the recorded compatible processor version is another release-operator option:
   `npm exec --prefix deploy/processor -- wrangler rollback <processor-version-id> --config deploy/processor/wrangler.jsonc`.

@@ -285,6 +285,7 @@ test("every page loads under the content security policy without violations", as
     "/terms",
   ]) {
     const response = await page.goto(path, { waitUntil: "load" });
+    await page.waitForLoadState("networkidle");
     expect(response.status(), path).toBe(200);
     expect(response.headers()["content-security-policy"], path).toContain(
       "frame-ancestors 'none'",

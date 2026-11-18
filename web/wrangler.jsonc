@@ -9,19 +9,13 @@
     "binding": "ASSETS",
     "run_worker_first": true
   },
-  // The processor Worker, called through a binding: a plain fetch() to another workers.dev Worker fails (error 1042).
   "services": [{ "binding": "PROCESSOR", "service": "resurface-processor" }],
-  // Rendered shorts (mp4), captions (vtt) and posters. Create once: npx wrangler r2 bucket create resurface-media
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "resurface-media" }],
-  // Imports: 5 per account per minute. Sign-up/sign-in and waitlist: separate limits of 10 per IP per minute.
   "ratelimits": [
     { "name": "IMPORT_LIMITER", "namespace_id": "1001", "simple": { "limit": 5, "period": 60 } },
     { "name": "AUTH_LIMITER", "namespace_id": "1002", "simple": { "limit": 10, "period": 60 } },
     { "name": "WAITLIST_LIMITER", "namespace_id": "1003", "simple": { "limit": 10, "period": 60 } }
   ],
-  // Accounts, imports and processor outputs share the existing D1 database.
-  // Optional: PROCESSOR_URL and PROCESSOR_TOKEN for the service that turns units into shorts.
-  // The landing page collects emails through /api/waitlist in the existing D1 database.
   "d1_databases": [
     {
       "binding": "DB",
@@ -30,9 +24,8 @@
       "migrations_dir": "migrations"
     }
   ],
-  // Abuse caps (UTC days). Placeholders until the captain sets launch values; an invalid value blocks, it never allows.
-  // SIGNUPS=off pauses new accounts (503) while the site stays public.
   "vars": {
+    "SHORTS": "on",
     "DAILY_VIDEO_LIMIT": "20",
     "MONTHLY_VIDEO_LIMIT": "400",
     "USER_DAILY_IMPORT_LIMIT": "5",

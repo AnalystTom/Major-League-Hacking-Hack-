@@ -27,7 +27,6 @@ const evidence = z.string().trim().min(1).max(1500);
 const Axis = z.object({ score: z.number().int().min(1).max(10), evidence });
 const Review = z.object({
   scores: z.object({ grounding: score, clarity: score, usefulness: score, visuals: score, subtitles: score, caption_overlap: score }),
-  // Long reasons are cut, not rejected: an over-long explanation shouldn't fail the short it explains.
   reasons: z.array(z.string().trim().min(1).transform(reason => reason.slice(0, 300))).max(20),
   defects: z.array(z.object({ id: z.enum(["D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9", "D10", "D11"]), result: z.enum(["PASS", "FAIL"]), evidence })).length(11)
     .refine(rows => new Set(rows.map(row => row.id)).size === 11, "Each defect must be reviewed once"),
@@ -52,9 +51,6 @@ export async function judgeShort(a: ReadyArtifact, scenes: ScriptScene[], mp4: s
       frame_times_seconds: timestamps, image_names: names, safe_area: CAPTION_BAND, content_bottom: CONTENT_BOTTOM }), images }));
   return { ...result, sound_verified: !cue_check.includes("FAIL") && audio.every(scene => scene.passed) };
 }
-
-// Facts strict, polish lenient: these defects block publication; the others only cap their axes, and an axis blocks
-// below MIN_AXIS. D2/D8 unreadable or covered copy, D10 wrong name or number, D11 broken audio.
 const BLOCKING_DEFECTS = new Set(["D2", "D8", "D10", "D11"]);
 const MIN_AXIS = 5;
 const MIN_SCORE: Record<keyof ShortReview["scores"], number> = { grounding: 4, clarity: 4, caption_overlap: 4, usefulness: 3, visuals: 3, subtitles: 3 };
@@ -84,9 +80,11 @@ export function publicationJudgment(reviews: ShortReview[], fixes: ReviewFix[], 
   return { judge: "short-judge-v1", passed: reasons.length === 0, captions_burned: true, scores: last.scores, reasons, reviews, fixes, cue_checks, review_log };
 }
 
+export const JUDGE_REJECTION_PREFIX = "Quality judge rejected:";
+
 export class QualityRejected extends Error {
   constructor(public judgment: ShortJudgment) {
-    super(`Quality judge rejected: ${JSON.stringify({ judge: judgment.judge, passed: false, reasons: judgment.reasons.slice(0, 3).map(reason => reason.slice(0, 300)) })}`);
+    super(`${JUDGE_REJECTION_PREFIX} ${JSON.stringify({ judge: judgment.judge, passed: false, reasons: judgment.reasons.slice(0, 3).map(reason => reason.slice(0, 300)) })}`);
   }
 }
 

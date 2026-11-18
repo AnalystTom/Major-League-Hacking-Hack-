@@ -1,4 +1,4 @@
-import { assertJudged } from "./render/judge.js";
+import { assertJudged, JUDGE_REJECTION_PREFIX } from "./render/judge.js";
 import { randomUUID } from "node:crypto";
 import type { Database } from "../db.js";
 import { UNLIMITED, type Limits } from "../ingest/limits.js";
@@ -17,6 +17,7 @@ export const RETRY_AFTER_MINUTES = 5;
 const feedback = (r: string) => `CASE WHEN json_valid(${r}.review_feedback)
   THEN CASE WHEN json_type(${r}.review_feedback)='object' THEN ${r}.review_feedback ELSE '{}' END ELSE '{}' END`;
 const videoRefresh = (r: string) => `(${r}.status IN ('ready','failed') AND coalesce(json_extract(${feedback(r)},'$.generator_revision'),'') <> '${VIDEO_GENERATOR_REVISION}')`;
+const JUDGE_REJECTED = (error: string) => `${error} LIKE '${JUDGE_REJECTION_PREFIX}%'`;
 const regenerating = (r: string) => `coalesce(json_extract(${feedback(r)},'$.regenerating'),0)=1`;
 
 const CLAIMABLE = (r: string, kind: Kind) => `(${r}.status = 'pending'
@@ -125,11 +126,25 @@ export class D1OutputStore implements OutputStore {
   }
   async fail(kind: Kind, c: Claim, error: string, review?: ShortJudgment, final = false) {
     const t = TABLE[kind];
-    const { rowCount } = await this.db.query(`UPDATE ${t} SET status=CASE WHEN status='ready' THEN 'ready' ELSE 'failed' END,
+    const [{ rowCount }] = await this.db.batch([{ sql: `UPDATE ${t} SET status=CASE WHEN status='ready' THEN 'ready' ELSE 'failed' END,
       error=?3,claim_token=NULL,
-      review_feedback=CASE WHEN ?4 IS NULL THEN review_feedback ELSE json_set(${feedback(t)},'$.last_rejected_review',json(?4)) END,attempts=CASE WHEN ?5=1 OR ?3 LIKE 'Quality judge rejected:%' OR ${regenerating(t)}
+      review_feedback=CASE WHEN ?4 IS NULL THEN review_feedback ELSE json_set(${feedback(t)},'$.last_rejected_review',json(?4)) END,attempts=CASE WHEN ?5=1 OR ${JUDGE_REJECTED('?3')} OR ${regenerating(t)}
       THEN max(attempts,${MAX_OUTPUT_ATTEMPTS}) ELSE attempts END,updated_at=${NOW}
-      WHERE id=?1 AND claim_token=?2 AND (status='running' ${kind === 'video' ? `OR (status='ready' AND ${regenerating(t)})` : ''})`,[c.id,c.token,error.slice(0,2000),review ? JSON.stringify(review) : null,final ? 1 : 0]);
+      WHERE id=?1 AND claim_token=?2 AND (status='running' ${kind === 'video' ? `OR (status='ready' AND ${regenerating(t)})` : ''})`,
+      params: [c.id,c.token,error.slice(0,2000),review ? JSON.stringify(review) : null,final ? 1 : 0] },
+    ...(kind === 'video' ? [
+      { sql: `INSERT INTO video_rejection_releases(user_id,artifact_id,artifact_version,claim_token)
+        SELECT r.user_id,r.artifact_id,r.artifact_version,?2 FROM user_video_requests r
+        JOIN video_results v ON v.artifact_id=r.artifact_id AND v.artifact_version=r.artifact_version
+        WHERE v.id=?1 AND v.status='failed' AND ${JUDGE_REJECTED('v.error')}
+        ON CONFLICT(user_id) DO NOTHING`, params: [c.id, c.token] },
+      { sql: `UPDATE user_skill_choices SET video_requested=0 WHERE EXISTS (SELECT 1 FROM video_rejection_releases x
+        WHERE x.claim_token=?1 AND x.user_id=user_skill_choices.user_id AND x.artifact_id=user_skill_choices.artifact_id
+          AND x.artifact_version=user_skill_choices.artifact_version)`, params: [c.token] },
+      { sql: `DELETE FROM user_video_requests WHERE EXISTS (SELECT 1 FROM video_rejection_releases x
+        WHERE x.claim_token=?1 AND x.user_id=user_video_requests.user_id AND x.artifact_id=user_video_requests.artifact_id
+          AND x.artifact_version=user_video_requests.artifact_version)`, params: [c.token] },
+    ] : [])]);
     return rowCount===1;
   }
   async finishSkill(c: Claim, s: GeneratedSkill) {
@@ -208,8 +223,10 @@ export class MemoryOutputStore implements OutputStore {
   }
   async fail(kind: Kind, c: Claim, error: string, review?: ShortJudgment, final = false) {
     const row = this.held(kind, c);
-    if (row) Object.assign(row, { status: row.status === "ready" ? "ready" : "failed", token: null, error, ...(review ? { rejectedReview: review } : {}), failedAt: Date.now(), ...(final || row.regenerating || error.startsWith("Quality judge rejected:") ? { attempts: Math.max(row.attempts,MAX_OUTPUT_ATTEMPTS) } : {}) });
-    return !!row;
+    if (!row) return false;
+    const rejected = error.startsWith(JUDGE_REJECTION_PREFIX);
+    Object.assign(row, { status: row.status === "ready" ? "ready" : "failed", token: null, error, ...(review ? { rejectedReview: review } : {}), failedAt: Date.now(), ...(final || row.regenerating || rejected ? { attempts: Math.max(row.attempts,MAX_OUTPUT_ATTEMPTS) } : {}) });
+    return true;
   }
   async finishSkill(c: Claim, s: GeneratedSkill) {
     const row = this.held("skill", c);
