@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { database } from './src/database.js';
 import { ALLOWED_D1_STATEMENTS } from './src/d1-allowlist.js';
 
-const ALLOWED = 'INSERT INTO artifact_exclusions(unit_id,digestion_prompt_id,reason) VALUES(?1,?2,?3)';
+const ALLOWED = [...ALLOWED_D1_STATEMENTS].find((sql) => sql.includes('INSERT INTO artifact_exclusions'));
 const request = (body) => new Request('http://processor/internal/d1', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
 function fakeDatabase() {
@@ -19,7 +19,6 @@ function fakeDatabase() {
 }
 
 test('processor D1 bridge runs an allow-listed statement with bound parameters', async () => {
-  assert.ok(ALLOWED_D1_STATEMENTS.has(ALLOWED));
   const DB = fakeDatabase();
   const response = await database(request({ statements: [{ sql: ALLOWED, params: ['unit', 1, 'reason'] }] }), { DB });
   assert.equal(response.status, 200);

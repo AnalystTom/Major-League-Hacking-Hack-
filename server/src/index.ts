@@ -46,8 +46,6 @@ if (process.env.GEMINI_API_KEY) {
     store: db ? new D1Store(db) : new MemoryStore(),
     log: (m: string) => console.log(`[ingest] ${m}`),
   };
-  // Each ready artifact gets a concise skill and a rendered short (src/outputs). Renders need ffmpeg on
-  // this host and media storage, configured as in docs/proceed-and-media.md#the-processor.
   const outputs = {
     outputs: db ? new D1OutputStore(db) : new MemoryOutputStore(),
     limits: options.limits,
