@@ -211,8 +211,9 @@ its importer), claim a pending skill, video or brief and settle it with its own 
 Prompt revision, or add usage records. It can also read any unit row by ID, every ready unit with its transcript,
 each unit's importer user ID, every ready artifact with its processed text, evidence and sources, and skill
 markdown with unit titles and URLs for given skill IDs.
-It cannot run arbitrary SQL or read password hashes or X tokens. Media keys take their content type from the extension
-(`.mp4`, `.vtt`, `.m4a`). The three new secrets are required before the processor deploy. If
+It cannot run arbitrary SQL or read password hashes or X tokens.
+
+Media keys take their content type from the extension (`.mp4`, `.vtt`, `.m4a`). The three new secrets are required before the processor deploy. If
 `D1_BRIDGE_TOKEN` is missing, the processor container fails to start as a whole, including
 `/api/ingest/process`, not only the bridges. Never print secret values.
 
