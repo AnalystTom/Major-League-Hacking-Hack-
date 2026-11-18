@@ -167,9 +167,8 @@ npm exec --prefix deploy/processor -- wrangler deployments list --config deploy/
 
 ## Processor bridge secrets (required before the processor deploy)
 
-The processor Worker used to accept one shared `INGEST_TOKEN` for waking the container, for the D1
-bridge, for media uploads and for narration. It now gives each bridge its own secret, and each
-component holds only the secrets it needs:
+The processor Worker gives each caller its own secret: waking the container, the D1 bridge, media uploads
+and narration. Each component holds only the secrets it needs:
 
 | Secret (processor Worker) | Opens | Held by |
 | --- | --- | --- |

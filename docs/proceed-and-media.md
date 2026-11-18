@@ -160,7 +160,7 @@ For the processor's D1 connection, see [Processor connection](applying-migration
 Its R2 binding and media configuration are described [above](#the-processor).
 
 For local development, run `npm run dev --prefix web` after applying local migrations. A standalone
-Node processor uses the same D1 bridge; configure both variables and provider keys in `server/.env`
+Node processor uses the same D1 bridge; configure the D1, media and TTS variables and provider keys in `server/.env`
 from `server/.env.example`, and point the web Worker's `PROCESSOR_URL` at its processing route.
 Use isolated test databases and accounts. When no processor is configured, imported links remain queued
 and the page reports that state; no simulated clips or processing records are created.
