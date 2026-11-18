@@ -2,7 +2,7 @@ export const AGENTS = {
   "claude-code": { name: "Claude Code", path: (s) => `.claude/skills/${s}/SKILL.md` },
   codex: { name: "Codex", path: (s) => `.agents/skills/${s}/SKILL.md` },
   cursor: { name: "Cursor", path: (s) => `.cursor/rules/${s}.mdc` },
-  hermes: { name: "Hermes", path: (s) => `~/.hermes/skills/${s}/SKILL.md`, home: true },
+  hermes: { name: "Hermes", path: (s) => `~/.hermes/skills/${s}/SKILL.md` },
 };
 
 export const agentOrDefault = (id) => (Object.hasOwn(AGENTS, id) ? id : "claude-code");
@@ -25,7 +25,7 @@ export function skillFile(skill, agentId) {
     content = `---\ndescription: ${JSON.stringify(skill.description ?? skill.artifact.name)}\nalwaysApply: false\n---\n${body}`;
   }
   const path = agent.path(slug);
-  return { path, content, save: `Save it as ${path}${agent.home ? "" : " in your repo"}.` };
+  return { path, content, save: `Save it as ${path}${path.startsWith("~") ? "" : " in your repo"}.` };
 }
 
 const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
