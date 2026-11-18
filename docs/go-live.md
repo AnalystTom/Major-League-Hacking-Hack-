@@ -181,10 +181,12 @@ component holds only the secrets it needs:
 The D1 bridge accepts only the statements the container issues (`deploy/processor/src/d1-allowlist.js`)
 and refuses anything else with 403; `server/test/db/d1-allowlist.test.ts` fails whenever the stores send a
 statement that is not on that list, or the list holds one they no longer send. Media keys take their content type from the extension
-(`.mp4`, `.vtt`, `.m4a`). Set the three new secrets before deploying, because the processor refuses
-the bridges until they exist. Never print secret values.
+(`.mp4`, `.vtt`, `.m4a`). The three new secrets are required before the processor deploy. If
+`D1_BRIDGE_TOKEN` is missing, the processor container fails to start as a whole, including
+`/api/ingest/process`, not only the bridges. Never print secret values.
 
-Rollout, in this order:
+Rollout, in this order. Do not skip step 1: deploying the processor without `D1_BRIDGE_TOKEN` stops the
+container from starting.
 
 1. Set the three new secrets on the processor Worker with the signed-in account. Generate each value
    in a password manager or with `openssl rand -hex 32`, and enter it only at the `wrangler` prompt:
