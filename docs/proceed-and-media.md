@@ -43,9 +43,9 @@ remain visible; exact deduplication does not collapse overlapping source sets.
 
 ## The processor
 
-The release configuration sets `SHORTS=on`; there is no separate web-side shorts flag.
+Both release configurations (`web/wrangler.jsonc` and `deploy/processor/wrangler.jsonc`) set `SHORTS=on`.
 The web stores per-account keep/video opt-in choices, and the processor checks them before claims.
-`SHORTS=off` pauses rendering while skills continue. See [go-live](go-live.md) for the
+`SHORTS=off` in both configs pauses new video requests and rendering while skills continue. See [go-live](go-live.md) for the
 one-video-per-account policy, atomic 20/day video-start ceiling, cost estimate, deployment order and rollback.
 
 Node, in `server/src`. `POST /api/ingest/process` takes `{ "unit_ids": [...] }` with

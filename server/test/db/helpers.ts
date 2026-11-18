@@ -11,6 +11,7 @@ export function testDatabase() {
   sqlite.exec(readFileSync(new URL('../../../web/migrations/0005_skill_choices.sql',import.meta.url),'utf8'));
   sqlite.exec(readFileSync(new URL('../../../web/migrations/0007_video_limits.sql',import.meta.url),'utf8'));
   sqlite.exec(readFileSync(new URL('../../../web/migrations/0004_usage_events.sql', import.meta.url),'utf8'));
+  sqlite.exec(readFileSync(new URL('../../../web/migrations/0009_video_rejection_releases.sql', import.meta.url),'utf8'));
   const execute = (s: Statement) => {
     const query = sqlite.prepare(s.sql);
     // SQLite's Node API binds ?NNN parameters by name, matching D1's positional bindings.

@@ -10,8 +10,9 @@ in this repository, chat, screenshots or command arguments.
 ## Shorts and cost controls
 
 `deploy/processor/wrangler.jsonc` sets `SHORTS=on`, `DAILY_VIDEO_LIMIT=20` and
-`MONTHLY_VIDEO_LIMIT=400`. The web config carries the same two limits for request
-admission. Keep both configs in sync. No other web-side enable flag is needed.
+`MONTHLY_VIDEO_LIMIT=400`. `web/wrangler.jsonc` sets `SHORTS=on` and the same two limits
+for request admission. The web refuses new video requests while its `SHORTS` is off, and
+the processor skips rendering while its own is off. Keep both configs in sync.
 
 Each account has **one lifetime video slot**, recorded by the primary key on
 `user_video_requests.user_id`. Choose **Make my video** on one ready skill; it also
@@ -78,8 +79,8 @@ python3 -c 'from pathlib import Path; import re; paths=[Path("web/wrangler.jsonc
 ```
 
 Zero or invalid admission limits refuse new video requests. Zero processing limits
-pause charged starts/video starts. Use `SHORTS=off` to pause new renders while skills
-continue; no config change interrupts already running work. Code processing defaults
+pause charged starts/video starts. Use `SHORTS=off` in both configs to pause new video
+requests and renders while skills continue; no config change interrupts already running work. Code processing defaults
 without release overrides remain 10/40; the web admission defaults are 20/400.
 
 ## X developer console: sign-in only
@@ -183,9 +184,10 @@ than the site's Basic challenge. Close the verification context afterward.
 
 ## Rollback
 
-- To pause new videos while keeping skills working, change only `SHORTS` back to
-  `off` in `deploy/processor/wrangler.jsonc`, review/commit, and redeploy the
-  processor. In-flight work may finish; confirm hashes once it becomes idle.
+- To pause new videos while keeping skills working, change `SHORTS` back to `off` in
+  both `web/wrangler.jsonc` and `deploy/processor/wrangler.jsonc`, review/commit, and
+  redeploy the web and the processor. In-flight work may finish; confirm hashes once it
+  becomes idle.
   Preserve both usage limits, existing artifacts and media. A quick version rollback
   to the recorded compatible processor version is another release-operator option:
   `npm exec --prefix deploy/processor -- wrangler rollback <processor-version-id> --config deploy/processor/wrangler.jsonc`.

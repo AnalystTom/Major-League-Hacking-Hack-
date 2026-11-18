@@ -132,8 +132,19 @@ export class D1OutputStore implements OutputStore {
       THEN max(attempts,${MAX_OUTPUT_ATTEMPTS}) ELSE attempts END,updated_at=${NOW}
       WHERE id=?1 AND claim_token=?2 AND (status='running' ${kind === 'video' ? `OR (status='ready' AND ${regenerating(t)})` : ''})`,
       params: [c.id,c.token,error.slice(0,2000),review ? JSON.stringify(review) : null,final ? 1 : 0] },
-    ...(kind === 'video' ? [{ sql: `DELETE FROM user_video_requests WHERE (artifact_id,artifact_version) IN
-        (SELECT artifact_id,artifact_version FROM video_results WHERE id=?1 AND status='failed' AND ${JUDGE_REJECTED('error')})`, params: [c.id] }] : [])]);
+    ...(kind === 'video' ? [
+      { sql: `INSERT INTO video_rejection_releases(user_id,artifact_id,artifact_version,claim_token)
+        SELECT r.user_id,r.artifact_id,r.artifact_version,?2 FROM user_video_requests r
+        JOIN video_results v ON v.artifact_id=r.artifact_id AND v.artifact_version=r.artifact_version
+        WHERE v.id=?1 AND v.status='failed' AND ${JUDGE_REJECTED('v.error')}
+        ON CONFLICT(user_id) DO NOTHING`, params: [c.id, c.token] },
+      { sql: `UPDATE user_skill_choices SET video_requested=0 WHERE EXISTS (SELECT 1 FROM video_rejection_releases x
+        WHERE x.claim_token=?1 AND x.user_id=user_skill_choices.user_id AND x.artifact_id=user_skill_choices.artifact_id
+          AND x.artifact_version=user_skill_choices.artifact_version)`, params: [c.token] },
+      { sql: `DELETE FROM user_video_requests WHERE EXISTS (SELECT 1 FROM video_rejection_releases x
+        WHERE x.claim_token=?1 AND x.user_id=user_video_requests.user_id AND x.artifact_id=user_video_requests.artifact_id
+          AND x.artifact_version=user_video_requests.artifact_version)`, params: [c.token] },
+    ] : [])]);
     return rowCount===1;
   }
   async finishSkill(c: Claim, s: GeneratedSkill) {
@@ -171,6 +182,7 @@ type Row = {
 export class MemoryOutputStore implements OutputStore {
   artifacts: ReadyArtifact[] = [];
   videoRequests = new Set<string>();
+  private rejectionReleased = false;
   async videoRequested(a: ReadyArtifact) { return this.videoRequests.has(this.key(a)); }
   rows: Record<Kind, Map<string, Row>> = { skill: new Map(), video: new Map() };
   constructor(private retryAfterMs = RETRY_AFTER_MINUTES * 60_000) {}
@@ -215,7 +227,10 @@ export class MemoryOutputStore implements OutputStore {
     if (!row) return false;
     const rejected = error.startsWith(JUDGE_REJECTION_PREFIX);
     Object.assign(row, { status: row.status === "ready" ? "ready" : "failed", token: null, error, ...(review ? { rejectedReview: review } : {}), failedAt: Date.now(), ...(final || row.regenerating || rejected ? { attempts: Math.max(row.attempts,MAX_OUTPUT_ATTEMPTS) } : {}) });
-    if (kind === "video" && rejected && row.status === "failed") this.videoRequests.delete(this.key(row.artifact));
+    if (kind === "video" && rejected && row.status === "failed" && !this.rejectionReleased) {
+      this.rejectionReleased = true;
+      this.videoRequests.delete(this.key(row.artifact));
+    }
     return true;
   }
   async finishSkill(c: Claim, s: GeneratedSkill) {
