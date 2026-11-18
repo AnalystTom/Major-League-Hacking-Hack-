@@ -122,7 +122,12 @@ async function api(request, env, url, sql) {
   }
   if (!user) return json(SIGNED_OUT, 401);
   if (pathname === "/api/me" && method === "DELETE") {
-    await deleteAccount(env, sql, user.id);
+    try {
+      await deleteAccount(env, user.id);
+    } catch (err) {
+      console.error("account deletion failed", err);
+      return json({ error: "We couldn't delete your account right now. Please try again." }, 503);
+    }
     return json({ deleted: true }, 200, { "set-cookie": sessionCookie("", 0, cookieSecure(request.url)) });
   }
 
