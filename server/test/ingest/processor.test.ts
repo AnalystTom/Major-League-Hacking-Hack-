@@ -48,7 +48,7 @@ test("a unit the digest excluded is not sent to the model again", async () => {
   const { impl, calls } = mockFetch();
   await processUnits([unit.id], { ...base(store, impl), openaiKey: undefined });
   const promptId = await store.registerPrompt(promptRevisionText(DEFAULT_CATEGORIZATION_REQUEST), []);
-  await store.saveArtifacts([], [{ unit_id: unit.id, reason: "Nothing to explain." }], promptId);
+  await store.saveArtifacts([], [{ unit_id: unit.id, reason: "Nothing to explain." }], promptId, "unchecked-in-memory");
   const s = await processUnits([unit.id], base(store, impl));
   assert.match(s.skipped ?? "", /nothing new/);
   assert.equal(calls.openai, 0);
@@ -63,7 +63,7 @@ test("requests and sweeps reconsider exclusions from an older prompt without re-
     const { impl, calls } = mockFetch();
     await processUnits([unit.id], { ...base(store, impl), openaiKey: undefined });
     const oldPrompt = await store.registerPrompt("Engineering only", []);
-    await store.saveArtifacts([], [{ unit_id: unit.id, reason: "Off topic." }], oldPrompt);
+    await store.saveArtifacts([], [{ unit_id: unit.id, reason: "Off topic." }], oldPrompt, "unchecked-in-memory");
     if (sweep) assert.equal(await sweepOnce(base(store, impl)), 1);
     else assert.equal((await processUnits([unit.id], base(store, impl))).digested, 1);
     assert.equal(calls.gemini, 1);
@@ -176,7 +176,6 @@ test("POST /process requires the bearer token, validates the body, and returns 2
   assert.equal((await send(auth, { unit_ids: ["nope"] })).status, 400);
   assert.equal((await send(auth, { unit_ids: [] })).status, 400);
 
-  // An older caller that still sends `project` is accepted; the key is ignored.
   const res = await send(auth, { ...good, project: null });
   assert.equal(res.status, 202);
   assert.deepEqual(await res.json(), { accepted: 1 });

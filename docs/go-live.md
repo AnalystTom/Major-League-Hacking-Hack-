@@ -179,7 +179,27 @@ and narration. Each component holds only the secrets it needs:
 
 The D1 bridge accepts only the statements the container issues (`deploy/processor/src/d1-allowlist.js`)
 and refuses anything else with 403; `server/test/db/d1-allowlist.test.ts` fails whenever the stores send a
-statement that is not on that list, or the list holds one they no longer send. Media keys take their content type from the extension
+statement that is not on that list, or the list holds one they no longer send.
+
+Each allowed write also checks that the row it touches is in a state the container is working on, so a
+leaked `D1_BRIDGE_TOKEN` cannot plant or overwrite rows under caller-chosen IDs:
+
+- Extraction results only update an existing unit that is `running`, and only to `ready` or `failed`.
+- Artifacts, failed-digest records and exclusions are stored only for units that are `ready` and hold a
+  digest reservation (`processing_starts`, kind `digest`) under the batch token sent with the write and
+  made in the last hour. A reservation is granted only to a unit that still awaits a digest for its
+  importers. Failed-digest records copy their URL and sources from the unit row.
+- Skill, video and brief results are settled only by the matching claim token while the row is `running`.
+  Skill and video claims need a `ready` artifact. A judge rejection releases an account's video request
+  only under the current running claim.
+
+`server/test/db/d1-write-integrity.test.ts` runs the container's real write sequence through the bridge and
+shows forged writes with caller-chosen IDs, finished units or no reservation are refused.
+
+Known limitation: a holder of the D1 secret can still follow the container's own protocol. It can reserve
+a unit that awaits a digest and store an artifact with its own text for it, claim a pending skill, video or
+brief and settle it with its own content, register a Digestion Prompt revision, or add usage records. It
+cannot reach other rows, run arbitrary SQL, or read password hashes or X tokens. Media keys take their content type from the extension
 (`.mp4`, `.vtt`, `.m4a`). The three new secrets are required before the processor deploy. If
 `D1_BRIDGE_TOKEN` is missing, the processor container fails to start as a whole, including
 `/api/ingest/process`, not only the bridges. Never print secret values.

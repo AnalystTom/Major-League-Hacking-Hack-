@@ -101,7 +101,7 @@ export class D1OutputStore implements OutputStore {
     const t = TABLE[kind], token = randomUUID();
     const [claimed] = await this.db.batch([{ sql: `INSERT INTO ${t}(artifact_id,artifact_version,status,updated_at,claim_token,attempts,review_feedback)
       SELECT ?1,?2,'running',${NOW},?3,1,${kind === 'video' ? `json_object('generator_revision','${VIDEO_GENERATOR_REVISION}')` : 'NULL'}
-      FROM artifacts a WHERE a.id=?1 AND a.version=?2 ${kind === 'video' ? `AND ${VIDEO_REQUESTED}` : ''}
+      FROM artifacts a WHERE a.id=?1 AND a.version=?2 AND a.ingestion_status='ready' ${kind === 'video' ? `AND ${VIDEO_REQUESTED}` : ''}
         ${kind === 'video' ? `AND (SELECT count(*) FROM video_starts WHERE created_at>=strftime('%Y-%m-%dT00:00:00.000Z','now'))<?4
           AND (SELECT count(*) FROM video_starts WHERE created_at>=strftime('%Y-%m-01T00:00:00.000Z','now'))<?5` : ''}
         AND (NOT EXISTS(SELECT 1 FROM ${t} r WHERE r.artifact_id=a.id AND r.artifact_version=a.version AND r.attempts>0)
@@ -125,27 +125,29 @@ export class D1OutputStore implements OutputStore {
     return rowCount === 1;
   }
   async fail(kind: Kind, c: Claim, error: string, review?: ShortJudgment, final = false) {
-    const t = TABLE[kind];
-    const [{ rowCount }] = await this.db.batch([{ sql: `UPDATE ${t} SET status=CASE WHEN status='ready' THEN 'ready' ELSE 'failed' END,
+    const t = TABLE[kind], reason = error.slice(0,2000);
+    const failed = { sql: `UPDATE ${t} SET status=CASE WHEN status='ready' THEN 'ready' ELSE 'failed' END,
       error=?3,claim_token=NULL,
       review_feedback=CASE WHEN ?4 IS NULL THEN review_feedback ELSE json_set(${feedback(t)},'$.last_rejected_review',json(?4)) END,attempts=CASE WHEN ?5=1 OR ${JUDGE_REJECTED('?3')} OR ${regenerating(t)}
       THEN max(attempts,${MAX_OUTPUT_ATTEMPTS}) ELSE attempts END,updated_at=${NOW}
       WHERE id=?1 AND claim_token=?2 AND (status='running' ${kind === 'video' ? `OR (status='ready' AND ${regenerating(t)})` : ''})`,
-      params: [c.id,c.token,error.slice(0,2000),review ? JSON.stringify(review) : null,final ? 1 : 0] },
-    ...(kind === 'video' ? [
+      params: [c.id,c.token,reason,review ? JSON.stringify(review) : null,final ? 1 : 0] };
+    const statements = kind === 'video' ? [
       { sql: `INSERT INTO video_rejection_releases(user_id,artifact_id,artifact_version,claim_token)
         SELECT r.user_id,r.artifact_id,r.artifact_version,?2 FROM user_video_requests r
         JOIN video_results v ON v.artifact_id=r.artifact_id AND v.artifact_version=r.artifact_version
-        WHERE v.id=?1 AND v.status='failed' AND ${JUDGE_REJECTED('v.error')}
-        ON CONFLICT(user_id) DO NOTHING`, params: [c.id, c.token] },
+        WHERE v.id=?1 AND v.claim_token=?2 AND v.status='running' AND ${JUDGE_REJECTED('?3')}
+        ON CONFLICT(user_id) DO NOTHING`, params: [c.id,c.token,reason] },
+      failed,
       { sql: `UPDATE user_skill_choices SET video_requested=0 WHERE EXISTS (SELECT 1 FROM video_rejection_releases x
         WHERE x.claim_token=?1 AND x.user_id=user_skill_choices.user_id AND x.artifact_id=user_skill_choices.artifact_id
           AND x.artifact_version=user_skill_choices.artifact_version)`, params: [c.token] },
       { sql: `DELETE FROM user_video_requests WHERE EXISTS (SELECT 1 FROM video_rejection_releases x
         WHERE x.claim_token=?1 AND x.user_id=user_video_requests.user_id AND x.artifact_id=user_video_requests.artifact_id
           AND x.artifact_version=user_video_requests.artifact_version)`, params: [c.token] },
-    ] : [])]);
-    return rowCount===1;
+    ] : [failed];
+    const results = await this.db.batch(statements);
+    return results[statements.indexOf(failed)].rowCount===1;
   }
   async finishSkill(c: Claim, s: GeneratedSkill) {
     const { rowCount } = await this.db.query(`UPDATE skill_results SET status='ready',skill_markdown=?3,supporting_refs=?4,review_feedback=?5,error=NULL,updated_at=${NOW}

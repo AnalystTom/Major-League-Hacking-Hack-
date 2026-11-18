@@ -31,8 +31,13 @@ async function setup() {
   }
   const prompt=await store.registerPrompt('test',[]);
   const videoOwners=new Map<string,string>();
+  async function reserve(ids: string[]) {
+    const reservation=randomUUID();
+    await raw.query("INSERT INTO processing_starts(unit_id,kind,charged,batch_token) SELECT value,'digest',0,?2 FROM json_each(?1)",[JSON.stringify(ids),reservation]);
+    return reservation;
+  }
   async function artifact(ids: string[]) {
-    const a = (await store.saveArtifacts([{ name:'Check first',source_ids:ids,category:'Evals',processed_text:'content',selection_reason:'reason',evidence:[] }],[],prompt))[0];
+    const a = (await store.saveArtifacts([{ name:'Check first',source_ids:ids,category:'Evals',processed_text:'content',selection_reason:'reason',evidence:[] }],[],prompt,await reserve(ids)))[0];
     await raw.query('INSERT INTO user_skill_choices(user_id,artifact_id,artifact_version,kept,video_requested) VALUES(?1,?2,?3,1,1) ON CONFLICT DO NOTHING',[user,a.id,a.version]);
     let videoOwner=videoOwners.get(a.id);
     if (!videoOwner) {
@@ -47,7 +52,7 @@ async function setup() {
     await raw.query('INSERT INTO user_video_requests(user_id,artifact_id,artifact_version) VALUES(?1,?2,?3) ON CONFLICT DO NOTHING',[videoOwner,a.id,a.version]);
     return a;
   }
-  return { db: raw,sqlite,store,outputs,handoffs,user,unit,prompt,artifact };
+  return { db: raw,sqlite,store,outputs,handoffs,user,unit,prompt,artifact,reserve };
 }
 
 test('D1 stores preserve extraction, prompt revisions, artifacts and failed digest retry limits',async()=>{
@@ -70,7 +75,8 @@ test('D1 stores preserve extraction, prompt revisions, artifacts and failed dige
     await s.db.query("UPDATE artifacts SET review_status='approved' WHERE id=?1",[a.id]);
     await s.db.query('INSERT INTO artifacts(id,version,name,source_url,source_ids,processed_text,ingestion_status) SELECT id,2,name,source_url,source_ids,\'revised\',\'ready\' FROM artifacts WHERE id=?1',[a.id]);
     const retry=await s.unit('ready');
-    for(let i=0;i<3;i++) await s.store.saveFailedArtifacts([retry],'actual error',s.prompt);
+    const reservation=await s.reserve([retry]);
+    for(let i=0;i<3;i++) await s.store.saveFailedArtifacts([retry],'actual error',s.prompt,reservation);
     assert.equal((await s.store.listUnitsNeedingDigest(50,s.prompt)).some((r)=>r.unitId===retry),false);
     assert.ok((await s.db.query('SELECT error FROM artifacts WHERE ingestion_status=\'failed\'')).rows.every((r)=>r.error==='actual error'));
     await assert.rejects(s.db.query("INSERT INTO ingested_units(submitted_url,source_url,transcript) VALUES('x','x','invalid json')"),/CHECK/);
@@ -84,11 +90,12 @@ test('D1 requests and sweeps reconsider old exclusions while preserving current 
     const ids=[direct,scheduled,excluded];
     const transcript={window:[0,0],evidence_items:[{start_seconds:0,end_seconds:0,observed_spoken_content:'How to grow a sourdough starter.'}]};
     await s.db.query('UPDATE ingested_units SET transcript=?1',[JSON.stringify(transcript)]);
-    await s.store.saveArtifacts([],ids.map((unit_id)=>({unit_id,reason:'Not engineering.'})),s.prompt);
+    const reservation=await s.reserve(ids);
+    await s.store.saveArtifacts([],ids.map((unit_id)=>({unit_id,reason:'Not engineering.'})),s.prompt,reservation);
     assert.deepEqual(await s.store.unitsNeedingDigest(ids,s.prompt),[]);
     assert.deepEqual(await s.store.listUnitsNeedingDigest(50,s.prompt),[]);
     const current=await s.store.registerPrompt(promptRevisionText(DEFAULT_CATEGORIZATION_REQUEST),[]);
-    await s.store.saveArtifacts([],[{unit_id:excluded,reason:'Nothing to explain.'}],current);
+    await s.store.saveArtifacts([],[{unit_id:excluded,reason:'Nothing to explain.'}],current,reservation);
     assert.deepEqual((await s.store.unitsNeedingDigest(ids,current)).sort(),[direct,scheduled].sort());
     assert.deepEqual((await s.store.listUnitsNeedingDigest(50,current)).map((r)=>r.unitId).sort(),[direct,scheduled].sort());
     const { impl,calls }=mockFetch();
@@ -115,6 +122,7 @@ test('atomic D1 extraction and digest reservations never exceed the last daily/m
     const again=await s.store.claimWithinLimits(ids,{daily:4,monthly:4});
     assert.equal(again.claimed.length,3);
     assert.equal((await s.db.query('SELECT count(*) AS n FROM processing_starts WHERE charged=1')).rows[0].n,4);
+    await s.db.query(`UPDATE ingested_units SET status='ready',transcript='{"evidence_items":[]}'`);
     assert.deepEqual((await s.store.reserveDigests(ids,{daily:0,monthly:0})).allowed,ids,'extraction covers first digest');
     const repeat=await s.store.reserveDigests(ids,{daily:5,monthly:5});
     assert.equal(repeat.allowed.length,1);
@@ -215,7 +223,8 @@ test('a judge rejection releases the one video reservation so the account can re
       (await s.db.query(parts.reduce((text, part, i) => text + (i ? `?${i}` : '') + part, ''), params)).rows.map(decodeWebRow);
     const env={SHORTS:'on'};
     const rejected=await s.artifact([await s.unit('ready')]);
-    const other=(await s.store.saveArtifacts([{ name:'Second skill',source_ids:[await s.unit('ready')],category:'Evals',processed_text:'other',selection_reason:'reason',evidence:[] }],[],s.prompt))[0];
+    const otherUnit=await s.unit('ready');
+    const other=(await s.store.saveArtifacts([{ name:'Second skill',source_ids:[otherUnit],category:'Evals',processed_text:'other',selection_reason:'reason',evidence:[] }],[],s.prompt,await s.reserve([otherUnit])))[0];
     assert.equal((await readVideoRequest(sql,s.user,env))?.status,'queued');
     const claim=(await s.outputs.claim('video',rejected))!;
     assert.equal(await s.outputs.fail('video',claim,'Quality judge rejected: unsupported claim'),true);
@@ -238,7 +247,10 @@ test('a second judge rejection for the same account keeps its video slot used an
       (await s.db.query(parts.reduce((text, part, i) => text + (i ? `?${i}` : '') + part, ''), params)).rows.map(decodeWebRow);
     const env={SHORTS:'on'};
     const first=await s.artifact([await s.unit('ready')]);
-    const next=async(name:string)=>(await s.store.saveArtifacts([{ name,source_ids:[await s.unit('ready')],category:'Evals',processed_text:name,selection_reason:'reason',evidence:[] }],[],s.prompt))[0];
+    const next=async(name:string)=>{
+      const id=await s.unit('ready');
+      return (await s.store.saveArtifacts([{ name,source_ids:[id],category:'Evals',processed_text:name,selection_reason:'reason',evidence:[] }],[],s.prompt,await s.reserve([id])))[0];
+    };
     const second=await next('Second skill');
     const third=await next('Third skill');
     const claimFirst=(await s.outputs.claim('video',first))!;
@@ -479,7 +491,7 @@ for (const limits of [{daily:1,monthly:10},{daily:10,monthly:1}]) {
         s.outputs.claim('skill',artifacts[1],limits),
       ]);
       assert.equal(attempts.filter(Boolean).length,1,'one worker takes the last slot');
-      const starts=(await s.db.query('SELECT kind,charged,unit_id FROM processing_starts')).rows;
+      const starts=(await s.db.query("SELECT kind,charged,unit_id FROM processing_starts WHERE kind<>'digest'")).rows;
       assert.equal(starts.length,1);
       assert.equal(starts[0].kind,'retry');
       assert.equal(starts[0].charged,1);
@@ -487,7 +499,7 @@ for (const limits of [{daily:1,monthly:10},{daily:10,monthly:1}]) {
       const fresh=await s.artifact([await s.unit('ready')]);
       assert.equal((await s.outputs.artifactsNeeding('skill',1))[0].id,fresh.id,'blocked retries cannot hide fresh work');
       assert.ok(await s.outputs.claim('skill',fresh,limits),'fresh work still runs with exhausted retry budget');
-      assert.equal((await s.db.query('SELECT count(*) AS n FROM processing_starts')).rows[0].n,1);
+      assert.equal((await s.db.query('SELECT count(*) AS n FROM processing_starts WHERE charged=1')).rows[0].n,1);
     } finally {s.sqlite.close();}
   });
 }
@@ -639,15 +651,16 @@ test('a digest that finishes after its unit was deleted stores nothing derived f
   const s=await setup();
   try {
     const gone=await s.unit('ready'), kept=await s.unit('ready');
+    const reservation=await s.reserve([gone,kept]);
     await s.db.query('DELETE FROM user_imports WHERE unit_id=?1',[gone]);
     await s.db.query('DELETE FROM ingested_units WHERE id=?1',[gone]);
     const draft=(name:string,source_ids:string[])=>({ name,source_ids,category:'Evals',processed_text:'content',selection_reason:'reason',evidence:[] });
     const stored=await s.store.saveArtifacts(
       [draft('Only gone',[gone]),draft('Mixed',[gone,kept]),draft('Only kept',[kept])],
       [{unit_id:gone,reason:'Off topic.'},{unit_id:kept,reason:'Nothing to explain.'}],
-      s.prompt);
+      s.prompt,reservation);
     assert.deepEqual(stored.map((a)=>a.name),['Only kept']);
-    await s.store.saveFailedArtifacts([gone],'late failure',s.prompt);
+    await s.store.saveFailedArtifacts([gone],'late failure',s.prompt,reservation);
     const count=async(sql:string,...params:unknown[])=>(await s.db.query(sql,params)).rows[0].n;
     assert.equal(await count('SELECT count(*) AS n FROM artifacts WHERE EXISTS(SELECT 1 FROM json_each(source_ids) WHERE value=?1)',gone),0);
     assert.equal(await count('SELECT count(*) AS n FROM artifact_exclusions WHERE unit_id=?1',gone),0);
