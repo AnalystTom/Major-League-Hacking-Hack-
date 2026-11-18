@@ -1,3 +1,4 @@
+import { readBodyText } from "./body.js";
 import { rateLimit, requestIp } from "./rate-limit.js";
 import { parseSignup } from "./signup.js";
 
@@ -16,8 +17,8 @@ async function joinWaitlist(request, env) {
   if (rejection) return rejection;
   let body;
   try {
-    const text = await request.text();
-    if (text.length > 32_000) return json({ error: "That request is too large." }, 413);
+    const text = await readBodyText(request, 32_000);
+    if (text === null) return json({ error: "That request is too large." }, 413);
     body = JSON.parse(text);
   } catch {
     return json({ error: "Send a JSON body with an email field." }, 400);
@@ -25,7 +26,6 @@ async function joinWaitlist(request, env) {
 
   const parsed = parseSignup(body);
   if (!parsed.ok) {
-    // Honeypot hits get a success-shaped reply so bots learn nothing.
     return parsed.status === 202 ? json({ joined: true }, 200) : json({ error: parsed.error }, parsed.status);
   }
 

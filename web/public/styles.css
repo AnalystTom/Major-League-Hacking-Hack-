@@ -211,6 +211,8 @@ button { font: inherit; color: inherit; }
    headline, and every time a short starts. */
 .kw { display: inline-block; letter-spacing: var(--ls, 0); }
 .play .kw { animation: kw-in .85s var(--ease-out) both; animation-delay: calc(var(--i) * 70ms + .1s); }
+.kw[data-i="0"] { --i: 0; } .kw[data-i="1"] { --i: 1; } .kw[data-i="2"] { --i: 2; } .kw[data-i="3"] { --i: 3; }
+.kw[data-i="4"] { --i: 4; } .kw[data-i="5"] { --i: 5; } .kw[data-i="6"] { --i: 6; } .kw[data-i="7"] { --i: 7; }
 @keyframes kw-in {
   from { opacity: 0; transform: translateY(.3em); letter-spacing: .12em; filter: blur(8px); }
   to { opacity: 1; transform: none; letter-spacing: var(--ls, 0); filter: blur(0); }

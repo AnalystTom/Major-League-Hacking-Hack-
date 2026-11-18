@@ -1,12 +1,8 @@
-// Rendered shorts live in the R2 bucket bound as MEDIA. D1 stores references like
-// "r2:videos/<artifact>/<version>/short.mp4"; the page only ever sees the same-origin /media/ URL.
-
 const KEY = /^(videos|captions|posters)\/[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/;
 const TYPES = { mp4: "video/mp4", webm: "video/webm", vtt: "text/vtt; charset=utf-8", jpg: "image/jpeg", png: "image/png", webp: "image/webp" };
 
 export const isMediaKey = (key) => KEY.test(key) && !key.split("/").includes("..");
 
-/** A stored reference as a URL the browser can play, or null when it can't be served safely. */
 export function resolveMediaRef(ref) {
   if (typeof ref !== "string") return null;
   if (ref.startsWith("r2:")) {
@@ -16,11 +12,6 @@ export function resolveMediaRef(ref) {
   return /^https:\/\//.test(ref) ? ref : null;
 }
 
-/**
- * The byte slice a Range header asks for, as { offset, length }; null for no (or an unsupported
- * multi-part) range, and "unsatisfiable" when it starts past the end. Parsed here rather than by R2
- * so the Content-Range we send always matches the bytes we return.
- */
 export function parseRange(header, size) {
   const m = /^bytes=(\d*)-(\d*)$/.exec((header ?? "").trim());
   if (!m || (m[1] === "" && m[2] === "")) return null;
@@ -34,7 +25,6 @@ export function parseRange(header, size) {
   return end < offset ? null : { offset, length: end - offset + 1 };
 }
 
-/** Streams an object with Range support, which Safari needs before it will play a video. */
 export async function serveMedia(request, env, key) {
   if (!["GET", "HEAD"].includes(request.method)) return new Response("Use GET.", { status: 405 });
   if (!isMediaKey(key)) return new Response("Not found.", { status: 404 });
@@ -51,7 +41,7 @@ export async function serveMedia(request, env, key) {
 
   const headers = new Headers();
   object.writeHttpMetadata(headers);
-  if (!headers.has("content-type")) headers.set("content-type", TYPES[key.split(".").pop()] ?? "application/octet-stream");
+  headers.set("content-type", TYPES[key.split(".").pop()] ?? "application/octet-stream");
   headers.set("etag", object.httpEtag);
   headers.set("accept-ranges", "bytes");
   headers.set("cache-control", "private, no-store");

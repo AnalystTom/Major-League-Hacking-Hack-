@@ -1,9 +1,9 @@
-// X credentials and encrypted user tokens stay on the Worker. No email-based account merging.
 import { cookieSecure, createSession, readCookie, sessionCookie } from './auth.js';
 import { createUnits, parseImport, readUnits, userUnitIds } from './imports.js';
 import { requestProcessing } from './processor.js';
 import { rateLimit, requestIp } from './rate-limit.js';
 import { importCapResponse, importsLeft, refundSignup, reserveSignup, signupsPaused } from './limits.js';
+import { readBodyText } from './body.js';
 
 const enc = new TextEncoder();
 const b64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)));
@@ -17,7 +17,6 @@ const nonceCookie = (value, request, age = 600) => `rs_x_nonce=${value}; Path=/a
 const callbackUrl = env => env.X_CALLBACK_URL;
 const SCOPES = 'tweet.read users.read bookmark.read offline.access';
 const MAX_BOOKMARKS = 50;
-// Financial ceiling is prepaid in X's console, without auto-recharge; not a dollar ledger.
 export const X_PREPAID_CREDIT_CAP_USD = 20;
 
 const dailyLimit = (value, fallback) => value === undefined ? fallback : /^\d+$/.test(String(value)) && Number.isSafeInteger(Number(value)) ? Number(value) : 0;
@@ -39,7 +38,6 @@ export function xAvailable(env) {
   } catch { return false; }
 }
 
-// The optional service binding lets isolated tests use a local provider without paid requests.
 async function provider(env, path, options = {}) {
   const send = env.X_PROVIDER ? env.X_PROVIDER.fetch.bind(env.X_PROVIDER) : fetch;
   return send(`https://api.x.com${path}`, { ...options, signal: AbortSignal.timeout(8000), redirect: 'manual' });
@@ -67,7 +65,6 @@ async function start(request, env, sql, user) {
   await sql`INSERT INTO x_oauth_attempts(state_hash,browser_hash,verifier,user_id,expires_at)
     VALUES(${await hash(state)},${await hash(browser)},${verifier},${user?.id ?? null},${now() + 600})`;
   let target = 'https://x.com/i/oauth2/authorize';
-  // Only loopback verification may substitute a local authorization screen. Never honored on a public host.
   if (['localhost', '127.0.0.1'].includes(new URL(request.url).hostname) && env.X_TEST_AUTHORIZE_URL) {
     const local = new URL(env.X_TEST_AUTHORIZE_URL);
     if (local.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(local.hostname)) target = local.href;
@@ -86,14 +83,12 @@ async function callback(request, env, sql, user) {
   const url = new URL(request.url), state = url.searchParams.get('state');
   const browser = readCookie(request.headers.get('cookie'), 'rs_x_nonce');
   if (!state || state.length > 200 || !browser) return redirect('/start?x=invalid', [clear]);
-  // Consume once, and only from the browser that began the flow (a mismatch cannot burn another flow).
   const [attempt] = await sql`DELETE FROM x_oauth_attempts WHERE state_hash=${await hash(state)} AND browser_hash=${await hash(browser)} RETURNING *`;
   if (!attempt || attempt.expires_at < now() || (attempt.user_id ?? null) !== (user?.id ?? null)) return redirect('/start?x=invalid', [clear]);
   if (url.searchParams.has('error')) return redirect('/start?x=denied', [clear]);
   const code = url.searchParams.get('code');
   if (!code || code.length > 2000) return redirect('/start?x=invalid', [clear]);
   try {
-    // The identity lookup is also metered. Reserve before exchanging or reading.
     if (!(await reserveRead(env, sql, user?.id ?? `auth:${attempt.browser_hash}`))) return redirect('/start?x=budget', [clear]);
     const tokenResponse = await provider(env, '/2/oauth2/token', { method: 'POST', headers: { authorization: clientAuth(env), 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: callbackUrl(env), code_verifier: attempt.verifier }).toString() });
@@ -112,7 +107,6 @@ async function callback(request, env, sql, user) {
       if (signupsPaused(env)) return redirect('/start?x=paused', [clear]);
       const slot = await reserveSignup(env, sql, requestIp(request));
       if (slot.full) return redirect('/start?x=full', [clear]);
-      // Internal namespace cannot collide with valid signup emails. Never displayed as an email.
       const email = 'oauth:x:' + data.id;
       const [created] = await sql`INSERT INTO users(email,name,password_hash) VALUES(${email},${String(data.name ?? data.username).slice(0,80)},'')
         ON CONFLICT(email) DO NOTHING RETURNING id`;
@@ -144,13 +138,14 @@ async function importBookmarks(env, sql, user, request) {
   if (!xAvailable(env)) return json({ error: 'X bookmark import is unavailable. Paste links instead.' }, 503);
   const rejection = await rateLimit(env.IMPORT_LIMITER, user.id, "That's a lot of imports at once. Wait a minute and try again.");
   if (rejection) return rejection;
+  const text = await readBodyText(request, 1024);
+  if (text === null) return json({ error: 'That request is too large.' }, 413);
   let refresh = false;
-  try { refresh = (await request.json()).refresh === true; } catch { return json({ error: 'Invalid import request.' }, 400); }
+  try { refresh = JSON.parse(text).refresh === true; } catch { return json({ error: 'Invalid import request.' }, 400); }
   const lease = random();
   let [row] = await sql`UPDATE x_connections SET lease_until=${now() + 45},lease_token=${lease} WHERE user_id=${user.id} AND access_token IS NOT NULL AND (expires_at>${now()} OR refresh_token IS NOT NULL) AND lease_until<=${now()} RETURNING *`;
   if (!row) return json({ error: 'X is disconnected, expired, or already importing. Reconnect or try again shortly.' }, 409);
   try {
-    // Only an explicit refresh starts a new scan. Reloads, retries and reconnects keep the saved cursor.
     if (row.import_state === 'complete' && !refresh) return json({ complete: true, read: row.read_count });
     if (row.import_state === 'complete' && refresh) {
       [row] = await sql`UPDATE x_connections SET read_count=0,cursor=NULL,head_id=NULL,import_state='pending' WHERE user_id=${user.id} AND lease_token=${lease} RETURNING *`;
@@ -160,7 +155,6 @@ async function importBookmarks(env, sql, user, request) {
       await sql`UPDATE x_connections SET initial_complete=1,import_state='complete',cursor=NULL WHERE user_id=${user.id} AND lease_token=${lease}`;
       return json({ complete: true, read: row.read_count, capped: true });
     }
-    // The daily import cap also bounds the page, so no paid read fetches more links than the account may add today.
     const left = await importsLeft(env, sql, user.id);
     const overCap = importCapResponse(left, 1);
     if (overCap) return overCap;
@@ -223,7 +217,6 @@ async function importBookmarks(env, sql, user, request) {
     await sql`UPDATE x_connections SET cursor=${complete ? null : next},read_count=${count},import_state=${complete ? 'complete' : 'pending'},error=NULL,
       initial_complete=${complete ? 1 : row.initial_complete},head_id=${complete ? null : head},last_seen_id=${complete ? (head ?? row.last_seen_id) : row.last_seen_id}
       WHERE user_id=${user.id} AND lease_token=${lease}`;
-    // Persist the page before calling the processor so a processor outage cannot re-read X.
     const processor = await requestProcessing(env, units.filter(u => u.linked).map(u => u.id));
     return json({ complete, read: count, imported: fresh.length, capped, processor, units: await readUnits(sql, units.map(u => u.id), await userUnitIds(sql, user.id)) });
   } catch {
