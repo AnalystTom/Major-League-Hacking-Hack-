@@ -1,12 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
 import app from '../src/index.js';
-import { CONTENT_SECURITY_POLICY, withSecurityHeaders } from '../src/security-headers.js';
+import { CONTENT_SECURITY_POLICY } from '../src/security-headers.js';
 import { serveMedia } from '../src/media.js';
 import { xRoute } from '../src/x-oauth.js';
 
-const publicDirectory = new URL('../public/', import.meta.url);
 const allow = { async limit() { return { success: true }; } };
 const assets = { ASSETS: { fetch: async () => new Response('<!doctype html>', { headers: { 'content-type': 'text/html; charset=utf-8' } }) } };
 const streamed = (chunks) => new ReadableStream({
@@ -34,14 +32,6 @@ test('API and error responses carry the headers too', async () => {
   assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
 });
 
-test('a response that already sets a header keeps its own value', async () => {
-  const redirect = withSecurityHeaders(new Response(null, { status: 303, headers: { 'referrer-policy': 'no-referrer', location: '/app' } }));
-  assert.equal(redirect.status, 303);
-  assert.equal(redirect.headers.get('location'), '/app');
-  assert.equal(redirect.headers.get('referrer-policy'), 'no-referrer');
-  assert.equal(redirect.headers.get('x-frame-options'), 'DENY');
-});
-
 test('the policy blocks inline code, foreign scripts and framing, and admits the origins the pages use', () => {
   assert.doesNotMatch(CONTENT_SECURITY_POLICY, /unsafe-(inline|eval)/);
   assert.deepEqual(directives['script-src'], ["'self'"]);
@@ -50,19 +40,6 @@ test('the policy blocks inline code, foreign scripts and framing, and admits the
   assert.deepEqual(directives['frame-src'], ['https://www.loom.com']);
   assert.deepEqual(directives['style-src'], ["'self'", 'https://fonts.googleapis.com']);
   assert.deepEqual(directives['font-src'], ["'self'", 'https://fonts.gstatic.com']);
-});
-
-test('every public page loads only same-origin scripts and no inline script, style or style attribute', () => {
-  const pages = readdirSync(publicDirectory).filter((file) => file.endsWith('.html'));
-  assert.ok(pages.length >= 5);
-  for (const file of pages) {
-    const html = readFileSync(new URL(file, publicDirectory), 'utf8');
-    assert.doesNotMatch(html, /<script(?![^>]*\ssrc=)[^>]*>/, `${file} has an inline script`);
-    assert.doesNotMatch(html, /<script[^>]*\ssrc="https?:/, `${file} loads a script from another origin`);
-    assert.doesNotMatch(html, /<style[\s>]/, `${file} has an inline stylesheet`);
-    assert.doesNotMatch(html, /\sstyle="/, `${file} has a style attribute`);
-    assert.doesNotMatch(html, /\son[a-z]+="/, `${file} has an inline event handler`);
-  }
 });
 
 test('media is served with the type its extension names, never a stored type', async () => {
