@@ -28,8 +28,8 @@ export async function deleteAccount(env, userId) {
     env.DB.prepare(`DELETE FROM video_results WHERE ${ownedChild("video_results")}`).bind(userId),
     env.DB.prepare(`UPDATE video_starts SET artifact_id = NULL, artifact_version = NULL WHERE ${ownedChild("video_starts")}`).bind(userId),
     env.DB.prepare(`DELETE FROM user_skill_choices WHERE ${ownedChild("user_skill_choices")}`).bind(userId),
-    env.DB.prepare(`UPDATE user_video_requests SET user_id = NULL, artifact_id = NULL, artifact_version = NULL
-      WHERE user_id = ?1 OR ${ownedChild("user_video_requests")}`).bind(userId),
+    env.DB.prepare("UPDATE user_video_requests SET user_id = NULL, artifact_id = NULL, artifact_version = NULL WHERE user_id = ?1").bind(userId),
+    env.DB.prepare(`DELETE FROM user_video_requests WHERE ${ownedChild("user_video_requests")}`).bind(userId),
     env.DB.prepare(`DELETE FROM artifacts WHERE ${ownedArtifact("artifacts")}`).bind(userId),
     env.DB.prepare(`DELETE FROM artifact_exclusions WHERE unit_id IN (${ownedUnits})`).bind(userId),
     env.DB.prepare(`DELETE FROM user_imports WHERE user_id <> ?1 AND unit_id IN (${ownedUnits})`).bind(userId),
