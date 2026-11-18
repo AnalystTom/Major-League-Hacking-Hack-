@@ -208,8 +208,9 @@ running extraction without a claim token, writing its title, transcript, extract
 status and error under the unit's ID. It can reserve a unit that awaits a digest and store an artifact with its
 own text for it, set the exclusion reason and failed-digest error text for that reserved unit (both shown to
 its importer), claim a pending skill, video or brief and settle it with its own content, register a Digestion
-Prompt revision, or add usage records. It can also read every ready unit with its transcript and each unit's
-importer user ID.
+Prompt revision, or add usage records. It can also read any unit row by ID, every ready unit with its transcript,
+each unit's importer user ID, every ready artifact with its processed text, evidence and sources, and skill
+markdown with unit titles and URLs for given skill IDs.
 It cannot run arbitrary SQL or read password hashes or X tokens. Media keys take their content type from the extension
 (`.mp4`, `.vtt`, `.m4a`). The three new secrets are required before the processor deploy. If
 `D1_BRIDGE_TOKEN` is missing, the processor container fails to start as a whole, including
