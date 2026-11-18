@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { timingSafeEqual } from 'node:crypto';
+import { ALLOWED_D1_STATEMENTS } from './src/d1-allowlist.js';
 
 const SECRETS = {
   INGEST_TOKEN: 'ingest-secret',
@@ -9,7 +10,7 @@ const SECRETS = {
   TTS_BRIDGE_TOKEN: 'tts-bridge-secret',
 };
 
-const ALLOWED = 'INSERT INTO artifact_exclusions(unit_id,digestion_prompt_id,reason) VALUES(?1,?2,?3)';
+const ALLOWED = [...ALLOWED_D1_STATEMENTS].find((sql) => sql.includes('INSERT INTO artifact_exclusions'));
 const json = (body) => JSON.stringify(body);
 
 const ROUTES = [
@@ -19,6 +20,7 @@ const ROUTES = [
   { method: 'GET', path: '/settings-status', secret: 'INGEST_TOKEN', status: 200 },
   { method: 'POST', path: '/internal/d1', secret: 'D1_BRIDGE_TOKEN', body: json({ statements: [{ sql: ALLOWED, params: ['u', 1, 'r'] }] }), status: 200 },
   { method: 'PUT', path: '/internal/media?key=videos%2Fabc-123%2F1%2Fshort.mp4', secret: 'MEDIA_UPLOAD_TOKEN', body: 'abc', status: 200 },
+  { method: 'DELETE', path: '/internal/media?key=videos%2Fabc-123%2F1%2Fshort.mp4', secret: 'MEDIA_UPLOAD_TOKEN', status: 200 },
   { method: 'POST', path: '/internal/tts', secret: 'TTS_BRIDGE_TOKEN', body: json({ text: 'hello' }), status: 200 },
 ];
 
@@ -37,7 +39,7 @@ test('each Worker route accepts only the secret for its own bridge', { timeout: 
     ...SECRETS,
     PROCESSOR: {},
     DB: { prepare(sql) { return { bind(...params) { return { sql, params }; } }; }, async batch(statements) { return statements.map(() => ({ success: true, results: [], meta: { changes: 0 } })); } },
-    MEDIA: { async put() {}, async head() { return { size: 3 } } },
+    MEDIA: { async put() {}, async delete() {}, async head() { return { size: 3 } } },
     AI: { async run() { return new Uint8Array([1, 2, 3, 4]).buffer; } },
   };
   const send = (route, authorization) => {
