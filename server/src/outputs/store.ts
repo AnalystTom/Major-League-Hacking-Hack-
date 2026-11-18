@@ -26,7 +26,7 @@ const CLAIMABLE = (r: string, kind: Kind) => `(${r}.status = 'pending'
   OR (${r}.status = 'failed' AND ${r}.attempts < ${MAX_OUTPUT_ATTEMPTS}
       AND julianday(${r}.updated_at) < julianday('now', '-' || (${RETRY_AFTER_MINUTES} * ${r}.attempts) || ' minutes')))`;
 
-const EXHAUSTED_RUNNING = (r: string) => `(${r}.status = 'running' AND NOT (${regenerating(r)}) AND ${r}.attempts >= ${MAX_OUTPUT_ATTEMPTS}
+const EXHAUSTED_RUNNING = (r: string) => `(${r}.status = 'running' AND (${regenerating(r)} OR ${r}.attempts >= ${MAX_OUTPUT_ATTEMPTS})
   AND julianday(${r}.updated_at) < julianday('now', '-${STALE_CLAIM_MINUTES} minutes'))`;
 
 export interface Claim { id: string; token: string }
@@ -78,7 +78,7 @@ function rowToArtifact(r: any): ReadyArtifact {
 export class D1OutputStore implements OutputStore {
   constructor(private db: Database) {}
   private async failExhausted(kind: Kind) {
-    await this.db.query(`UPDATE ${TABLE[kind]} SET status='failed',error=?1,claim_token=NULL,updated_at=${NOW}
+    await this.db.query(`UPDATE ${TABLE[kind]} SET status='failed',error=?1,claim_token=NULL,attempts=max(attempts,${MAX_OUTPUT_ATTEMPTS}),updated_at=${NOW}
       WHERE ${EXHAUSTED_RUNNING(TABLE[kind])}`, [EXHAUSTED_CLAIM_ERROR]);
   }
   async videoRequested(a: ReadyArtifact) {
