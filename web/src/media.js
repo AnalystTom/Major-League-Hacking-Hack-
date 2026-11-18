@@ -1,7 +1,9 @@
-const KEY = /^(videos|captions|posters)\/[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/;
+const PATH = /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/;
+const SERVED = /^(videos|captions|posters)\//;
 const TYPES = { mp4: "video/mp4", webm: "video/webm", vtt: "text/vtt; charset=utf-8", jpg: "image/jpeg", png: "image/png", webp: "image/webp" };
 
-export const isMediaKey = (key) => KEY.test(key) && !key.split("/").includes("..");
+export const isObjectKey = (key) => PATH.test(key) && !key.split("/").includes("..");
+export const isMediaKey = (key) => SERVED.test(key) && isObjectKey(key);
 
 export function resolveMediaRef(ref) {
   if (typeof ref !== "string") return null;
