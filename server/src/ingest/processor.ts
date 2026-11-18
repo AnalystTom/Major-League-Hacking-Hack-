@@ -1,40 +1,31 @@
-// The processing service from the spec's "Processor contract": claim pending units, extract them, then digest
-// ready units. Extraction is shared; digest reuse follows the store's per-importer eligibility rules.
-
 import { digestAndStore, extractUnit, type IngestOptions } from "./pipeline.js";
 import { recordError } from "../activity.js";
 import { DEFAULT_CATEGORIZATION_REQUEST, promptRevisionText } from "./digest/prompt.js";
 import type { IngestedUnit, StoredArtifact } from "./types.js";
 import { tracked } from "../activity.js";
 import { UNLIMITED, type Limits } from "./limits.js";
+import { whileHeld } from "../claims.js";
 
 export interface ProcessorOptions extends IngestOptions {
   openaiKey?: string;
   openaiModel?: string;
   openaiMaxOutputTokens?: number;
-  /** The categorization request for digests; DIGESTION_REQUEST or a built-in default. */
   categorizationRequest?: string;
-  /** How long to wait for units another worker is extracting, and how often to check. */
   waitTimeoutMs?: number;
   pollMs?: number;
   log?: (msg: string) => void;
-  /** New units allowed per UTC day and month; unlimited when absent (src/index.ts applies the defaults). */
   limits?: Limits;
-  /** Called with each new ready artifact set, without waiting: the skill and short are made from these. */
   onArtifacts?: (artifacts: StoredArtifact[]) => Promise<void>;
 }
 
 export interface ProcessSummary {
   extracted: { ready: number; failed: number };
-  /** Units some other worker was already extracting that we waited for. */
   waitedFor: number;
-  /** Units left pending because the processing limit is used up. */
   deferred: number;
   digested: number;
   skipped: string | null;
 }
 
-// Guards the same unit being digested twice in this process; another process is covered by the artifact check.
 const inFlight = new Set<string>();
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -49,10 +40,6 @@ async function waitForSettled(ids: string[], o: ProcessorOptions): Promise<Inges
   }
 }
 
-/**
- * Processes units. Safe to call twice with the same ids: pending units are claimed atomically, ready units are
- * not re-extracted, and digest eligibility follows the store's visibility and prompt-revision rules.
- */
 export function processUnits(unitIds: string[], o: ProcessorOptions): Promise<ProcessSummary> {
   return tracked(() => processNow(unitIds, o));
 }
@@ -63,15 +50,14 @@ async function processNow(unitIds: string[], o: ProcessorOptions): Promise<Proce
   const { claimed, deferred, resumesAt } = await o.store.claimWithinLimits(unitIds, o.limits ?? UNLIMITED);
   summary.deferred = deferred.length;
   if (deferred.length) o.log?.(`processing limit reached: ${deferred.length} unit(s) wait until ${resumesAt?.toISOString()}`);
-  const extracted = await Promise.all(claimed.map((u) => extractUnit(u, o)));
+  const claimedIds = claimed.map((u) => u.id);
+  const extracted = await whileHeld(() => o.store.heartbeat(claimedIds), () => Promise.all(claimed.map((u) => extractUnit(u, o))));
   summary.extracted.ready = extracted.filter((u) => u.status === "ready").length;
   summary.extracted.failed = extracted.filter((u) => u.status === "failed").length;
 
-  // Units another worker (the sweep, a duplicate request) is still extracting settle before we digest.
-  const claimedIds = new Set(claimed.map((u) => u.id));
-  // Deferred units won't move until the limit allows, so nothing waits for them.
+  const claimedSet = new Set(claimedIds);
   const held = new Set(deferred);
-  const others = unitIds.filter((id) => !claimedIds.has(id) && !held.has(id));
+  const others = unitIds.filter((id) => !claimedSet.has(id) && !held.has(id));
   const units = others.length ? [...extracted, ...(await waitForSettled(others, o))] : extracted;
   summary.waitedFor = units.length - extracted.length;
 
@@ -80,12 +66,10 @@ async function processNow(unitIds: string[], o: ProcessorOptions): Promise<Proce
   const request = o.categorizationRequest ?? DEFAULT_CATEGORIZATION_REQUEST;
   const promptId = await o.store.registerPrompt(promptRevisionText(request), []);
   const readyIds = units.filter((u) => u.status === "ready").map((u) => u.id);
-  // Taken as in flight in the same tick as the check, before any await, so a concurrent request can't digest them too.
   const candidates = (await o.store.unitsNeedingDigest(readyIds, promptId)).filter((id) => !inFlight.has(id));
   candidates.forEach((id) => inFlight.add(id));
   let needing: string[] = [];
   try {
-    // A digest spends money too, so one that its extraction didn't already pay for needs room under the limits.
     const reserved = await o.store.reserveDigests(candidates, o.limits ?? UNLIMITED);
     if (reserved.deferred.length) {
       summary.deferred += reserved.deferred.length;
@@ -99,7 +83,6 @@ async function processNow(unitIds: string[], o: ProcessorOptions): Promise<Proce
       const d = await digestAndStore({ apiKey: o.openaiKey, model: o.openaiModel, maxOutputTokens: o.openaiMaxOutputTokens, units: toDigest, request, fetchImpl: o.fetchImpl, store: o.store });
       if (d.storeError) throw new Error(`could not store digest: ${d.storeError}`);
       summary.digested = d.stored?.length ?? 0;
-      // A video the digest neither used nor excluded would otherwise be retried forever; record that plainly.
       const used = new Set([...d.result.artifacts.flatMap((a) => a.source_ids), ...d.result.exclusions.map((e) => e.unit_id)]);
       const unaccounted = needing.filter((id) => !used.has(id));
       if (unaccounted.length && d.promptId) {
@@ -118,13 +101,7 @@ async function processNow(unitIds: string[], o: ProcessorOptions): Promise<Proce
   return summary;
 }
 
-/**
- * One sweep: pending units that someone imported and no request picked up (or whose processor died), and ready
- * units someone imported but can't see a digest of yet (never digested, failed up to MAX_DIGEST_ATTEMPTS, or only
- * digested together with videos they didn't import).
- */
 export async function sweepOnce(o: ProcessorOptions, limit = 20): Promise<number> {
-  // One batch per person: a digest can combine videos, and it must only combine one person's.
   const groups = new Map<string, Set<string>>();
   const add = (user: string | null | undefined, id: string) => (groups.get(user ?? "") ?? groups.set(user ?? "", new Set()).get(user ?? "")!).add(id);
   const pending = await o.store.listPendingUnitIds(limit);
@@ -142,7 +119,6 @@ export async function sweepOnce(o: ProcessorOptions, limit = 20): Promise<number
   return n;
 }
 
-/** Runs sweepOnce on a timer (skipping a tick while one is still running). Returns a stop function. */
 export function startSweep(o: ProcessorOptions, intervalMs = 60_000): () => void {
   let running = false;
   const tick = async () => {
@@ -158,7 +134,6 @@ export function startSweep(o: ProcessorOptions, intervalMs = 60_000): () => void
       running = false;
     }
   };
-  // A host that wakes this process on a schedule gets a sweep right away, not one interval later.
   const first = setTimeout(tick, 1000);
   const timer = setInterval(tick, intervalMs);
   first.unref();

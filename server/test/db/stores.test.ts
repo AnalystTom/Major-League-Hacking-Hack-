@@ -223,7 +223,6 @@ test('legacy skills regenerate once without exposing old text or retrying a fail
     const claims=await Promise.all([s.outputs.claim('skill',a),s.outputs.claim('skill',a)]);
     assert.equal(claims.filter(Boolean).length,1);
     const claim=claims.find(Boolean)!;
-    await s.db.query("UPDATE skill_results SET updated_at='2000-01-01T00:00:00Z' WHERE id=?1",[claim.id]);
     assert.equal(await s.outputs.claim('skill',a),null);
     await s.outputs.finishSkill(claim,{skill_markdown:'---\nname: concise-skill\ndescription: Inspect the source.\n---\nInspect the source.',supporting_refs:[],action_items:[]});
     assert.equal(await s.outputs.claim('skill',a),null);
@@ -270,10 +269,15 @@ for (const status of ['ready', 'failed']) for (const outcome of ['approved', 'pr
       }
       assert.equal(await canReadMedia(sql,old,[unit]),visible);
       assert.equal((await s.db.query('SELECT attempts FROM video_results')).rows[0].attempts,4);
-      await s.db.query("UPDATE video_results SET updated_at='2000-01-01T00:00:00Z'");
-      assert.equal(await s.outputs.claim('video',a),null,'even a stale refresh cannot restart');
-      assert.deepEqual(await s.outputs.artifactsNeeding('video',10),[]);
-      if (outcome === 'crash') return;
+      if (outcome === 'crash') {
+        await s.db.query("UPDATE video_results SET updated_at='2000-01-01T00:00:00Z'");
+        assert.equal(await s.outputs.claim('video',a),null,'even a stale refresh cannot restart');
+        assert.deepEqual(await s.outputs.artifactsNeeding('video',10),[]);
+        const settled = (await s.db.query('SELECT status,error FROM video_results')).rows[0];
+        assert.equal(settled.status, status === 'ready' ? 'ready' : 'failed');
+        if (status === 'failed') assert.equal(settled.error,'stopped responding after the maximum attempts');
+        return;
+      }
       if (outcome === 'approved') {
         await s.outputs.finishVideo(claim,replacement);
         for (const scope of [null,[unit]]) assert.equal((await readFeed(sql,scope))[0].video.url,replacement.media_ref.replace('r2:','/media/'));
@@ -486,3 +490,79 @@ for (const limits of [{daily:20,monthly:400},{daily:20,monthly:2}]) {
     } finally {s.sqlite.close();}
   });
 }
+
+test('a render that keeps crashing while holding its claim is reclaimed only up to the output attempt limit',async()=>{
+  const s=await setup();
+  try {
+    const a=await s.artifact([await s.unit('ready')]);
+    const reclaimed:boolean[]=[];
+    for (let crash=0;crash<6;crash++) {
+      reclaimed.push(await s.outputs.claim('skill',a,UNLIMITED)!==null);
+      await s.db.query("UPDATE skill_results SET updated_at='2000-01-01'");
+    }
+    assert.equal(reclaimed.filter(Boolean).length,3);
+    assert.equal((await s.db.query('SELECT attempts FROM skill_results')).rows[0].attempts,3);
+    await s.outputs.artifactsNeeding('skill',50);
+    const row=(await s.db.query('SELECT status,error FROM skill_results')).rows[0];
+    assert.equal(row.status,'failed','an exhausted claim is settled, not left running');
+    assert.equal(row.error,'stopped responding after the maximum attempts');
+    assert.equal(await s.outputs.claim('skill',a,UNLIMITED),null);
+  } finally {s.sqlite.close();}
+});
+
+test('a skill regeneration that dies while holding its claim is settled as failed, not left running',async()=>{
+  const s=await setup();
+  try {
+    const a=await s.artifact([await s.unit('ready')]);
+    const first=(await s.outputs.claim('skill',a,UNLIMITED))!;
+    await s.outputs.finishSkill(first,{skill_markdown:'---\nname: check-first\ndescription: d\n---',supporting_refs:[],action_items:[]});
+    await s.db.query(`UPDATE skill_results SET review_feedback='{"prompt_revision":"stale"}'`);
+    assert.ok(await s.outputs.claim('skill',a,UNLIMITED));
+    assert.equal((await s.db.query('SELECT status FROM skill_results')).rows[0].status,'running');
+    await s.db.query("UPDATE skill_results SET updated_at='2000-01-01'");
+    await s.outputs.artifactsNeeding('skill',50);
+    const row=(await s.db.query('SELECT status,error,attempts FROM skill_results')).rows[0];
+    assert.equal(row.status,'failed');
+    assert.equal(row.error,'stopped responding after the maximum attempts');
+    assert.equal(row.attempts,3);
+    await s.db.query("UPDATE skill_results SET updated_at='2000-01-01'");
+    assert.equal(await s.outputs.claim('skill',a,UNLIMITED),null);
+  } finally {s.sqlite.close();}
+});
+
+test('an extraction that keeps dying while holding its claim is reclaimed only up to the extraction attempt limit',async()=>{
+  const s=await setup();
+  try {
+    const id=await s.unit();
+    const claimed:number[]=[];
+    for (let crash=0;crash<6;crash++) {
+      claimed.push((await s.store.claimWithinLimits([id],UNLIMITED)).claimed.length);
+      await s.db.query("UPDATE ingested_units SET claimed_at='2000-01-01'");
+    }
+    assert.equal(claimed.reduce((n,c)=>n+c,0),3);
+    assert.equal((await s.db.query("SELECT count(*) AS n FROM processing_starts WHERE unit_id=?1 AND kind='extract'",[id])).rows[0].n,3);
+    await s.store.listPendingUnitIds(10);
+    const unit=(await s.store.getUnits([id]))[0];
+    assert.equal(unit.status,'failed','an exhausted extraction is settled, not left running');
+    assert.equal(unit.error,'stopped responding after the maximum attempts');
+  } finally {s.sqlite.close();}
+});
+
+test('a heartbeat keeps a long-running output or extraction claim from being taken over',async()=>{
+  const s=await setup();
+  try {
+    const a=await s.artifact([await s.unit('ready')]);
+    const output=(await s.outputs.claim('skill',a,UNLIMITED))!;
+    await s.db.query("UPDATE skill_results SET updated_at='2000-01-01'");
+    assert.equal(await s.outputs.heartbeat('skill',output),true);
+    assert.equal(await s.outputs.claim('skill',a,UNLIMITED),null,'a beating output claim is not stale');
+    await s.outputs.fail('skill',output,'done');
+    assert.equal(await s.outputs.heartbeat('skill',output),false,'a released claim cannot be refreshed');
+
+    const id=await s.unit();
+    await s.store.claimWithinLimits([id],UNLIMITED);
+    await s.db.query("UPDATE ingested_units SET claimed_at='2000-01-01'");
+    await s.store.heartbeat([id]);
+    assert.deepEqual((await s.store.claimWithinLimits([id],UNLIMITED)).claimed,[],'a beating extraction is not stale');
+  } finally {s.sqlite.close();}
+});

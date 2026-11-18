@@ -277,7 +277,7 @@ Signed-out requests to session routes get `401`. Rate limits: sign-up, sign-in a
 
 The web Worker sends `POST PROCESSOR_URL` with `authorization: Bearer PROCESSOR_TOKEN` and `{ "unit_ids": [...] }` in batches of at most 10 ids, waiting at most 8 seconds per batch. The Node processor serves it at `/api/ingest/process` (bearer `INGEST_TOKEN`), replies `202` and works in the background:
 
-1. Claims pending units atomically and extracts them with the [configured source provider](../server/src/ingest/README.md). A unit that's already `ready` isn't read again. A claim older than 60 minutes (`server/src/claims.ts`) can be taken over.
+1. Claims pending units atomically and extracts them with the [configured source provider](../server/src/ingest/README.md). A unit that's already `ready` isn't read again. Claim refresh, takeover and attempt limits follow the [processor claim rules](proceed-and-media.md#the-processor).
 2. Runs the Digestion Prompt for units an importer can't see a digest of yet. It writes artifacts and exclusions, and records a failed digest per unit with its error, retrying up to 3 times.
 3. Independently produces a skill and a short under the [processor policy](proceed-and-media.md#the-processor), including quality judging and bounded legacy refreshes. Claim tokens prevent a superseded worker from overwriting its replacement.
 4. Timed sweeps pick up pending units, missing digests, and missing outputs.
