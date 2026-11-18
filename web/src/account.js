@@ -17,6 +17,7 @@ export async function deleteAccount(env, userId) {
   await Promise.all(mediaKeys.map((key) => env.MEDIA.delete(key)));
 
   await env.DB.batch([
+    env.DB.prepare("PRAGMA defer_foreign_keys = ON"),
     env.DB.prepare(`DELETE FROM agent_briefs WHERE EXISTS (SELECT 1 FROM json_each(agent_briefs.skill_result_ids) ref
       WHERE ref.value IN (SELECT s.id FROM skill_results s JOIN artifacts a ON a.id = s.artifact_id AND a.version = s.artifact_version
         WHERE ${ownedArtifact("a")}))`).bind(userId),
@@ -30,7 +31,9 @@ export async function deleteAccount(env, userId) {
     env.DB.prepare(`DELETE FROM user_video_requests WHERE ${ownedChild("user_video_requests")}`).bind(userId),
     env.DB.prepare(`DELETE FROM artifacts WHERE ${ownedArtifact("artifacts")}`).bind(userId),
     env.DB.prepare(`DELETE FROM artifact_exclusions WHERE unit_id IN (${ownedUnits})`).bind(userId),
+    env.DB.prepare(`DELETE FROM user_imports WHERE user_id <> ?1 AND unit_id IN (${ownedUnits})`).bind(userId),
     env.DB.prepare(`DELETE FROM ingested_units WHERE id IN (${ownedUnits})`).bind(userId),
+    env.DB.prepare("DELETE FROM user_imports WHERE user_id = ?1").bind(userId),
     env.DB.prepare("DELETE FROM users WHERE id = ?1").bind(userId),
     env.DB.prepare("DELETE FROM x_read_requests WHERE user_key = ?1").bind(userId),
   ]);
