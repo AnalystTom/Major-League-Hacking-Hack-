@@ -123,7 +123,7 @@ allowing. Apply `0008_signup_events.sql` before deploying the web Worker.
 | `SIGNUP_IP_DAILY_LIMIT` | 5 | New accounts per IP per day. The IP is stored only as a SHA-256 hash in `signup_events`; rows older than two days are deleted. |
 | `SIGNUPS` | on | `off` returns 503 "Sign-ups are paused." for email sign-up and for X sign-in that would create an account. Existing accounts still sign in and the site stays public. Change the var and redeploy the web Worker to flip it. |
 
-The processor stays protected by its bearer `INGEST_TOKEN` service auth, not by the site gate.
+The processor stays protected by its bearer service tokens (see Processor bridge secrets below), not by the site gate.
 Processor caps (`DAILY_VIDEO_LIMIT`, `MONTHLY_VIDEO_LIMIT`) are unchanged.
 
 ## Deploy order (after merge, by firstmate)
@@ -164,6 +164,44 @@ npm exec --prefix deploy/processor -- wrangler deployments list --config deploy/
    gate. Confirm source ownership, explicit opt-in, passing judge receipt, playable
    video/captions, usage records and preserved limits. Do not claim ready-to-open
    until that test passes. This PR's synthetic tests cannot establish video quality.
+
+## Processor bridge secrets (required before the processor deploy)
+
+The processor Worker used to accept one shared `INGEST_TOKEN` for waking the container, for the D1
+bridge, for media uploads and for narration. It now gives each bridge its own secret, and each
+component holds only the secrets it needs:
+
+| Secret (processor Worker) | Opens | Held by |
+| --- | --- | --- |
+| `INGEST_TOKEN` | `/api/ingest/*`, `/health`, `/settings-status` | web Worker (as its `PROCESSOR_TOKEN`), processor |
+| `D1_BRIDGE_TOKEN` | `POST /internal/d1` | processor (passed to the container as `D1_TOKEN`) |
+| `MEDIA_UPLOAD_TOKEN` | `PUT /internal/media` | processor (passed to the container as `MEDIA_TOKEN`) |
+| `TTS_BRIDGE_TOKEN` | `POST /internal/tts` | processor (passed to the container as `TTS_TOKEN`) |
+
+The D1 bridge accepts only the statements the container issues (`deploy/processor/src/d1-allowlist.js`)
+and refuses anything else with 403; `server/test/db/d1-allowlist.test.ts` fails whenever the stores send a
+statement that is not on that list, or the list holds one they no longer send. Media keys take their content type from the extension
+(`.mp4`, `.vtt`, `.m4a`). Set the three new secrets before deploying, because the processor refuses
+the bridges until they exist. Never print secret values.
+
+Rollout, in this order:
+
+1. Set the three new secrets on the processor Worker with the signed-in account. Generate each value
+   in a password manager or with `openssl rand -hex 32`, and enter it only at the `wrangler` prompt:
+   `npm exec --prefix deploy/processor -- wrangler secret put D1_BRIDGE_TOKEN --config deploy/processor/wrangler.jsonc`
+   and the same for `MEDIA_UPLOAD_TOKEN` and `TTS_BRIDGE_TOKEN`. Confirm the names with `wrangler secret list`.
+2. Deploy the processor Worker and its container: `npm run deploy --prefix deploy/processor`.
+   Until step 4, the old `INGEST_TOKEN` still wakes the processor and the web Worker still works, but
+   it no longer opens the D1, media or narration bridges.
+3. Verify: authenticated `/settings-status` shows matching `sent`, `held` and `started_with` hashes,
+   and a sweep writes to D1 and R2 through the bridges (watch the processor logs for `D1 batch failed`,
+   `R2 put failed` and `Statement not allowed`).
+4. Retire the old shared token by rotating `INGEST_TOKEN` to a new value. Set the same new value as the
+   web Worker's `PROCESSOR_TOKEN` (`wrangler secret put PROCESSOR_TOKEN --config web/wrangler.jsonc`) and
+   the processor's `INGEST_TOKEN`, so the old value opens nothing.
+
+Rollback before step 4 is safe: redeploy the previous processor version, which still reads `INGEST_TOKEN`
+for the bridges. After step 4, roll back by restoring the previous `INGEST_TOKEN` and `PROCESSOR_TOKEN` values together.
 
 ## Remove the gate only when the captain says launch
 

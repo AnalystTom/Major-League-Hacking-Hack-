@@ -24,7 +24,7 @@ Every route needs `Authorization: Bearer $INGEST_TOKEN`. The web Worker sends it
 | `SCRIPT_REASONING_EFFORT` | Script generation and its bounded revision; defaults to `medium`. Overrides the shared effort for these calls; accepted values are the same as above. |
 | `JUDGE_REASONING_EFFORT` | Each independent short-quality review; defaults to `high`. Overrides the shared effort for these calls; accepted values are the same as above. |
 | `DIGESTION_REQUEST` | Categorization request stored with each Digestion Prompt revision. |
-| `D1_URL`, `D1_TOKEN` | Authenticated processor Worker D1 bridge. Enables the sweep; without both, ephemeral CLI runs use memory. |
+| `D1_URL`, `D1_TOKEN` | Authenticated processor Worker D1 bridge; `D1_TOKEN` is the processor's `D1_BRIDGE_TOKEN`. Enables the sweep; without both, ephemeral CLI runs use memory. |
 | `SWEEP_INTERVAL_MS` | Pending-unit sweep interval (default 60000). |
 
 Digest calls, including validation retries, request reproducible sampling with the fixed seed in

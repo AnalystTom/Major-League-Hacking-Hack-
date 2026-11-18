@@ -131,8 +131,8 @@ test("an unavailable model fails before narration, rendering or upload", async (
 
 test("a Gemini quota error partway through narrates the whole short with the fallback voice", { skip: !hasFfmpeg && "ffmpeg not installed", timeout: 360_000 }, async () => {
   const out = await mkdtemp(join(tmpdir(), "resurface-render-test-"));
-  const saved = { D1_URL: process.env.D1_URL, D1_TOKEN: process.env.D1_TOKEN };
-  Object.assign(process.env, { D1_URL: "http://processor/internal/d1", D1_TOKEN: "t" });
+  const saved = { D1_URL: process.env.D1_URL, TTS_TOKEN: process.env.TTS_TOKEN };
+  Object.assign(process.env, { D1_URL: "http://processor/internal/d1", TTS_TOKEN: "t" });
   resetTtsQuotaPause();
   try {
     const a = artifact();

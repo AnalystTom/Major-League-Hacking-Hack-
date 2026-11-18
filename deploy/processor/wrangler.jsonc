@@ -43,8 +43,8 @@
     // Set to "off" to pause new renders while skills continue.
     "SHORTS": "on"
   },
-  // Secrets, set once with `npx wrangler secret put <NAME>`: GEMINI_API_KEY, OPENAI_API_KEY, TWITTERAPI_IO_KEY (X posts), NIMBLE_API_KEY (Substack posts), INGEST_TOKEN
-  // (checked here before waking the container; the web Worker's PROCESSOR_TOKEN must equal it).
+  // Secrets, set once with `npx wrangler secret put <NAME>`: GEMINI_API_KEY, OPENAI_API_KEY, TWITTERAPI_IO_KEY (X posts), NIMBLE_API_KEY (Substack posts), INGEST_TOKEN,
+  // D1_BRIDGE_TOKEN, MEDIA_UPLOAD_TOKEN, TTS_BRIDGE_TOKEN. Rollout order: docs/go-live.md#processor-bridge-secrets-required-before-the-processor-deploy.
   // Then point the web Worker at it: PROCESSOR_URL=https://resurface-processor.<subdomain>.workers.dev/api/ingest/process
   "d1_databases": [{ "binding": "DB", "database_name": "resurface-waitlist",
     "database_id": "89d777a6-eb11-4feb-9484-6f555a3ba96e", "migrations_dir": "../../web/migrations" }],

@@ -125,8 +125,9 @@ same way and never taken over. A worker whose claim was taken over can't write i
 **Configuration**: see the [ingestion README](../server/src/ingest/README.md) for provider credentials, models,
 output caps and sweep settings, and [`server/.env.example`](../server/.env.example) for local settings.
 Media goes to R2 through the processor Worker's `MEDIA` binding, which must point at the same bucket as the
-web Worker's `MEDIA` binding. With `D1_URL` and `D1_TOKEN` set, the renderer sends files to
-`PUT /internal/media?key=<key>` on the `D1_URL` origin, authenticated with `D1_TOKEN`. The Worker checks the
+web Worker's `MEDIA` binding. With `D1_URL` and `MEDIA_TOKEN` set, the renderer sends files to
+`PUT /internal/media?key=<key>` on the `D1_URL` origin, authenticated with `MEDIA_TOKEN` (the processor's
+`MEDIA_UPLOAD_TOKEN`). The Worker takes each content type from the key's extension. The Worker checks the
 stored object's size before the renderer saves its `r2:<key>` reference; the web Worker resolves that reference
 to `/media/<key>`. No R2 S3 credentials are used.
 
