@@ -7,6 +7,7 @@ import { connect } from '../src/db.js';
 import { createSession } from '../src/auth.js';
 import { readFeed } from '../src/feed.js';
 import { deleteAccount } from '../src/account.js';
+import { reserveVideo } from '../src/video-requests.js';
 
 const MIGRATIONS = [
   '0002_application.sql', '0003_video_duration.sql', '0004_usage_events.sql', '0005_skill_choices.sql',
@@ -341,6 +342,27 @@ test('deleting an account keeps its spend in the global caps without linking it 
     assert.equal(count(sqlite, 'SELECT count(*) AS n FROM processing_starts WHERE charged = 1 AND unit_id IS NULL'), 1);
     assert.equal(count(sqlite, 'SELECT count(*) AS n FROM x_read_requests WHERE user_key IS NULL'), 1);
     assert.deepEqual(rowsMentioning(sqlite, A), []);
+  } finally {
+    sqlite.close();
+  }
+});
+
+test("deleting an account releases another user's video slot on a shared artifact", async () => {
+  const { sqlite, env, sql } = database();
+  try {
+    seed(sqlite);
+    insert(sqlite, 'ingested_units', [{ id: 'unit-b2', submitted_url: 'https://x.com/b/status/4', source_url: 'https://x.com/b/status/4' }]);
+    insert(sqlite, 'user_imports', [{ user_id: B, unit_id: 'unit-b2' }]);
+    insert(sqlite, 'artifacts', [{ id: 'art-b2', name: 'B second', source_url: 'https://x.com/b/status/4', source_ids: ['unit-b2'], processed_text: 't', ingestion_status: 'ready' }]);
+    sqlite.exec("DELETE FROM user_video_requests WHERE user_id = 'user-b'");
+    const requested = await reserveVideo(sql, B, { id: 'art-shared', version: 1 }, env);
+    assert.equal(requested.video.artifact.id, 'art-shared');
+
+    await deleteAccount(env, A);
+
+    assert.equal(count(sqlite, 'SELECT count(*) AS n FROM user_video_requests WHERE user_id = ?', B), 0);
+    const next = await reserveVideo(sql, B, { id: 'art-b2', version: 1 }, env);
+    assert.equal(next.video.artifact.id, 'art-b2');
   } finally {
     sqlite.close();
   }
