@@ -51,7 +51,11 @@ async function processNow(unitIds: string[], o: ProcessorOptions): Promise<Proce
   summary.deferred = deferred.length;
   if (deferred.length) o.log?.(`processing limit reached: ${deferred.length} unit(s) wait until ${resumesAt?.toISOString()}`);
   const claimedIds = claimed.map((u) => u.id);
-  const extracted = await whileHeld(() => o.store.heartbeat(claimedIds), () => Promise.all(claimed.map((u) => extractUnit(u, o))));
+  const extracted = await whileHeld(() => o.store.heartbeat(claimedIds), () => Promise.all(claimed.map((u) => extractUnit(u, o).catch((e: Error) => {
+    recordError("extraction result was not saved", e);
+    o.log?.(`unit ${u.id} was not saved: ${e.message}`);
+    return { ...u, status: "failed" as const, error: e.message };
+  }))));
   summary.extracted.ready = extracted.filter((u) => u.status === "ready").length;
   summary.extracted.failed = extracted.filter((u) => u.status === "failed").length;
 
@@ -114,7 +118,10 @@ export async function sweepOnce(o: ProcessorOptions, limit = 20): Promise<number
   let n = 0;
   for (const ids of groups.values()) {
     n += ids.size;
-    await processUnits([...ids], o);
+    await processUnits([...ids], o).catch((e: Error) => {
+      recordError("sweep group failed", e);
+      o.log?.(`sweep group failed: ${e.message}`);
+    });
   }
   return n;
 }
