@@ -48,6 +48,8 @@ test('every statement the container sends through the D1 bridge is on the proces
     registerPrompt: () => store.registerPrompt('prompt', []),
     saveArtifacts: () => store.saveArtifacts([artifact], [{ unit_id: 'unit', reason: 'r' }], 'prompt'),
     saveFailedArtifacts: () => store.saveFailedArtifacts(['unit'], 'error', 'prompt'),
+    heartbeat: () => store.heartbeat(['unit']),
+    failExhaustedUnits: () => (store as unknown as { failExhaustedUnits(): Promise<void> }).failExhaustedUnits(),
   };
   const kinds: Kind[] = ['skill', 'video'];
   const video = { script: {}, prompt_revision: 'p', media_ref: 'r2:m', caption_ref: 'r2:c', narration_ref: 'r2:n', duration_seconds: 30, judgment: approvedJudgment() } as unknown as RenderedVideo;
@@ -59,6 +61,8 @@ test('every statement the container sends through the D1 bridge is on the proces
     finishSkill: () => outputs.finishSkill(claim, { skill_markdown: 's', supporting_refs: [] } as never),
     finishVideo: () => outputs.finishVideo(claim, video),
     skillCard: () => outputs.skillCard(artifact),
+    heartbeat: () => Promise.all(kinds.map((k) => outputs.heartbeat(k, claim))),
+    failExhausted: () => (outputs as unknown as { failExhausted(kind: Kind): Promise<void> }).failExhausted('skill'),
   };
   const handoffCalls: Record<string, () => Promise<unknown>> = {
     claim: () => handoffs.claim('brief'),
