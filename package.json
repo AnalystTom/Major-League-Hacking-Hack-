@@ -9,6 +9,7 @@
     "test": "node --test ci/scope.test.js && npm test --prefix server && npm test --prefix web && npm test --prefix deploy/processor",
     "build": "npm run build --prefix server && npm exec --prefix web -- wrangler deploy --config web/wrangler.jsonc --dry-run && npm run check --prefix deploy/processor",
     "test:journey": "playwright test",
+    "smoke:live": "node ci/live-smoke.js",
     "test:fast": "node --test ci/scope.test.js && npm run test:fast --prefix server && npm test --prefix web && npm test --prefix deploy/processor"
   },
   "devDependencies": {
