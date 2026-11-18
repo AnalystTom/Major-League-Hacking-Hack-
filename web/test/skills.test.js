@@ -190,3 +190,31 @@ test("a stopped follower ignores the sign-out 401 that would send the page to /s
   await follower.resume();
   assert.deepEqual(errors, [401]);
 });
+
+test("a poll that was in flight across stop and resume cannot outlive a later stop", async (t) => {
+  const requests = [];
+  let releaseFirst;
+  t.mock.method(globalThis, "fetch", async (url) => {
+    requests.push(url);
+    if (url === "/api/imports" && requests.length === 1) await new Promise((r) => (releaseFirst = r));
+    if (url === "/api/imports") return Response.json({ units: [{ stage: "queued", settled: false }] });
+    if (url === "/api/feed?scope=mine") return Response.json({ items: [] });
+    return Response.json({ skills: [], video: null });
+  });
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  globalThis.document = { hidden: false };
+  t.after(() => delete globalThis.document);
+  const flush = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
+  const follower = followImports({ onUnits: () => {}, onItems: () => {}, onSkills: () => {} });
+  await flush();
+  follower.stop();
+  follower.resume();
+  await flush();
+  releaseFirst();
+  await flush();
+  follower.stop();
+  const before = requests.length;
+  t.mock.timers.tick(60_000);
+  await flush();
+  assert.equal(requests.length, before);
+});

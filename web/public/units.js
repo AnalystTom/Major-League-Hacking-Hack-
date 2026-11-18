@@ -117,8 +117,13 @@ export const SKILL_WAIT_CHECKS = 15;
 export function followImports({ onUnits, onItems, onSkills, onError }) {
   let timer = null;
   let skillChecks = 0;
-  let stopped = false;
-  async function poll() {
+  let run = {};
+  const isCurrent = (token) => token === run;
+  function schedule(token, delay) {
+    clearTimeout(timer);
+    timer = setTimeout(() => poll(token), delay);
+  }
+  async function poll(token) {
     clearTimeout(timer);
     try {
       const { units } = await api("/api/imports");
@@ -134,7 +139,7 @@ export function followImports({ onUnits, onItems, onSkills, onError }) {
           skillsError = err;
         }
       }
-      if (stopped) return;
+      if (!isCurrent(token)) return;
       const skillsFailed = skillsError !== null;
       onUnits(units);
       onItems(items);
@@ -145,25 +150,25 @@ export function followImports({ onUnits, onItems, onSkills, onError }) {
       if (waiting) skillChecks = 0;
       else if (skillDue) skillChecks++;
       const delay = waiting ? POLL_MS : skillDue ? SKILL_WAIT_MS : null;
-      if (delay) timer = setTimeout(poll, document.hidden ? delay * 4 : delay);
+      if (delay) schedule(token, document.hidden ? delay * 4 : delay);
     } catch (err) {
-      if (stopped) return;
+      if (!isCurrent(token)) return;
       onError?.(err);
-      if (err.status !== 401) timer = setTimeout(poll, POLL_MS * 3);
+      if (err.status !== 401) schedule(token, POLL_MS * 3);
     }
   }
-  poll();
+  poll(run);
   return {
     refresh() {
-      if (!stopped) poll();
+      if (run) poll(run);
     },
     stop() {
-      stopped = true;
+      run = null;
       clearTimeout(timer);
     },
     resume() {
-      stopped = false;
-      return poll();
+      run = {};
+      return poll(run);
     },
   };
 }
