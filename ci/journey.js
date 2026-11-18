@@ -267,18 +267,32 @@ test.describe("video limit messages", () => {
   });
 });
 
-test("every page loads under the content security policy without violations", async ({ page }) => {
+test("every page loads under the content security policy without violations", async ({
+  page,
+}) => {
   const violations = [];
   page.on("console", (message) => {
-    if (/Content Security Policy/i.test(message.text())) violations.push(message.text());
+    if (/Content Security Policy/i.test(message.text()))
+      violations.push(message.text());
   });
   page.on("pageerror", (error) => violations.push(error.message));
-  for (const path of ["/", "/start", "/app", "/available", "/privacy", "/terms"]) {
+  for (const path of [
+    "/",
+    "/start",
+    "/app",
+    "/available",
+    "/privacy",
+    "/terms",
+  ]) {
     const response = await page.goto(path, { waitUntil: "load" });
     expect(response.status(), path).toBe(200);
-    expect(response.headers()["content-security-policy"], path).toContain("frame-ancestors 'none'");
+    expect(response.headers()["content-security-policy"], path).toContain(
+      "frame-ancestors 'none'",
+    );
     expect(response.headers()["x-content-type-options"], path).toBe("nosniff");
-    expect(response.headers()["referrer-policy"], path).toBe("strict-origin-when-cross-origin");
+    expect(response.headers()["referrer-policy"], path).toBe(
+      "strict-origin-when-cross-origin",
+    );
   }
   expect(violations).toEqual([]);
 });
