@@ -36,7 +36,6 @@ async function readJson(request, maxBytes = 32_000) {
   }
 }
 
-/** The signed-in user and how many links they've imported (0 means the home page shows its first-run state). */
 async function accountState(sql, user) {
   const [{ count }] = await sql`SELECT count(*) AS count FROM user_imports WHERE user_id = ${user.id}`;
   return { user: { id: user.id, email: user.email, name: user.name }, imports: count };
@@ -185,7 +184,8 @@ async function route(request, env) {
     const sql = connect(env);
     if (!sql) return json({ error: UNAVAILABLE }, 503);
     try {
-      return await api(request, env, url, sql);
+      const response = await api(request, env, url, sql);
+      return response instanceof Response ? response : json({ error: "Not found." }, 404);
     } catch (err) {
       console.error("api request failed", url.pathname, err);
       return json({ error: UNAVAILABLE }, 503);

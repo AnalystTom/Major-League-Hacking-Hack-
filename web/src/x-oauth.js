@@ -11,7 +11,7 @@ const bytes = value => Uint8Array.from(atob(value), c => c.charCodeAt(0));
 const random = () => b64(crypto.getRandomValues(new Uint8Array(32))).replace(/[+/=]/g, c => ({ '+': '-', '/': '_', '=': '' })[c]);
 const hash = async value => b64(await crypto.subtle.digest('SHA-256', enc.encode(value)));
 const now = () => Math.floor(Date.now() / 1000);
-const json = (body, status = 200) => Response.json(body, { status, headers: { 'cache-control': 'no-store' } });
+const json = (body, status = 200, headers = {}) => Response.json(body, { status, headers: { 'cache-control': 'no-store', ...headers } });
 const redirect = (path, cookies = []) => new Response(null, { status: 303, headers: [['location', path], ['cache-control', 'no-store'], ['referrer-policy', 'no-referrer'], ...cookies.map(c => ['set-cookie', c])] });
 const nonceCookie = (value, request, age = 600) => `rs_x_nonce=${value}; Path=/api/auth/x; HttpOnly; SameSite=Lax; Max-Age=${age}${cookieSecure(request.url) ? '; Secure' : ''}`;
 const callbackUrl = env => env.X_CALLBACK_URL;
@@ -129,12 +129,12 @@ async function callback(request, env, sql, user) {
   }
 }
 
-async function status(env, sql, user) {
+async function status(request, env, sql, user) {
   const [row] = user ? await sql`SELECT username,expires_at,import_state,read_count,error,refresh_token IS NOT NULL AS renewable,access_token IS NOT NULL AS connected FROM x_connections WHERE user_id=${user.id}` : [];
   return json({ available: xAvailable(env), connected: Boolean(row?.connected), ...(row ? { username: row.username, expired: row.expires_at <= now() && !row.renewable, state: row.import_state, read: row.read_count, error: row.error } : {}) });
 }
 
-async function importBookmarks(env, sql, user, request) {
+async function importBookmarks(request, env, sql, user) {
   if (!xAvailable(env)) return json({ error: 'X bookmark import is unavailable. Paste links instead.' }, 503);
   const rejection = await rateLimit(env.IMPORT_LIMITER, user.id, "That's a lot of imports at once. Wait a minute and try again.");
   if (rejection) return rejection;
@@ -228,23 +228,34 @@ async function importBookmarks(env, sql, user, request) {
   }
 }
 
-export async function xRoute(request, env, sql, user) {
-  const url = new URL(request.url), path = url.pathname;
-  if (path === '/api/auth/x/start' && request.method === 'GET') return start(request, env, sql, user);
-  if (path === '/api/auth/x/callback' && request.method === 'GET') return callback(request, env, sql, user);
-  if (path === '/api/x' && request.method === 'GET') return status(env, sql, user);
-  if (!path.startsWith('/api/x')) return null;
-  if (!user) return json({ error: 'Sign in to continue.' }, 401);
-  if (path === '/api/x/bookmarks' && request.method === 'POST') return importBookmarks(env, sql, user, request);
-  if (path === '/api/x/disconnect' && request.method === 'POST') {
-    const [row] = await sql`SELECT access_token,refresh_token FROM x_connections WHERE user_id=${user.id}`;
-    await sql`UPDATE x_connections SET access_token=NULL,refresh_token=NULL,expires_at=0,lease_until=0,lease_token=NULL,import_state='disconnected',error=NULL WHERE user_id=${user.id}`;
-    if (row?.access_token && xAvailable(env)) {
-      for (const type of ['access_token', 'refresh_token']) {
-        if (row[type]) try { await provider(env, '/2/oauth2/revoke', { method: 'POST', headers: { authorization: clientAuth(env), 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: await unseal(env, row[type]), token_type_hint: type }).toString() }); } catch {}
-      }
+async function disconnect(request, env, sql, user) {
+  const [row] = await sql`SELECT access_token,refresh_token FROM x_connections WHERE user_id=${user.id}`;
+  await sql`UPDATE x_connections SET access_token=NULL,refresh_token=NULL,expires_at=0,lease_until=0,lease_token=NULL,import_state='disconnected',error=NULL WHERE user_id=${user.id}`;
+  if (row?.access_token && xAvailable(env)) {
+    for (const type of ['access_token', 'refresh_token']) {
+      if (row[type]) try { await provider(env, '/2/oauth2/revoke', { method: 'POST', headers: { authorization: clientAuth(env), 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: await unseal(env, row[type]), token_type_hint: type }).toString() }); } catch {}
     }
-    return json({ disconnected: true });
   }
-  return json({ error: 'Not found.' }, 404);
+  return json({ disconnected: true });
+}
+
+const publicRoute = handler => ({ handler, signedIn: false });
+const privateRoute = handler => ({ handler, signedIn: true });
+const X_ROUTES = {
+  '/api/auth/x/start': { GET: publicRoute(start) },
+  '/api/auth/x/callback': { GET: publicRoute(callback) },
+  '/api/x': { GET: publicRoute(status) },
+  '/api/x/bookmarks': { POST: privateRoute(importBookmarks) },
+  '/api/x/disconnect': { POST: privateRoute(disconnect) },
+};
+
+export async function xRoute(request, env, sql, user) {
+  const { pathname } = new URL(request.url);
+  const methods = Object.hasOwn(X_ROUTES, pathname) ? X_ROUTES[pathname] : null;
+  if (!methods) return json({ error: 'Not found.' }, 404);
+  const method = request.method === 'HEAD' && Object.hasOwn(methods, 'GET') ? 'GET' : request.method;
+  const route = Object.hasOwn(methods, method) ? methods[method] : null;
+  if (!route) return json({ error: 'Method not allowed.' }, 405, { allow: Object.keys(methods).flatMap(m => m === 'GET' ? ['GET', 'HEAD'] : m).join(', ') });
+  if (route.signedIn && !user) return json({ error: 'Sign in to continue.' }, 401);
+  return route.handler(request, env, sql, user);
 }
