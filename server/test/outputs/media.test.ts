@@ -26,6 +26,18 @@ test("WorkerMedia sends the file to the processor bridge and checks the stored s
   }
 });
 
+test("WorkerMedia asks the processor bridge to delete a key and reports a refused delete", async () => {
+  const seen: { url: string; method: string | undefined; auth: string | null }[] = [];
+  const reply = (status: number): typeof fetch => async (url, init) => {
+    seen.push({ url: String(url), method: init?.method, auth: new Headers(init?.headers).get("authorization") });
+    return Response.json({ deleted: true }, { status });
+  };
+  const store = (fetchImpl: typeof fetch) => new WorkerMedia({ url: "https://p.example/internal/media", token: "t", fetchImpl });
+  await store(reply(200)).delete("audio/a/1/narration.m4a");
+  assert.deepEqual(seen[0], { url: "https://p.example/internal/media?key=audio%2Fa%2F1%2Fnarration.m4a", method: "DELETE", auth: "Bearer t" });
+  await assert.rejects(store(reply(500)).delete("audio/a/1/narration.m4a"), /delete of audio\/a\/1\/narration\.m4a failed: HTTP 500/);
+});
+
 test("mediaFromEnv uses the processor bridge when D1 is configured, and nothing otherwise", () => {
   assert.ok(mediaFromEnv({ D1_URL: "https://p.example/internal/d1", D1_TOKEN: "t" }) instanceof WorkerMedia);
   assert.equal(mediaFromEnv({}), null);

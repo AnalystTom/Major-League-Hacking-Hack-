@@ -25,6 +25,7 @@ class DirMedia implements MediaStore {
     await copyFile(file, join(this.dir, key.replace(/\//g, "_")));
     return `r2:${key}`;
   }
+  async delete() {}
 }
 
 test("renders a 1080x1920 H.264/AAC short with captions timed to the narration", { skip: !hasFfmpeg && "ffmpeg not installed", timeout: 360_000 }, async () => {

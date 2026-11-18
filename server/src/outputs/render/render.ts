@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { assertJudged, judgeShort, publicationJudgment, QualityRejected } from "./judge.js";
 import { burnSubtitles, composeShort, probe } from "./ffmpeg.js";
-import type { MediaStore } from "./media.js";
+import { discardMedia, r2Ref, type MediaStore } from "./media.js";
 import { SCRIPT_PROMPT_REVISION, scriptEffort, shortModel, writeScript, reviseScript, type DraftScene } from "./script.js";
 import { captionCues, timeline, toVtt } from "./timeline.js";
 import { narrationVoice, synthesize } from "./tts.js";
@@ -85,6 +85,19 @@ async function renderRound(a: ReadyArtifact, draft: DraftScene[], dir: string, r
   return { out, scenes, vtt, review };
 }
 
+async function storeRender(media: MediaStore, base: string, files: { mp4: string; vtt: string; narration: string }) {
+  const videoKey = `videos/${base}/short.mp4`, captionKey = `captions/${base}/short.vtt`, narrationKey = `audio/${base}/narration.m4a`;
+  try {
+    const media_ref = await media.put(videoKey, files.mp4, "video/mp4");
+    const caption_ref = await media.put(captionKey, files.vtt, "text/vtt; charset=utf-8");
+    const narration_ref = await media.put(narrationKey, files.narration, "audio/mp4");
+    return { media_ref, caption_ref, narration_ref };
+  } catch (e) {
+    await discardMedia(media, [r2Ref(videoKey), r2Ref(captionKey), r2Ref(narrationKey)]);
+    throw e;
+  }
+}
+
 export async function renderArtifact(a: ReadyArtifact, o: RenderOptions): Promise<RenderedVideo> {
   const model = { apiKey: o.openaiKey, model: o.openaiModel, fetchImpl: o.fetchImpl };
   const draft = await writeScript(a, model);
@@ -105,13 +118,11 @@ export async function renderArtifact(a: ReadyArtifact, o: RenderOptions): Promis
     if (!judgment.passed) throw new QualityRejected(judgment);
     assertJudged(judgment);
     const base = `${a.id}/${a.version}/${randomUUID()}`;
-    const media_ref = await o.media.put(`videos/${base}/short.mp4`, second.out.mp4, "video/mp4");
-    const caption_ref = await o.media.put(`captions/${base}/short.vtt`, second.vtt, "text/vtt; charset=utf-8");
-    const narration_ref = await o.media.put(`audio/${base}/narration.m4a`, second.out.narration, "audio/mp4");
+    const stored = await storeRender(o.media, base, { mp4: second.out.mp4, vtt: second.vtt, narration: second.out.narration });
     return {
       judgment, script: { scenes: second.scenes },
       prompt_revision: `${SCRIPT_PROMPT_REVISION}; openai:${shortModel(o.openaiModel)}/${scriptEffort()}; tts:${narrationVoice(o.ttsModel)}${motion ? `; ${MOTION_SKILL_REVISION}` : ""}`,
-      media_ref, caption_ref, narration_ref, duration_seconds: second.out.duration,
+      ...stored, duration_seconds: second.out.duration,
       music_provenance: motion ? MOTION_MUSIC_PROVENANCE : null,
     };
   } catch (error) {

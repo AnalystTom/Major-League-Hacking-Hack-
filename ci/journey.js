@@ -152,6 +152,34 @@ test("a new account reaches the paste action without a tall blank frame", async 
   await expect(page.locator("[data-first-note]")).toHaveText("");
 });
 
+test("a new account deletes itself from the app and cannot sign in again", async ({
+  page,
+}, info) => {
+  const email = `delete-${Date.now()}@example.test`;
+  const password = "isolated-fixture-password";
+  const signup = await page.request.post("/api/auth/signup", {
+    data: { email, password },
+  });
+  expect(signup.ok()).toBe(true);
+  await page.goto("/app");
+  await page.locator("[data-open-delete]").click();
+  await expect(page.locator("[data-delete-sheet]")).toBeVisible();
+  const path = info.outputPath("delete-account-confirm.png");
+  await page.screenshot({ path, fullPage: true });
+  await info.attach("SYNTHETIC FIXTURE — delete account confirmation", {
+    path,
+    contentType: "image/png",
+  });
+  await page.locator("[data-confirm-delete]").click();
+  await page.waitForURL((url) => url.pathname === "/");
+  const me = await page.request.get("/api/me");
+  expect(await me.json()).toEqual({ user: null });
+  const login = await page.request.post("/api/auth/login", {
+    data: { email, password },
+  });
+  expect(login.status()).toBe(401);
+});
+
 test.describe("video limit messages", () => {
   test("daily cap, one account slot, failure and existing video", async ({
     page,

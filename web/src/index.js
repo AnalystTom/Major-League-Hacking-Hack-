@@ -1,6 +1,7 @@
 import {
   cookieSecure, createSession, createUser, currentUser, endSession, login, parseLogin, parseSignup, sessionCookie,
 } from "./auth.js";
+import { deleteAccount } from "./account.js";
 import { xRoute } from "./x-oauth.js";
 import { siteGate } from "./site-gate.js";
 import { connect } from "./db.js";
@@ -120,6 +121,15 @@ async function api(request, env, url, sql) {
     return json(user ? await accountState(sql, user) : { user: null });
   }
   if (!user) return json(SIGNED_OUT, 401);
+  if (pathname === "/api/me" && method === "DELETE") {
+    try {
+      await deleteAccount(env, user.id);
+    } catch (err) {
+      console.error("account deletion failed", err);
+      return json({ error: "We couldn't delete your account right now. Please try again." }, 503);
+    }
+    return json({ deleted: true }, 200, { "set-cookie": sessionCookie("", 0, cookieSecure(request.url)) });
+  }
 
   if (pathname === "/api/imports") {
     if (method === "POST") return startImport(request, env, sql, user);

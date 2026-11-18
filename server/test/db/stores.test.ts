@@ -509,7 +509,10 @@ test('stale output claims and versioned refreshes are charged, and unchargeable 
     assert.equal(await s.outputs.claim('video',a,{daily:2,monthly:2}),null,'first attempts and takeover already used two video starts');
     assert.ok(await s.outputs.claim('video',a,{daily:3,monthly:3}));
     assert.equal((await s.db.query("SELECT count(*) AS n FROM processing_starts WHERE kind='retry' AND charged=1")).rows[0].n,2);
-    const orphan=await s.artifact([randomUUID()]);
+    const orphanUnit=await s.unit('ready');
+    const orphan=await s.artifact([orphanUnit]);
+    await s.db.query('DELETE FROM user_imports WHERE unit_id=?1',[orphanUnit]);
+    await s.db.query('DELETE FROM ingested_units WHERE id=?1',[orphanUnit]);
     const first=(await s.outputs.claim('skill',orphan))!;
     await s.outputs.fail('skill',first,'temporary failure');
     await s.db.query("UPDATE skill_results SET updated_at='2000-01-01'");
@@ -630,5 +633,26 @@ test('a heartbeat keeps a long-running output or extraction claim from being tak
     await s.db.query("UPDATE ingested_units SET claimed_at='2000-01-01'");
     await s.store.heartbeat([id]);
     assert.deepEqual((await s.store.claimWithinLimits([id],UNLIMITED)).claimed,[],'a beating extraction is not stale');
+  } finally {s.sqlite.close();}
+});
+
+test('a digest that finishes after its unit was deleted stores nothing derived from that unit',async()=>{
+  const s=await setup();
+  try {
+    const gone=await s.unit('ready'), kept=await s.unit('ready');
+    await s.db.query('DELETE FROM user_imports WHERE unit_id=?1',[gone]);
+    await s.db.query('DELETE FROM ingested_units WHERE id=?1',[gone]);
+    const draft=(name:string,source_ids:string[])=>({ name,source_ids,category:'Evals',processed_text:'content',selection_reason:'reason',evidence:[] });
+    const stored=await s.store.saveArtifacts(
+      [draft('Only gone',[gone]),draft('Mixed',[gone,kept]),draft('Only kept',[kept])],
+      [{unit_id:gone,reason:'Off topic.'},{unit_id:kept,reason:'Nothing to explain.'}],
+      s.prompt);
+    assert.deepEqual(stored.map((a)=>a.name),['Only kept']);
+    await s.store.saveFailedArtifacts([gone],'late failure',s.prompt);
+    const count=async(sql:string,...params:unknown[])=>(await s.db.query(sql,params)).rows[0].n;
+    assert.equal(await count('SELECT count(*) AS n FROM artifacts WHERE EXISTS(SELECT 1 FROM json_each(source_ids) WHERE value=?1)',gone),0);
+    assert.equal(await count('SELECT count(*) AS n FROM artifact_exclusions WHERE unit_id=?1',gone),0);
+    assert.equal(await count('SELECT count(*) AS n FROM artifacts WHERE name=?1','Only kept'),1);
+    assert.equal(await count('SELECT count(*) AS n FROM artifact_exclusions WHERE unit_id=?1',kept),1);
   } finally {s.sqlite.close();}
 });

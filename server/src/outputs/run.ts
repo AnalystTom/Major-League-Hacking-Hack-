@@ -2,7 +2,7 @@ import { whileHeld } from "../claims.js";
 import { generateSkill } from "./skills.js";
 import { recordError } from "../activity.js";
 import { renderArtifact } from "./render/render.js";
-import type { MediaStore } from "./render/media.js";
+import { discardMedia, type MediaStore } from "./render/media.js";
 import { LostClaim, type Kind, type OutputStore } from "./store.js";
 import { tracked } from "../activity.js";
 import { sourceRefs, type ProviderOptions, type ReadyArtifact, type ShortJudgment } from "./types.js";
@@ -50,7 +50,12 @@ async function produceNow(kind: Kind, a: ReadyArtifact, o: OutputOptions) {
         if (!media) throw new Error("Media storage isn't configured on the processor (R2_* or MEDIA_LOCAL_WEB_DIR)");
         const skillCard = o.outputs.skillCard?.bind(o.outputs);
         const video = await whileHeld(heartbeat, () => renderArtifact(a, { ...o, openaiKey, geminiKey, media, skillCard }));
-        await o.outputs.finishVideo(claim, video);
+        try {
+          await o.outputs.finishVideo(claim, video);
+        } catch (e) {
+          if (e instanceof LostClaim) await discardMedia(media, [video.media_ref, video.caption_ref, video.narration_ref]);
+          throw e;
+        }
       }
       o.log?.(`${kind} ready for artifact ${a.id} v${a.version}`);
     } catch (e) {
