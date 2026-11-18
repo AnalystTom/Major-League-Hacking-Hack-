@@ -19,15 +19,7 @@
   <meta name="twitter:image" content="https://resurface.thomasmann2001.workers.dev/og-launch-v7.jpg">
   <meta name="twitter:image:alt" content="Resurface. Saved links become skills for your coding agent.">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <script>
-    // Apply the chosen colour palette before first paint: ?palette= wins, then the last pick.
-    (function () {
-      var ok = ["hn", "highlighter", "cobalt", "violet"];
-      var p = new URLSearchParams(location.search).get("palette");
-      try { if (!p) p = localStorage.getItem("resurface-palette"); } catch (e) {}
-      if (ok.indexOf(p) >= 0) document.documentElement.dataset.palette = p;
-    })();
-  </script>
+  <script src="/palette.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Funnel+Display:wght@400..800&family=Funnel+Sans:wght@400..700&family=Martian+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -49,12 +41,11 @@
   </header>
 
   <main>
-    <!-- ============ Hero ============ -->
     <section class="hero" aria-labelledby="hero-title">
       <p class="badge">Built at AI Engineer NYC 2026</p>
       <h1 id="hero-title" class="hero-title play">
-        <span class="line"><span class="kw" style="--i:0">You</span> <span class="kw" style="--i:1">saved</span> <span class="kw" style="--i:2">it.</span></span>
-        <span class="line"><span class="kw" style="--i:3">Your</span> <span class="kw" style="--i:4">agent</span> <span class="kw" style="--i:5">never</span> <span class="kw" style="--i:6">saw</span> <span class="kw" style="--i:7">it.</span></span>
+        <span class="line"><span class="kw" data-i="0">You</span> <span class="kw" data-i="1">saved</span> <span class="kw" data-i="2">it.</span></span>
+        <span class="line"><span class="kw" data-i="3">Your</span> <span class="kw" data-i="4">agent</span> <span class="kw" data-i="5">never</span> <span class="kw" data-i="6">saw</span> <span class="kw" data-i="7">it.</span></span>
       </h1>
       <p class="lede">Paste the X posts, YouTube videos and Substack posts you saved and never went back to. Each one becomes a SKILL.md your coding agent can read.</p>
       <div class="hero-cta" id="get-started">
@@ -80,7 +71,6 @@
       </figure>
     </section>
 
-    <!-- ============ How it works ============ -->
     <section class="steps" id="how" aria-labelledby="steps-heading">
       <div class="section-head">
         <h2 id="steps-heading">From backlog to working agent</h2>

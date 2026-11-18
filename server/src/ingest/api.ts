@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { recordError } from "../activity.js";
+import { readBodyText } from "../body.js";
 import { bearerAuth } from "hono/bearer-auth";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -16,8 +17,6 @@ interface ImportJob {
     status: "skipped" | "pending" | "running" | "ready" | "failed";
     error: string | null;
     result: DigestOutput | null;
-    /** artifact rows as written to the store; null until saved */
-    /** digestion_prompts.id of the revision used; null until registered */
     digestion_prompt_id: string | null;
     stored_artifacts: StoredArtifact[] | null;
     store_error: string | null;
@@ -25,17 +24,11 @@ interface ImportJob {
 }
 
 export interface ApiOptions extends ProcessorOptions {
-  /** Bearer token callers must send; the web Worker sends its PROCESSOR_TOKEN. */
   token: string;
-  /**
-   * Mounts the dev /imports routes, which read links directly and bypass the processing limits. Off unless asked
-   * for (ENABLE_DEV_IMPORTS=1), so production only takes work through /process.
-   */
   devImports?: boolean;
 }
 
 const Uuid = z.string().uuid();
-// Unknown keys (an older caller's `project`) are stripped, not rejected.
 const ProcessRequest = z.object({ unit_ids: z.array(Uuid).min(1).max(10) });
 
 const MAX_LINKS = 20;
@@ -46,7 +39,6 @@ function view(job: ImportJob) {
     id: job.id,
     links: job.units.map((u) => ({ id: u.id, submitted_url: u.submittedUrl, source_url: u.sourceUrl, start_seconds: u.startSeconds, content_type: u.contentType, status: u.status, error: u.error,
       title: u.title, extraction_method: u.extractionMethod, extracted_at: u.extractedAt,
-      // API-only: the unreviewed model extraction (ingested_units.transcript) and items validation dropped.
       extraction: u.transcript,
       rejected_items: (u.rejectedItems ?? []).map((r) => ({ ...r.item, reason: r.reason })),
     })),
@@ -54,7 +46,6 @@ function view(job: ImportJob) {
   };
 }
 
-/** Node-only ingestion routes (they use pg and long-running requests); mounted by src/index.ts, not the Worker. */
 export function createIngestApp(o: ApiOptions): Hono {
   if (!o.token) throw new Error("INGEST_TOKEN is required");
   const jobs = new Map<string, ImportJob>();
@@ -82,11 +73,9 @@ export function createIngestApp(o: ApiOptions): Hono {
   const app = new Hono();
   app.use("*", bearerAuth({ token: o.token }));
 
-  // The processor contract: reply 202 quickly and work in the background. Duplicate requests are safe
-  // because pending units are claimed atomically and digested units are skipped.
   app.post("/process", async (c) => {
-    const raw = await c.req.text();
-    if (raw.length > 100_000) return c.json({ error: "body too large" }, 413);
+    const raw = await readBodyText(c.req.raw, 100_000);
+    if (raw === null) return c.json({ error: "body too large" }, 413);
     let json: unknown;
     try { json = JSON.parse(raw); } catch { return c.json({ error: "invalid JSON" }, 400); }
     const parsed = ProcessRequest.safeParse(json);
@@ -100,8 +89,8 @@ export function createIngestApp(o: ApiOptions): Hono {
 
   if (o.devImports) {
     app.post("/imports", async (c) => {
-      const raw = await c.req.text();
-      if (raw.length > 100_000) return c.json({ error: "body too large" }, 413);
+      const raw = await readBodyText(c.req.raw, 100_000);
+      if (raw === null) return c.json({ error: "body too large" }, 413);
       let body: { links?: unknown; request?: unknown; window_seconds?: unknown };
       try { body = JSON.parse(raw); } catch { return c.json({ error: "invalid JSON" }, 400); }
       if (!body || typeof body !== "object") return c.json({ error: "body must be an object" }, 400);

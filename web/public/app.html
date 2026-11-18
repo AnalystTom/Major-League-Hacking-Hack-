@@ -6,13 +6,7 @@
   <title>Your skills · Resurface</title>
   <meta name="robots" content="noindex">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <script>
-    (function () {
-      var ok = ["hn", "highlighter", "cobalt", "violet"], p = null;
-      try { p = localStorage.getItem("resurface-palette"); } catch (e) {}
-      if (ok.indexOf(p) >= 0) document.documentElement.dataset.palette = p;
-    })();
-  </script>
+  <script src="/palette.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Funnel+Display:wght@400..800&family=Funnel+Sans:wght@400..700&family=Martian+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -25,7 +19,6 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10 9.5l4.5 2.5-4.5 2.5z"/></svg>
         Resurface
       </a>
-      <!-- Link stages live here, not beside the reel: a one-line summary that opens the full list. -->
       <details class="status" data-status hidden>
         <summary data-status-summary></summary>
         <div class="status-panel">
@@ -49,9 +42,6 @@
         <div class="reel-track" data-reel-track tabindex="0" aria-label="Your shorts. Use the up and down arrows to move, M for sound."></div>
         <p class="reel-counter" data-reel-counter aria-live="polite"></p>
       </div>
-
-      <!-- Shown in the reel's place until the first short is ready: the paste box for a new account,
-           then what's happening to the links. -->
       <section class="frame-card" data-first hidden aria-labelledby="first-title">
         <h2 id="first-title" data-first-title>Paste your first links</h2>
         <p class="frame-lede" data-first-lede>Each YouTube video, X post or Substack post becomes a skill your coding agent can read, from the part worth keeping.</p>
@@ -68,7 +58,6 @@
     <button type="button" class="linkish" data-close-add>Close</button>
   </dialog>
 
-  <!-- Skills open over the reel. A short's "View skill" link opens this at its skill card. -->
   <dialog class="skills-sheet" data-skills-sheet aria-labelledby="skills-title">
     <div class="skills-sheet-head">
       <button type="button" class="linkish" data-close-skills>Back to your sources</button>
@@ -90,7 +79,6 @@
 
   </dialog>
 
-  <!-- One paste form, moved between the first-run card and the Add videos sheet. -->
   <template data-add-template>
     <form class="add-links" data-add novalidate>
       <div class="x-connect" data-x-connect></div>

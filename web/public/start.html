@@ -6,13 +6,7 @@
   <title>Get started · Resurface</title>
   <meta name="robots" content="noindex">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-  <script>
-    (function () {
-      var ok = ["hn", "highlighter", "cobalt", "violet"], p = null;
-      try { p = localStorage.getItem("resurface-palette"); } catch (e) {}
-      if (ok.indexOf(p) >= 0) document.documentElement.dataset.palette = p;
-    })();
-  </script>
+  <script src="/palette.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Funnel+Display:wght@400..800&family=Funnel+Sans:wght@400..700&family=Martian+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -31,7 +25,6 @@
   <main class="onboard" data-onboard>
     <p class="onboard-loading" data-loading>Loading…</p>
 
-    <!-- Account: the only step. Signing up or in goes straight to /app. -->
     <section class="onboard-card" data-step="account" hidden aria-labelledby="start-title">
       <h1 id="start-title">Bring your bookmarks back</h1>
       <p class="onboard-lede">Sign in with X to turn your saved posts into skills for your coding agent.</p>

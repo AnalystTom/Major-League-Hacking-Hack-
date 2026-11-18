@@ -14,6 +14,8 @@ import { readVideoRequest } from "./video-requests.js";
 import { saveSkillChoices } from "./skill-choices.js";
 import { readSkills } from "./skills.js";
 import { requestProcessing, requestVideoProcessing } from "./processor.js";
+import { readBodyText } from "./body.js";
+import { withSecurityHeaders } from "./security-headers.js";
 
 const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), {
@@ -25,8 +27,8 @@ const UNAVAILABLE = "Resurface can't reach its database right now. Try again in 
 const SIGNED_OUT = { error: "Sign in to continue." };
 
 async function readJson(request, maxBytes = 32_000) {
-  const text = await request.text();
-  if (text.length > maxBytes) return { error: json({ error: "That request is too large." }, 413) };
+  const text = await readBodyText(request, maxBytes);
+  if (text === null) return { error: json({ error: "That request is too large." }, 413) };
   try {
     return { body: JSON.parse(text) };
   } catch {
@@ -73,7 +75,6 @@ async function signin(request, env, sql) {
   return json(await accountState(sql, user), 200, { "set-cookie": sessionCookie(token, undefined, cookieSecure(request.url)) });
 }
 
-// POST /api/imports: store the links as the user's units, then hand the ones new to this user to the processor.
 async function startImport(request, env, sql, user) {
   const rejection = await rateLimit(env.IMPORT_LIMITER, user.id, "That's a lot of imports at once. Wait a minute and try again.");
   if (rejection) return rejection;
@@ -95,7 +96,6 @@ async function api(request, env, url, sql) {
   const { pathname } = url;
   const method = request.method;
 
-  // Mutations must be JSON, which a cross-site form can't send; with SameSite=Lax this blocks CSRF.
   if (method !== "GET" && method !== "HEAD" && !(request.headers.get("content-type") ?? "").startsWith("application/json")) {
     return json({ error: "Send requests as application/json." }, 415);
   }
@@ -107,7 +107,6 @@ async function api(request, env, url, sql) {
     return json({ signedOut: true }, 200, { "set-cookie": sessionCookie("", 0, cookieSecure(request.url)) });
   }
 
-  // Only explicitly designated public outputs are anonymous.
   if (pathname === "/api/feed" && method === "GET" && url.searchParams.get("scope") === "public") {
     return json({ items: await readFeed(sql) });
   }
@@ -118,7 +117,6 @@ async function api(request, env, url, sql) {
 
   const user = await currentUser(sql, request);
   if (pathname.startsWith("/api/auth/x/") || pathname.startsWith("/api/x")) return xRoute(request, env, sql, user);
-  // "Am I signed in?" is a normal question for every visitor, so a signed-out answer isn't an error.
   if (pathname === "/api/me" && method === "GET") {
     return json(user ? await accountState(sql, user) : { user: null });
   }
@@ -156,46 +154,49 @@ async function api(request, env, url, sql) {
   return json({ error: "Not found." }, 404);
 }
 
-const PUBLIC_PATHS = new Set(["/privacy", "/terms"]);
+const PUBLIC_PATHS = new Set(["/privacy", "/terms", "/legal.css"]);
+
+async function route(request, env) {
+  const url = new URL(request.url);
+  const challenge = PUBLIC_PATHS.has(url.pathname) ? null : siteGate(request, env);
+  if (challenge) return challenge;
+
+  if (url.pathname === "/api/waitlist") return waitlist.fetch(request, env);
+
+  if (url.pathname.startsWith("/media/")) {
+    let key;
+    try {
+      key = decodeURIComponent(url.pathname.slice("/media/".length));
+    } catch {
+      return new Response("Not found.", { status: 404 });
+    }
+    const sql = connect(env);
+    if (!sql) return json({ error: UNAVAILABLE }, 503);
+    try {
+      const user = await currentUser(sql, request);
+      if (!(await canReadMedia(sql, key, user ? await userUnitIds(sql, user.id) : []))) return json({ error: "Not found." }, 404);
+      return serveMedia(request, env, key);
+    } catch {
+      return json({ error: UNAVAILABLE }, 503);
+    }
+  }
+
+  if (url.pathname.startsWith("/api/")) {
+    const sql = connect(env);
+    if (!sql) return json({ error: UNAVAILABLE }, 503);
+    try {
+      return await api(request, env, url, sql);
+    } catch (err) {
+      console.error("api request failed", url.pathname, err);
+      return json({ error: UNAVAILABLE }, 503);
+    }
+  }
+
+  return env.ASSETS.fetch(request);
+}
 
 export default {
-  async fetch(request, env, ctx) {
-    const url = new URL(request.url);
-    // Public so X's developer console can reach them.
-    const challenge = PUBLIC_PATHS.has(url.pathname) ? null : siteGate(request, env);
-    if (challenge) return challenge;
-
-    if (url.pathname === "/api/waitlist") return waitlist.fetch(request, env);
-
-    if (url.pathname.startsWith("/media/")) {
-      let key;
-      try {
-        key = decodeURIComponent(url.pathname.slice("/media/".length));
-      } catch {
-        return new Response("Not found.", { status: 404 });
-      }
-      const sql = connect(env);
-      if (!sql) return json({ error: UNAVAILABLE }, 503);
-      try {
-        const user = await currentUser(sql, request);
-        if (!(await canReadMedia(sql, key, user ? await userUnitIds(sql, user.id) : []))) return json({ error: "Not found." }, 404);
-        return serveMedia(request, env, key);
-      } catch {
-        return json({ error: UNAVAILABLE }, 503);
-      }
-    }
-
-    if (url.pathname.startsWith("/api/")) {
-      const sql = connect(env);
-      if (!sql) return json({ error: UNAVAILABLE }, 503);
-      try {
-        return await api(request, env, url, sql);
-      } catch (err) {
-        console.error("api request failed", url.pathname, err);
-        return json({ error: UNAVAILABLE }, 503);
-      }
-    }
-
-    return env.ASSETS.fetch(request);
+  async fetch(request, env) {
+    return withSecurityHeaders(await route(request, env));
   },
 };
