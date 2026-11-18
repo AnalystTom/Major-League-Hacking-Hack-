@@ -344,11 +344,15 @@ test('unknown X paths return JSON 404 and wrong methods return 405 with Allow, n
       assert.equal(response.status,404,path);
       assert.deepEqual(await response.json(),{error:'Not found.'});
     }
-    for (const [path,method,allow] of [['/api/auth/x/start','POST','GET'],['/api/auth/x/callback','POST','GET'],['/api/x','POST','GET'],['/api/x/bookmarks','GET','POST'],['/api/x/disconnect','GET','POST']]) {
+    for (const [path,method,allow] of [['/api/auth/x/start','POST','GET, HEAD'],['/api/auth/x/callback','POST','GET, HEAD'],['/api/x','POST','GET, HEAD'],['/api/x/bookmarks','GET','POST'],['/api/x/disconnect','GET','POST']]) {
       const response=await t.call(path,'',method);
       assert.equal(response.status,405,`${method} ${path}`);
       assert.equal(response.headers.get('allow'),allow);
       assert.deepEqual(await response.json(),{error:'Method not allowed.'});
+    }
+    for (const path of ['/api/x','/api/auth/x/start']) {
+      const response=await t.call(path,'','HEAD');
+      assert.notEqual(response.status,405,`HEAD ${path}`);
     }
     assert.equal(t.calls.length,0);
   } finally {t.db.close();}

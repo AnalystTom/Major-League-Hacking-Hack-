@@ -253,8 +253,9 @@ export async function xRoute(request, env, sql, user) {
   const { pathname } = new URL(request.url);
   const methods = Object.hasOwn(X_ROUTES, pathname) ? X_ROUTES[pathname] : null;
   if (!methods) return json({ error: 'Not found.' }, 404);
-  const route = Object.hasOwn(methods, request.method) ? methods[request.method] : null;
-  if (!route) return json({ error: 'Method not allowed.' }, 405, { allow: Object.keys(methods).join(', ') });
+  const method = request.method === 'HEAD' && Object.hasOwn(methods, 'GET') ? 'GET' : request.method;
+  const route = Object.hasOwn(methods, method) ? methods[method] : null;
+  if (!route) return json({ error: 'Method not allowed.' }, 405, { allow: Object.keys(methods).flatMap(m => m === 'GET' ? ['GET', 'HEAD'] : m).join(', ') });
   if (route.signedIn && !user) return json({ error: 'Sign in to continue.' }, 401);
   return route.handler(request, env, sql, user);
 }
