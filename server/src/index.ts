@@ -72,7 +72,7 @@ if (process.env.GEMINI_API_KEY) {
   }
   console.log(`Processing limits: ${options.limits.daily} new units a day, ${options.limits.monthly} a month (UTC)`);
   console.log(`Ingestion mounted at /api/ingest (${db ? "D1, sweeping pending units and outputs" : "in-memory"}); ` +
-    `media: ${outputs.media ? outputs.media.constructor.name : "not configured (set MEDIA_UPLOAD_TOKEN with D1_URL, or R2_*/MEDIA_LOCAL_WEB_DIR); renders will fail"}`);
+    `media: ${outputs.media ? outputs.media.constructor.name : "not configured (set MEDIA_TOKEN with D1_URL, as the processor Worker secret MEDIA_UPLOAD_TOKEN, or R2_*/MEDIA_LOCAL_WEB_DIR); renders will fail"}`);
 }
 
 const port = Number(process.env.PORT ?? 3000);

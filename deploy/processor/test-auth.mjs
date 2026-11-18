@@ -13,9 +13,9 @@ const ALLOWED = 'INSERT INTO artifact_exclusions(unit_id,digestion_prompt_id,rea
 const json = (body) => JSON.stringify(body);
 
 const ROUTES = [
-  { method: 'GET', path: '/health', secret: 'INGEST_TOKEN', status: 202 },
-  { method: 'POST', path: '/api/ingest/process', secret: 'INGEST_TOKEN', body: json({ unit_ids: [] }), status: 202 },
-  { method: 'POST', path: '/api/ingest/handoff', secret: 'INGEST_TOKEN', body: json({}), status: 202 },
+  { method: 'GET', path: '/health', secret: 'INGEST_TOKEN', status: 202, forwarded: true },
+  { method: 'POST', path: '/api/ingest/process', secret: 'INGEST_TOKEN', body: json({ unit_ids: [] }), status: 202, forwarded: true },
+  { method: 'POST', path: '/api/ingest/handoff', secret: 'INGEST_TOKEN', body: json({}), status: 202, forwarded: true },
   { method: 'GET', path: '/settings-status', secret: 'INGEST_TOKEN', status: 200 },
   { method: 'POST', path: '/internal/d1', secret: 'D1_BRIDGE_TOKEN', body: json({ statements: [{ sql: ALLOWED, params: ['u', 1, 'r'] }] }), status: 200 },
   { method: 'PUT', path: '/internal/media?key=videos%2Fabc-123%2F1%2Fshort.mp4', secret: 'MEDIA_UPLOAD_TOKEN', body: 'abc', status: 200 },
@@ -26,7 +26,8 @@ test('each Worker route accepts only the secret for its own bridge', { timeout: 
   const processor = {
     async useSettings() {},
     async settingsStatus() { return { container: 'stopped', running: false }; },
-    async fetch() { return Response.json({ accepted: true }, { status: 202 }); },
+    reached: [],
+    async fetch(request) { this.reached.push(new URL(request.url).pathname); return Response.json({ accepted: true }, { status: 202 }); },
   };
   t.mock.module('@cloudflare/containers', { namedExports: { Container: class {}, getContainer: () => processor } });
   const { default: worker } = await import('./src/index.js');
@@ -48,6 +49,8 @@ test('each Worker route accepts only the secret for its own bridge', { timeout: 
   for (const route of ROUTES) {
     const own = await send(route, env[route.secret]);
     assert.equal(own.status, route.status, `${route.method} ${route.path} accepts its own secret`);
+    const pathname = new URL(route.path, 'https://processor').pathname;
+    assert.deepEqual(processor.reached.splice(0), route.forwarded ? [pathname] : [], `${route.method} ${route.path} reaches the processor`);
     for (const other of Object.keys(SECRETS).filter((name) => name !== route.secret)) {
       const wrong = await send(route, env[other]);
       assert.equal(wrong.status, 401, `${route.method} ${route.path} refuses ${other}`);
