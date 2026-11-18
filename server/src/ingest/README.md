@@ -30,7 +30,7 @@ Every route needs `Authorization: Bearer $INGEST_TOKEN`. The web Worker sends it
 Digest calls, including validation retries, request reproducible sampling with the fixed seed in
 [`digest/run.ts`](digest/run.ts). This leaves the reasoning-effort setting above unchanged.
 
-Behavior: pending units are claimed atomically (`UPDATE ... WHERE status = 'pending'`); a `ready` unit is never re-extracted;
+Behavior: pending units are claimed atomically, and stale claims are taken over within their attempt limit ([claim rules](../../../docs/proceed-and-media.md#the-processor)); a `ready` unit is never re-extracted;
 artifacts are written with
 `project_context_id` null; a failed digest is stored as a failed artifact with its error and retried by the next request.
 Content selection follows the [Digestion Prompt rules](../../../docs/project-actions-spec.md#filtering-and-digestion-prompt).

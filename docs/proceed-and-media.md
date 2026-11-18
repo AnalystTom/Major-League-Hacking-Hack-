@@ -115,9 +115,11 @@ R2 keys (resolved by the Worker as `r2:<key>`):
 Each render gets a fresh ID, so partial uploads or a worker that loses its claim cannot overwrite published
 bytes. Existing references without a render ID remain valid; stored media is not deleted.
 
-**Claims.** Every job is claimed; new output rows start as `running`. A unit's claim, and the claim token on `video_results` or `skill_results`, can be
-taken over after 60 minutes (`server/src/claims.ts`), except for the bounded legacy output regeneration above.
-A worker whose claim was taken over can't write its result.
+**Claims.** Every job is claimed; new rows start as `running`. While work runs, its claim is refreshed every 5 minutes
+(`server/src/claims.ts`). A claim whose refresh has stopped for 60 minutes can be taken over, up to 3 claims per unit
+(extractions) or per output result (`MAX_EXTRACT_ATTEMPTS`, `MAX_OUTPUT_ATTEMPTS`). A stale claim that has used its last attempt is
+settled as `failed` with "stopped responding after the maximum attempts" on the next sweep. A stale legacy regeneration is settled the
+same way and never taken over. A worker whose claim was taken over can't write its result.
 
 **Configuration**: see the [ingestion README](../server/src/ingest/README.md) for provider credentials, models,
 output caps and sweep settings, and [`server/.env.example`](../server/.env.example) for local settings.
