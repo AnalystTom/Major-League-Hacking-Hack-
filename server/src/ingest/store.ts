@@ -3,48 +3,30 @@ import type { Database, Statement } from "../db.js";
 import type { DigestArtifact, IngestedUnit, StoredArtifact } from "./types.js";
 import { remaining, resumesAt, type Limits } from "./limits.js";
 import { available, deferredUntil, limitParams, NOW, USED_DAY, USED_MONTH } from "./ledger.js";
+import { STALE_CLAIM_MINUTES } from "../claims.js";
 
 export interface Claimed { claimed: IngestedUnit[]; deferred: string[]; resumesAt: Date | null }
 export interface Reserved { allowed: string[]; deferred: string[]; resumesAt: Date | null }
-import { STALE_CLAIM_MINUTES } from "../claims.js";
 
 type Exclusion = { unit_id: string; reason: string };
 
-/** Failed digests per unit before the sweep stops retrying it; the unit keeps showing the last error. */
 export const MAX_DIGEST_ATTEMPTS = 3;
+export const MAX_EXTRACT_ATTEMPTS = 3;
 
 export interface Store {
   saveUnit(unit: IngestedUnit): Promise<void>;
   getUnits(ids: string[]): Promise<IngestedUnit[]>;
   listReadyUnits(): Promise<IngestedUnit[]>;
-  /** Atomically moves pending units (optionally only these ids) to running and returns the ones this caller now owns. */
   claimPendingUnits(ids?: string[], limit?: number): Promise<IngestedUnit[]>;
-  /**
-   * claimPendingUnits within the processing limits: claims at most what today's and this month's limits leave, and
-   * when the limit runs out, marks the requested pending units it couldn't claim as deferred until room opens up.
-   */
   claimWithinLimits(ids: string[], limits: Limits): Promise<Claimed>;
-  /**
-   * Of these ready units about to be digested, the ones the limits allow. The first digest after a unit's
-   * extraction is covered by the extraction's charge; any other digest (a shared video digested for someone else,
-   * a retry) takes a slot. Units without room are marked deferred until it opens up.
-   */
+  heartbeat(ids: string[]): Promise<void>;
   reserveDigests(ids: string[], limits: Limits): Promise<Reserved>;
-  /** Pending units that some user has imported (dev-route units nobody imported are left alone). */
   listPendingUnitIds(limit: number): Promise<string[]>;
-  /**
-   * Ready imported units, each with an importer who can't see a digest of it yet (none exists, or every one also
-   * uses videos that person didn't import), with no exclusion for this prompt and fewer than MAX_DIGEST_ATTEMPTS failed digests.
-   */
   listUnitsNeedingDigest(limit: number, promptId: string): Promise<{ unitId: string; userId: string | null }[]>;
-  /** The user behind each unit's newest import, so the sweep never digests different people's videos together. */
   newestImporters(unitIds: string[]): Promise<Map<string, string>>;
-  /** Ready units with no exclusion for this prompt and no non-failed digest visible to an importer (or none when unimported). */
   unitsNeedingDigest(unitIds: string[], promptId: string): Promise<string[]>;
-  /** Returns the id of the digestion_prompts revision for this exact text + few-shot set, creating the next revision if new. */
   registerPrompt(promptText: string, fewShot: unknown[]): Promise<string>;
   saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null): Promise<StoredArtifact[]>;
-  /** Records a digestion failure per unit as a failed artifact, so the unit shows the error instead of waiting forever. */
   saveFailedArtifacts(unitIds: string[], error: string, promptId: string | null): Promise<void>;
 }
 
@@ -53,13 +35,12 @@ export class MemoryStore implements Store {
   artifacts: StoredArtifact[] = [];
   exclusions: (Exclusion & { promptId: string | null })[] = [];
   prompts: { id: string; revision: number; promptText: string; fewShot: unknown[] }[] = [];
-  /** The processing_starts ledger the limits count, and when deferred units may start. */
   starts: { unitId: string; kind: "extract" | "digest"; charged: boolean; at: Date }[] = [];
   deferredUntil = new Map<string, Date>();
-  /** Test/dev stand-in for user_imports: units some user has imported. */
   imported = new Set<string>();
 
   async saveUnit(unit: IngestedUnit) { this.units.set(unit.id, unit); }
+  async heartbeat(_ids: string[]) {}
   async getUnits(ids: string[]) { return ids.map((id) => this.units.get(id)).filter((u): u is IngestedUnit => !!u); }
   async listReadyUnits() { return [...this.units.values()].filter((u) => u.status === "ready"); }
   async claimPendingUnits(ids?: string[], limit = 50) {
@@ -170,7 +151,9 @@ function rowToUnit(r: any): IngestedUnit {
   };
 }
 
-const CLAIMABLE = `(status = 'pending' OR (status = 'running' AND (claimed_at IS NULL OR julianday(claimed_at) < julianday('now', '-${STALE_CLAIM_MINUTES} minutes'))))`;
+const CLAIMABLE = (u: string) => `(${u}.status = 'pending' OR (${u}.status = 'running'
+  AND (${u}.claimed_at IS NULL OR julianday(${u}.claimed_at) < julianday('now', '-${STALE_CLAIM_MINUTES} minutes'))
+  AND (SELECT count(*) FROM processing_starts p WHERE p.unit_id = ${u}.id AND p.kind = 'extract') < ${MAX_EXTRACT_ATTEMPTS}))`;
 const UNSEEN_BY = (user: string) => `NOT EXISTS (
   SELECT 1 FROM artifacts a WHERE EXISTS (SELECT 1 FROM json_each(a.source_ids) WHERE value = u.id)
     AND a.ingestion_status <> 'failed'
@@ -187,6 +170,9 @@ export class D1Store implements Store {
       extraction_method=excluded.extraction_method,extracted_at=excluded.extracted_at,status=excluded.status,error=excluded.error`,
       [u.id,u.submittedUrl,u.sourceUrl,u.startSeconds,u.title,u.transcript && JSON.stringify(u.transcript),u.extractionMethod,u.extractedAt?.toISOString() ?? null,u.status,u.error,u.contentType ?? 'youtube_video']);
   }
+  async heartbeat(ids: string[]) {
+    await this.db.query(`UPDATE ingested_units SET claimed_at=${NOW} WHERE status='running' AND id IN (SELECT value FROM json_each(?1))`, [JSON.stringify(ids)]);
+  }
   async getUnits(ids: string[]) {
     const { rows } = await this.db.query(`SELECT * FROM ingested_units WHERE id IN (SELECT value FROM json_each(?1)) ORDER BY created_at`, [JSON.stringify(ids)]);
     return rows.map(rowToUnit);
@@ -196,7 +182,7 @@ export class D1Store implements Store {
   }
   async claimPendingUnits(ids?: string[], limit = 50) {
     const { rows } = await this.db.query(`UPDATE ingested_units SET status='running',claimed_at=${NOW}
-      WHERE id IN (SELECT id FROM ingested_units WHERE ${CLAIMABLE}
+      WHERE id IN (SELECT id FROM ingested_units WHERE ${CLAIMABLE('ingested_units')}
         AND (?1 IS NULL OR id IN (SELECT value FROM json_each(?1))) ORDER BY created_at LIMIT ?2) RETURNING *`,
       [ids ? JSON.stringify(ids) : null,limit]);
     return rows.map(rowToUnit);
@@ -206,7 +192,7 @@ export class D1Store implements Store {
     const params = [...limitParams(limits), JSON.stringify(ids), token];
     const results = await this.db.batch([
       { sql: `INSERT INTO processing_starts(unit_id,kind,charged,batch_token)
-        SELECT id,'extract',1,?4 FROM ingested_units WHERE ${CLAIMABLE} AND id IN (SELECT value FROM json_each(?3))
+        SELECT id,'extract',1,?4 FROM ingested_units WHERE ${CLAIMABLE('ingested_units')} AND id IN (SELECT value FROM json_each(?3))
         ORDER BY created_at LIMIT max(0,min(50,?1 - ${USED_DAY},?2 - ${USED_MONTH}))`, params },
       { sql: `UPDATE ingested_units SET status='running',claimed_at=${NOW},deferred_until=NULL
         WHERE id IN (SELECT unit_id FROM processing_starts WHERE batch_token=?1) RETURNING *`, params: [token] },
@@ -237,7 +223,7 @@ export class D1Store implements Store {
     return { allowed: ids.filter((id) => allowed.has(id)),deferred: ids.filter((id) => !allowed.has(id)),resumesAt: deferred.length ? new Date(deferred[0].deferred_until) : null };
   }
   async listPendingUnitIds(limit: number) {
-    const { rows } = await this.db.query(`SELECT u.id FROM ingested_units u WHERE ${CLAIMABLE}
+    const { rows } = await this.db.query(`SELECT u.id FROM ingested_units u WHERE ${CLAIMABLE('u')}
       AND EXISTS(SELECT 1 FROM user_imports ui WHERE ui.unit_id=u.id) ORDER BY u.created_at LIMIT ?1`, [limit]);
     return rows.map((r) => r.id as string);
   }

@@ -4,8 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { testDatabase } from './helpers.js';
-import { D1Store } from '../../src/ingest/store.js';
-import { D1OutputStore } from '../../src/outputs/store.js';
+import { D1Store, MAX_EXTRACT_ATTEMPTS } from '../../src/ingest/store.js';
+import { D1OutputStore, MAX_OUTPUT_ATTEMPTS } from '../../src/outputs/store.js';
 import { D1HandoffStore } from '../../src/outputs/handoff-store.js';
 import { saveUsage } from '../../src/usage.js';
 import { processUnits, sweepOnce } from '../../src/ingest/processor.js';
@@ -486,3 +486,50 @@ for (const limits of [{daily:20,monthly:400},{daily:20,monthly:2}]) {
     } finally {s.sqlite.close();}
   });
 }
+
+test('a render that keeps crashing while holding its claim is reclaimed only up to the output attempt limit',async()=>{
+  const s=await setup();
+  try {
+    const a=await s.artifact([await s.unit('ready')]);
+    const reclaimed:boolean[]=[];
+    for (let crash=0;crash<MAX_OUTPUT_ATTEMPTS+3;crash++) {
+      reclaimed.push(await s.outputs.claim('skill',a,UNLIMITED)!==null);
+      await s.db.query("UPDATE skill_results SET updated_at='2000-01-01'");
+    }
+    assert.equal(reclaimed.filter(Boolean).length,MAX_OUTPUT_ATTEMPTS);
+    assert.equal((await s.db.query('SELECT attempts FROM skill_results')).rows[0].attempts,MAX_OUTPUT_ATTEMPTS);
+  } finally {s.sqlite.close();}
+});
+
+test('an extraction that keeps dying while holding its claim is reclaimed only up to the extraction attempt limit',async()=>{
+  const s=await setup();
+  try {
+    const id=await s.unit();
+    const claimed:number[]=[];
+    for (let crash=0;crash<MAX_EXTRACT_ATTEMPTS+3;crash++) {
+      claimed.push((await s.store.claimWithinLimits([id],UNLIMITED)).claimed.length);
+      await s.db.query("UPDATE ingested_units SET claimed_at='2000-01-01'");
+    }
+    assert.equal(claimed.reduce((n,c)=>n+c,0),MAX_EXTRACT_ATTEMPTS);
+    assert.equal((await s.db.query("SELECT count(*) AS n FROM processing_starts WHERE unit_id=?1 AND kind='extract'",[id])).rows[0].n,MAX_EXTRACT_ATTEMPTS);
+  } finally {s.sqlite.close();}
+});
+
+test('a heartbeat keeps a long-running output or extraction claim from being taken over',async()=>{
+  const s=await setup();
+  try {
+    const a=await s.artifact([await s.unit('ready')]);
+    const output=(await s.outputs.claim('skill',a,UNLIMITED))!;
+    await s.db.query("UPDATE skill_results SET updated_at='2000-01-01'");
+    assert.equal(await s.outputs.heartbeat('skill',output),true);
+    assert.equal(await s.outputs.claim('skill',a,UNLIMITED),null,'a beating output claim is not stale');
+    await s.outputs.fail('skill',output,'done');
+    assert.equal(await s.outputs.heartbeat('skill',output),false,'a released claim cannot be refreshed');
+
+    const id=await s.unit();
+    await s.store.claimWithinLimits([id],UNLIMITED);
+    await s.db.query("UPDATE ingested_units SET claimed_at='2000-01-01'");
+    await s.store.heartbeat([id]);
+    assert.deepEqual((await s.store.claimWithinLimits([id],UNLIMITED)).claimed,[],'a beating extraction is not stale');
+  } finally {s.sqlite.close();}
+});

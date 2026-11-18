@@ -1,6 +1,4 @@
-// Runs both outputs for ready artifacts: skills right away, renders one at a time (they're CPU-heavy).
-// Called after each digest and by the sweep, which also picks up claims a crashed processor left behind.
-
+import { whileHeld } from "../claims.js";
 import { generateSkill } from "./skills.js";
 import { recordError } from "../activity.js";
 import { renderArtifact } from "./render/render.js";
@@ -14,17 +12,12 @@ import type { StoredArtifact } from "../ingest/types.js";
 
 export interface OutputOptions extends ProviderOptions {
   outputs: OutputStore;
-  /** Additional output attempts share the processing budget with imports. */
   limits?: Limits;
-  /** Where rendered files go; without one, renders fail with that reason instead of waiting forever. */
   media: MediaStore | null;
-  /** false pauses short rendering: nothing is claimed, so paused shorts start when it's turned back on. */
   shorts?: boolean;
   log?: (msg: string) => void;
 }
 
-// What's in flight and the render queue belong to one options object, so two processors in a process (or two
-// tests) never share them. src/index.ts passes the same object to produceOutputs and the sweep.
 interface ProducerState { inFlight: Set<string>; renderQueue: Promise<void> }
 const states = new WeakMap<OutputOptions, ProducerState>();
 function stateFor(o: OutputOptions): ProducerState {
@@ -45,19 +38,22 @@ async function produceNow(kind: Kind, a: ReadyArtifact, o: OutputOptions) {
   try {
     const claim = await o.outputs.claim(kind, a, o.limits);
     if (!claim) return;
+    const heartbeat = () => o.outputs.heartbeat(kind, claim);
     try {
-      if (!o.openaiKey) throw new Error("OPENAI_API_KEY isn't configured on the processor");
+      const { openaiKey, geminiKey, media } = o;
+      if (!openaiKey) throw new Error("OPENAI_API_KEY isn't configured on the processor");
       if (kind === "skill") {
-        await o.outputs.finishSkill(claim, await generateSkill(a, { apiKey: o.openaiKey, model: o.openaiModel, fetchImpl: o.fetchImpl }));
+        const skill = await whileHeld(heartbeat, () => generateSkill(a, { apiKey: openaiKey, model: o.openaiModel, fetchImpl: o.fetchImpl }));
+        await o.outputs.finishSkill(claim, skill);
       } else {
-        if (!o.geminiKey) throw new Error("GEMINI_API_KEY isn't configured on the processor");
-        if (!o.media) throw new Error("Media storage isn't configured on the processor (R2_* or MEDIA_LOCAL_WEB_DIR)");
+        if (!geminiKey) throw new Error("GEMINI_API_KEY isn't configured on the processor");
+        if (!media) throw new Error("Media storage isn't configured on the processor (R2_* or MEDIA_LOCAL_WEB_DIR)");
         const skillCard = o.outputs.skillCard?.bind(o.outputs);
-        await o.outputs.finishVideo(claim, await renderArtifact(a, { ...o, openaiKey: o.openaiKey, geminiKey: o.geminiKey, media: o.media, skillCard }));
+        const video = await whileHeld(heartbeat, () => renderArtifact(a, { ...o, openaiKey, geminiKey, media, skillCard }));
+        await o.outputs.finishVideo(claim, video);
       }
       o.log?.(`${kind} ready for artifact ${a.id} v${a.version}`);
     } catch (e) {
-      // A worker whose claim was taken over leaves the row to the one that took it.
       const error = e as Error & { judgment?: ShortJudgment };
       const recorded = !(e instanceof LostClaim) && (await o.outputs.fail(kind, claim, error.message, error.judgment, isPermanentFailure(error.message)));
       recordError(`${kind} failed`, e);
@@ -71,22 +67,18 @@ async function produceNow(kind: Kind, a: ReadyArtifact, o: OutputOptions) {
   }
 }
 
-/** Renders run one after another; a job that fails doesn't stop the ones behind it. */
 async function queueRender(a: ReadyArtifact, o: OutputOptions): Promise<void> {
   if (o.shorts === false || !await o.outputs.videoRequested(a)) return;
   const state = stateFor(o);
-  // Counted as busy from the moment it's queued, not just while it renders.
   const job = tracked(() => state.renderQueue.then(() => produceNow("video", a, o)));
   state.renderQueue = job.catch(() => {});
   return job;
 }
 
-/** Produces the skill and the short for each artifact. Resolves when all of them have settled. */
 export async function produceOutputs(artifacts: ReadyArtifact[], o: OutputOptions): Promise<void> {
   await Promise.all([...artifacts.map((a) => produce("skill", a, o)), ...artifacts.map((a) => queueRender(a, o))]);
 }
 
-/** Finds ready artifacts needing output generation or legacy refresh. Returns how many it started. */
 export async function sweepOutputs(o: OutputOptions, limit = 10): Promise<number> {
   const [skills, videos] = await Promise.all([o.outputs.artifactsNeeding("skill", limit), o.shorts === false ? [] : o.outputs.artifactsNeeding("video", limit)]);
   await Promise.all([
@@ -96,14 +88,12 @@ export async function sweepOutputs(o: OutputOptions, limit = 10): Promise<number
   return skills.length + videos.length;
 }
 
-/** The digest's stored artifact in the shape the outputs read. */
 export const toReadyArtifact = (a: StoredArtifact): ReadyArtifact => ({
   id: a.id, version: a.version, name: a.name, category: a.category || null, processed_text: a.processed_text,
   selection_reason: a.selection_reason || null, source_ids: a.source_ids,
   sources: sourceRefs(a.sources), evidence: a.evidence,
 });
 
-/** Runs sweepOutputs on a timer, skipping a tick while one is still running. Returns a stop function. */
 export function startOutputSweep(o: OutputOptions, intervalMs = 60_000): () => void {
   let running = false;
   const tick = async () => {
