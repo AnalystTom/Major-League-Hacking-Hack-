@@ -8,6 +8,7 @@ import { createSession } from '../src/auth.js';
 import { readFeed } from '../src/feed.js';
 import { deleteAccount } from '../src/account.js';
 import { reserveVideo } from '../src/video-requests.js';
+import { createUnits } from '../src/imports.js';
 
 const MIGRATIONS = [
   '0002_application.sql', '0003_video_duration.sql', '0004_usage_events.sql', '0005_skill_choices.sql',
@@ -362,6 +363,19 @@ test("deleting an account releases another user's video slot on a shared artifac
     assert.equal(count(sqlite, 'SELECT count(*) AS n FROM user_video_requests WHERE user_id = ?', B), 0);
     const next = await reserveVideo(sql, B, { id: 'art-b2', version: 1 }, env);
     assert.equal(next.video.artifact.id, 'art-b2');
+  } finally {
+    sqlite.close();
+  }
+});
+
+test('an import whose user is deleted before its link commits leaves no unit behind', async () => {
+  const { sqlite, sql } = database();
+  try {
+    seed(sqlite);
+    const link = { submitted_url: 'https://x.com/gone/status/7', source_url: 'https://x.com/gone/status/7', start_seconds: null, content_type: 'x_post' };
+    await assert.rejects(createUnits(sql, [link], { userId: 'user-deleted-mid-import' }));
+    assert.equal(count(sqlite, 'SELECT count(*) AS n FROM ingested_units WHERE source_url = ?', link.source_url), 0);
+    assert.equal(count(sqlite, 'SELECT count(*) AS n FROM ingested_units WHERE submitted_url = ?', link.submitted_url), 0);
   } finally {
     sqlite.close();
   }

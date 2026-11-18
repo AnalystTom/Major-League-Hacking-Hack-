@@ -75,11 +75,6 @@ async function ownedUnit(sql, userId, link) {
     ORDER BY ui.created_at DESC LIMIT 1`)[0] ?? null;
 }
 
-/**
- * Import reuse and X refresh rules: docs/project-actions-spec.md#http-api.
- * Only ids and status come back: a reused unit's submitted_url is another visitor's original link,
- * which can carry their share or playlist parameters, so it never leaves the database.
- */
 export async function createUnits(sql, links, { userId = null } = {}) {
   const units = [];
   for (const link of links) {
@@ -104,17 +99,23 @@ export async function createUnits(sql, links, { userId = null } = {}) {
     let resolved = unit ?? (await sql`SELECT id,status FROM ingested_units WHERE source_url=${link.source_url}
       AND start_seconds IS ${link.start_seconds} AND status<>'failed' ORDER BY created_at DESC LIMIT 1`)[0];
     if (userId) {
-      // `linked` is true the first time this user imports the unit, which is when the processor is asked.
-      const linked = await sql`
-        INSERT INTO user_imports (user_id, unit_id)
-        SELECT ${userId}, ${resolved.id}
-        WHERE NOT EXISTS (SELECT 1 FROM user_imports ui JOIN ingested_units u ON u.id=ui.unit_id
-          WHERE ui.user_id=${userId} AND u.source_url=${link.source_url} AND u.status<>'failed'
-            AND u.start_seconds IS ${link.start_seconds}
-            AND (${link.content_type ?? "youtube_video"}<>'x_post' OR u.status IN ('pending','running')
-              OR u.extraction_method IN ('twitterapi.io:tweets:v2','x-embed:tweet-result:v2')))
-        ON CONFLICT (user_id, unit_id) DO NOTHING
-        RETURNING unit_id`;
+      let linked;
+      try {
+        linked = await sql`
+          INSERT INTO user_imports (user_id, unit_id)
+          SELECT ${userId}, ${resolved.id}
+          WHERE NOT EXISTS (SELECT 1 FROM user_imports ui JOIN ingested_units u ON u.id=ui.unit_id
+            WHERE ui.user_id=${userId} AND u.source_url=${link.source_url} AND u.status<>'failed'
+              AND u.start_seconds IS ${link.start_seconds}
+              AND (${link.content_type ?? "youtube_video"}<>'x_post' OR u.status IN ('pending','running')
+                OR u.extraction_method IN ('twitterapi.io:tweets:v2','x-embed:tweet-result:v2')))
+          ON CONFLICT (user_id, unit_id) DO NOTHING
+          RETURNING unit_id`;
+      } catch (error) {
+        if (unit?.reused === false) await sql`DELETE FROM ingested_units WHERE id = ${resolved.id}
+          AND NOT EXISTS (SELECT 1 FROM user_imports WHERE unit_id = ${resolved.id})`;
+        throw error;
+      }
       resolved = linked.length ? { ...resolved, linked: true } : { ...(await ownedUnit(sql, userId, link)), reused: true, linked: false };
     }
     units.push(resolved);
