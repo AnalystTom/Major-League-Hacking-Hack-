@@ -173,7 +173,7 @@ component holds only the secrets it needs:
 
 | Secret (processor Worker) | Opens | Held by |
 | --- | --- | --- |
-| `INGEST_TOKEN` | `/api/ingest/*`, `/health`, `/settings-status` | web Worker (as its `PROCESSOR_TOKEN`), processor |
+| `INGEST_TOKEN` | `GET /health`, `GET /settings-status`, `POST /api/ingest/process`, `POST /api/ingest/handoff` | web Worker (as its `PROCESSOR_TOKEN`), processor |
 | `D1_BRIDGE_TOKEN` | `POST /internal/d1` | processor (passed to the container as `D1_TOKEN`) |
 | `MEDIA_UPLOAD_TOKEN` | `PUT /internal/media` | processor (passed to the container as `MEDIA_TOKEN`) |
 | `TTS_BRIDGE_TOKEN` | `POST /internal/tts` | processor (passed to the container as `TTS_TOKEN`) |
