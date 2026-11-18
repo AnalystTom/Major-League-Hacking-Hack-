@@ -6,7 +6,7 @@ import { available, deferredUntil, limitParams, NOW, USED_DAY, USED_MONTH } from
 import { EXHAUSTED_CLAIM_ERROR, STALE_CLAIM_MINUTES } from "../claims.js";
 
 export interface Claimed { claimed: IngestedUnit[]; deferred: string[]; resumesAt: Date | null }
-export interface Reserved { allowed: string[]; deferred: string[]; resumesAt: Date | null }
+export interface Reserved { allowed: string[]; deferred: string[]; resumesAt: Date | null; reservation: string }
 
 type Exclusion = { unit_id: string; reason: string };
 
@@ -26,8 +26,8 @@ export interface Store {
   newestImporters(unitIds: string[]): Promise<Map<string, string>>;
   unitsNeedingDigest(unitIds: string[], promptId: string): Promise<string[]>;
   registerPrompt(promptText: string, fewShot: unknown[]): Promise<string>;
-  saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null): Promise<StoredArtifact[]>;
-  saveFailedArtifacts(unitIds: string[], error: string, promptId: string | null): Promise<void>;
+  saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null, reservation: string): Promise<StoredArtifact[]>;
+  saveFailedArtifacts(unitIds: string[], error: string, promptId: string | null, reservation: string): Promise<void>;
 }
 
 export class MemoryStore implements Store {
@@ -87,7 +87,7 @@ export class MemoryStore implements Store {
     allowed.forEach((id) => this.deferredUntil.delete(id));
     const until = deferred.length ? resumesAt(limits, { today: used.today + allowedCharged.length, month: used.month + allowedCharged.length }, now) : null;
     if (until) deferred.forEach((id) => this.deferredUntil.set(id, until));
-    return { allowed: ids.filter((id) => allowed.includes(id)), deferred, resumesAt: until };
+    return { allowed: ids.filter((id) => allowed.includes(id)), deferred, resumesAt: until, reservation: randomUUID() };
   }
   async listPendingUnitIds(limit: number) {
     return [...this.units.values()].filter((u) => u.status === "pending" && this.imported.has(u.id)).slice(0, limit).map((u) => u.id);
@@ -115,7 +115,7 @@ export class MemoryStore implements Store {
     const src = ids.map((id) => this.units.get(id)).filter((u): u is IngestedUnit => !!u);
     return { src, sources: src.map((u) => ({ url: u.sourceUrl, title: u.title, content_type: u.contentType ?? "youtube_video", retrieved_at: u.extractedAt })) };
   }
-  async saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null) {
+  async saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null, _reservation: string) {
     artifacts = artifacts.filter((a, i) => artifacts.findIndex((b) => JSON.stringify([...b.source_ids].sort()) === JSON.stringify([...a.source_ids].sort())) === i);
     const stored = artifacts.map((a): StoredArtifact => {
       const existing = this.artifacts.find((b) => b.ingestion_status === "ready" && JSON.stringify([...b.source_ids].sort()) === JSON.stringify([...a.source_ids].sort()));
@@ -131,7 +131,7 @@ export class MemoryStore implements Store {
     for (const e of exclusions) this.exclusions.push({ ...e, promptId });
     return [...new Map(stored.map((a) => [a.id, a])).values()];
   }
-  async saveFailedArtifacts(unitIds: string[], error: string, promptId: string | null) {
+  async saveFailedArtifacts(unitIds: string[], error: string, promptId: string | null, _reservation: string) {
     for (const id of unitIds) {
       const { src, sources } = this.sourcesFor([id]);
       this.artifacts.push({
@@ -154,22 +154,29 @@ function rowToUnit(r: any): IngestedUnit {
 const EXTRACT_STARTS = (u: string) => `(SELECT count(*) FROM processing_starts p WHERE p.unit_id = ${u}.id AND p.kind = 'extract')`;
 const STALE_UNIT = (u: string) => `(${u}.claimed_at IS NULL OR julianday(${u}.claimed_at) < julianday('now', '-${STALE_CLAIM_MINUTES} minutes'))`;
 const CLAIMABLE = (u: string) => `(${u}.status = 'pending' OR (${u}.status = 'running' AND ${STALE_UNIT(u)} AND ${EXTRACT_STARTS(u)} < ${MAX_EXTRACT_ATTEMPTS}))`;
+const OPEN_FOR_EXTRACTION = (u: string) => `(${u}.status = 'pending' OR (${u}.status = 'running' AND ${STALE_UNIT(u)}))`;
+const RESERVED_FOR_DIGEST = (u: string, reservation: string) => `(${u}.status = 'ready' AND EXISTS(SELECT 1 FROM processing_starts p WHERE p.unit_id = ${u}.id
+  AND p.kind = 'digest' AND p.batch_token = ${reservation} AND julianday(p.created_at) >= julianday('now', '-${STALE_CLAIM_MINUTES} minutes')))`;
 const EXHAUSTED = (u: string) => `(${u}.status = 'running' AND ${STALE_UNIT(u)} AND ${EXTRACT_STARTS(u)} >= ${MAX_EXTRACT_ATTEMPTS})`;
 const UNSEEN_BY = (user: string) => `NOT EXISTS (
   SELECT 1 FROM artifacts a WHERE EXISTS (SELECT 1 FROM json_each(a.source_ids) WHERE value = u.id)
     AND a.ingestion_status <> 'failed'
     AND NOT EXISTS (SELECT 1 FROM json_each(a.source_ids) src WHERE NOT EXISTS
       (SELECT 1 FROM user_imports x WHERE x.unit_id = src.value AND x.user_id = ${user})))`;
+const AWAITING_DIGEST = `(EXISTS(SELECT 1 FROM user_imports ui WHERE ui.unit_id=u.id AND ${UNSEEN_BY('ui.user_id')})
+        OR (NOT EXISTS(SELECT 1 FROM user_imports ui WHERE ui.unit_id=u.id)
+          AND NOT EXISTS(SELECT 1 FROM artifacts a WHERE EXISTS(SELECT 1 FROM json_each(a.source_ids) WHERE value=u.id)
+            AND a.ingestion_status<>'failed')))`;
 
 export class D1Store implements Store {
   constructor(private db: Database) {}
   async saveUnit(u: IngestedUnit) {
-    await this.db.query(`INSERT INTO ingested_units
-      (id,submitted_url,source_url,start_seconds,title,transcript,extraction_method,extracted_at,status,error,content_type)
-      VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)
-      ON CONFLICT(id) DO UPDATE SET title=excluded.title,transcript=excluded.transcript,
-      extraction_method=excluded.extraction_method,extracted_at=excluded.extracted_at,status=excluded.status,error=excluded.error`,
-      [u.id,u.submittedUrl,u.sourceUrl,u.startSeconds,u.title,u.transcript && JSON.stringify(u.transcript),u.extractionMethod,u.extractedAt?.toISOString() ?? null,u.status,u.error,u.contentType ?? 'youtube_video']);
+    const { rowCount } = await this.db.query(`UPDATE ingested_units SET title=?2,transcript=?3,extraction_method=?4,extracted_at=?5,status=?6,error=?7
+      WHERE id=?1 AND status='running' AND ?6 IN ('ready','failed')`,
+      [u.id,u.title,u.transcript && JSON.stringify(u.transcript),u.extractionMethod,u.extractedAt?.toISOString() ?? null,u.status,u.error]);
+    if (rowCount === 1) return;
+    if ((await this.getUnits([u.id])).length === 0) throw new Error(`unit ${u.id} does not exist: new links cannot be created through the D1 bridge (production imports create units in the web app), and a unit deleted mid-extraction also ends here`);
+    throw new Error(`unit ${u.id} is not claimed for extraction; its result was not saved`);
   }
   async heartbeat(ids: string[]) {
     await this.db.query(`UPDATE ingested_units SET claimed_at=${NOW} WHERE status='running' AND id IN (SELECT value FROM json_each(?1))`, [JSON.stringify(ids)]);
@@ -199,7 +206,8 @@ export class D1Store implements Store {
         SELECT id,'extract',1,?4 FROM ingested_units WHERE ${CLAIMABLE('ingested_units')} AND id IN (SELECT value FROM json_each(?3))
         ORDER BY created_at LIMIT max(0,min(50,?1 - ${USED_DAY},?2 - ${USED_MONTH}))`, params },
       { sql: `UPDATE ingested_units SET status='running',claimed_at=${NOW},deferred_until=NULL
-        WHERE id IN (SELECT unit_id FROM processing_starts WHERE batch_token=?1) RETURNING *`, params: [token] },
+        WHERE id IN (SELECT unit_id FROM processing_starts WHERE batch_token=?1 AND kind='extract') AND ${OPEN_FOR_EXTRACTION('ingested_units')}
+        RETURNING *`, params: [token] },
       { sql: `UPDATE ingested_units SET deferred_until=${deferredUntil()}
         WHERE status='pending' AND id IN (SELECT value FROM json_each(?3)) AND NOT ${available()} RETURNING id,deferred_until`, params: params.slice(0,3) },
     ]);
@@ -207,12 +215,13 @@ export class D1Store implements Store {
     return { claimed: results[1].rows.map(rowToUnit), deferred: deferred.map((r) => r.id), resumesAt: deferred.length ? new Date(deferred[0].deferred_until) : null };
   }
   async reserveDigests(ids: string[], limits: Limits): Promise<Reserved> {
-    if (!ids.length) return { allowed: [],deferred: [],resumesAt: null };
     const token = randomUUID();
+    if (!ids.length) return { allowed: [],deferred: [],resumesAt: null,reservation: token };
     const statements: Statement[] = [...new Set(ids)].map((id) => {
       const covered = `(SELECT kind FROM processing_starts WHERE unit_id=?3 ORDER BY created_at DESC,id DESC LIMIT 1) IS 'extract'`;
       return { sql: `INSERT INTO processing_starts(unit_id,kind,charged,batch_token)
-        SELECT ?3,'digest',CASE WHEN ${covered} THEN 0 ELSE 1 END,?4 WHERE ${covered} OR ${available()}`,
+        SELECT ?3,'digest',CASE WHEN ${covered} THEN 0 ELSE 1 END,?4 WHERE (${covered} OR ${available()})
+          AND EXISTS(SELECT 1 FROM ingested_units u WHERE u.id=?3 AND u.status='ready' AND ${AWAITING_DIGEST})`,
         params: [...limitParams(limits),id,token] };
     });
     const result = await this.db.batch([...statements,
@@ -224,7 +233,7 @@ export class D1Store implements Store {
     ]);
     const allowed = new Set(result.at(-1)!.rows.map((r) => r.unit_id));
     const deferred = result.at(-2)!.rows;
-    return { allowed: ids.filter((id) => allowed.has(id)),deferred: ids.filter((id) => !allowed.has(id)),resumesAt: deferred.length ? new Date(deferred[0].deferred_until) : null };
+    return { allowed: ids.filter((id) => allowed.has(id)),deferred: ids.filter((id) => !allowed.has(id)),resumesAt: deferred.length ? new Date(deferred[0].deferred_until) : null,reservation: token };
   }
   async listPendingUnitIds(limit: number) {
     await this.failExhaustedUnits();
@@ -252,10 +261,7 @@ export class D1Store implements Store {
     const { rows } = await this.db.query(`SELECT u.id FROM ingested_units u
       WHERE u.id IN (SELECT value FROM json_each(?1)) AND u.status='ready'
       AND NOT EXISTS(SELECT 1 FROM artifact_exclusions e WHERE e.unit_id=u.id AND e.digestion_prompt_id=?2)
-      AND (EXISTS(SELECT 1 FROM user_imports ui WHERE ui.unit_id=u.id AND ${UNSEEN_BY('ui.user_id')})
-        OR (NOT EXISTS(SELECT 1 FROM user_imports ui WHERE ui.unit_id=u.id)
-          AND NOT EXISTS(SELECT 1 FROM artifacts a WHERE EXISTS(SELECT 1 FROM json_each(a.source_ids) WHERE value=u.id)
-            AND a.ingestion_status<>'failed')))`, [JSON.stringify(ids),promptId]);
+      AND ${AWAITING_DIGEST}`, [JSON.stringify(ids),promptId]);
     return rows.map((r) => r.id as string);
   }
   async registerPrompt(promptText: string, fewShot: unknown[]) {
@@ -268,31 +274,34 @@ export class D1Store implements Store {
     ]);
     return results[1].rows[0].id as string;
   }
-  async saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null) {
-    const units = await this.getUnits([...new Set(artifacts.flatMap((a) => a.source_ids))]);
+  async saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null, reservation: string) {
     artifacts = artifacts.filter((a, i) => artifacts.findIndex((b) => JSON.stringify([...b.source_ids].sort()) === JSON.stringify([...a.source_ids].sort())) === i);
     const statements: Statement[] = artifacts.flatMap((a) => {
-      const src = a.source_ids.map((id) => units.find((u) => u.id===id)).filter((u): u is IngestedUnit => !!u);
-      const sources = src.map((u) => ({ url: u.sourceUrl,title: u.title,content_type: u.contentType,retrieved_at: u.extractedAt }));
-      const sameSources = `ingestion_status='ready' AND json_array_length(source_ids)=json_array_length(?3)
-        AND NOT EXISTS(SELECT 1 FROM json_each(source_ids) WHERE value NOT IN (SELECT value FROM json_each(?3)))`;
+      const sameSources = (ids: string) => `ingestion_status='ready' AND json_array_length(source_ids)=json_array_length(${ids})
+        AND NOT EXISTS(SELECT 1 FROM json_each(source_ids) WHERE value NOT IN (SELECT value FROM json_each(${ids})))`;
       return [{ sql: `INSERT INTO artifacts(name,source_url,source_ids,sources,processed_text,category,selection_reason,evidence,
-        digestion_prompt_id,ingestion_status,processed_at) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,'ready',${NOW}
-        WHERE NOT EXISTS(SELECT 1 FROM artifacts WHERE ${sameSources})
-          AND NOT EXISTS(SELECT 1 FROM json_each(?3) s WHERE NOT EXISTS(SELECT 1 FROM ingested_units u WHERE u.id=s.value))`,
-        params: [a.name,src[0]?.sourceUrl ?? '',JSON.stringify(a.source_ids),JSON.stringify(sources),a.processed_text,a.category,a.selection_reason,JSON.stringify(a.evidence),promptId] },
-        { sql: `SELECT * FROM artifacts WHERE ${sameSources} ORDER BY created_at DESC,id LIMIT 1`, params: [null,null,JSON.stringify(a.source_ids)] }];
+        digestion_prompt_id,ingestion_status,processed_at)
+        SELECT ?1,(SELECT u.source_url FROM ingested_units u WHERE u.id=json_extract(?2,'$[0]')),?2,
+          (SELECT json_group_array(json(x)) FROM (SELECT json_object('url',u.source_url,'title',u.title,'content_type',u.content_type,'retrieved_at',u.extracted_at) AS x
+            FROM json_each(?2) s JOIN ingested_units u ON u.id=s.value ORDER BY s.key)),
+          ?3,?4,?5,?6,?7,'ready',${NOW}
+        WHERE json_array_length(?2)>0 AND NOT EXISTS(SELECT 1 FROM artifacts WHERE ${sameSources('?2')})
+          AND NOT EXISTS(SELECT 1 FROM json_each(?2) s WHERE NOT EXISTS(SELECT 1 FROM ingested_units u WHERE u.id=s.value AND ${RESERVED_FOR_DIGEST('u','?8')}))`,
+        params: [a.name,JSON.stringify(a.source_ids),a.processed_text,a.category,a.selection_reason,JSON.stringify(a.evidence),promptId,reservation] },
+        { sql: `SELECT * FROM artifacts WHERE ${sameSources('?3')} ORDER BY created_at DESC,id LIMIT 1`, params: [null,null,JSON.stringify(a.source_ids)] }];
     });
     if (promptId) for (const e of exclusions) statements.push({ sql: `INSERT INTO artifact_exclusions(unit_id,digestion_prompt_id,reason)
-      SELECT ?1,?2,?3 WHERE EXISTS(SELECT 1 FROM ingested_units WHERE id=?1)`, params: [e.unit_id,promptId,e.reason] });
+      SELECT ?1,?2,?3 WHERE EXISTS(SELECT 1 FROM ingested_units u WHERE u.id=?1 AND ${RESERVED_FOR_DIGEST('u','?4')})`, params: [e.unit_id,promptId,e.reason,reservation] });
     const results = await this.db.batch(statements);
     return artifacts.flatMap((a,i) => results[i*2+1].rows[0] ? [{ ...a,...results[i*2+1].rows[0] } as StoredArtifact] : []);
   }
-  async saveFailedArtifacts(ids: string[], error: string, promptId: string | null) {
-    const statements: Statement[] = (await this.getUnits(ids)).map((u) => ({
+  async saveFailedArtifacts(ids: string[], error: string, promptId: string | null, reservation: string) {
+    const statements: Statement[] = [...new Set(ids)].map((id) => ({
       sql: `INSERT INTO artifacts(name,source_url,source_ids,sources,digestion_prompt_id,ingestion_status,error,processed_at)
-        SELECT 'Digestion failed',?1,?2,?3,?4,'failed',?5,${NOW} WHERE EXISTS(SELECT 1 FROM ingested_units WHERE id=?6)`,
-      params: [u.sourceUrl,JSON.stringify([u.id]),JSON.stringify([{ url:u.sourceUrl,title:u.title,content_type:u.contentType,retrieved_at:u.extractedAt }]),promptId,error,u.id],
+        SELECT 'Digestion failed',u.source_url,json_array(u.id),
+          json_array(json_object('url',u.source_url,'title',u.title,'content_type',u.content_type,'retrieved_at',u.extracted_at)),
+          ?2,'failed',?3,${NOW} FROM ingested_units u WHERE u.id=?1 AND ${RESERVED_FOR_DIGEST('u','?4')}`,
+      params: [id,promptId,error,reservation],
     }));
     await this.db.batch(statements);
   }

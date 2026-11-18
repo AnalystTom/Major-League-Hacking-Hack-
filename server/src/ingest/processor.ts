@@ -51,7 +51,11 @@ async function processNow(unitIds: string[], o: ProcessorOptions): Promise<Proce
   summary.deferred = deferred.length;
   if (deferred.length) o.log?.(`processing limit reached: ${deferred.length} unit(s) wait until ${resumesAt?.toISOString()}`);
   const claimedIds = claimed.map((u) => u.id);
-  const extracted = await whileHeld(() => o.store.heartbeat(claimedIds), () => Promise.all(claimed.map((u) => extractUnit(u, o))));
+  const extracted = await whileHeld(() => o.store.heartbeat(claimedIds), () => Promise.all(claimed.map((u) => extractUnit(u, o).catch((e: Error) => {
+    recordError("extraction result was not saved", e);
+    o.log?.(`unit ${u.id} was not saved: ${e.message}`);
+    return { ...u, status: "failed" as const, error: e.message };
+  }))));
   summary.extracted.ready = extracted.filter((u) => u.status === "ready").length;
   summary.extracted.failed = extracted.filter((u) => u.status === "failed").length;
 
@@ -80,18 +84,18 @@ async function processNow(unitIds: string[], o: ProcessorOptions): Promise<Proce
 
     const toDigest = units.filter((u) => needing.includes(u.id));
     try {
-      const d = await digestAndStore({ apiKey: o.openaiKey, model: o.openaiModel, maxOutputTokens: o.openaiMaxOutputTokens, units: toDigest, request, fetchImpl: o.fetchImpl, store: o.store });
+      const d = await digestAndStore({ apiKey: o.openaiKey, model: o.openaiModel, maxOutputTokens: o.openaiMaxOutputTokens, units: toDigest, request, fetchImpl: o.fetchImpl, store: o.store, reservation: reserved.reservation });
       if (d.storeError) throw new Error(`could not store digest: ${d.storeError}`);
       summary.digested = d.stored?.length ?? 0;
       const used = new Set([...d.result.artifacts.flatMap((a) => a.source_ids), ...d.result.exclusions.map((e) => e.unit_id)]);
       const unaccounted = needing.filter((id) => !used.has(id));
       if (unaccounted.length && d.promptId) {
-        await o.store.saveArtifacts([], unaccounted.map((unit_id) => ({ unit_id, reason: "The Digestion Prompt didn't use this video and gave no reason." })), d.promptId);
+        await o.store.saveArtifacts([], unaccounted.map((unit_id) => ({ unit_id, reason: "The Digestion Prompt didn't use this video and gave no reason." })), d.promptId, reserved.reservation);
       }
       const ready = (d.stored ?? []).filter((a) => a.ingestion_status === "ready");
       if (ready.length && o.onArtifacts) o.onArtifacts(ready).catch((e: Error) => o.log?.(`outputs failed: ${e.message}`));
     } catch (e) {
-      await o.store.saveFailedArtifacts(needing, (e as Error).message, promptId);
+      await o.store.saveFailedArtifacts(needing, (e as Error).message, promptId, reserved.reservation);
       recordError("digest failed", e);
       o.log?.(`digest failed for ${needing.length} unit(s): ${(e as Error).message}`);
     }
@@ -114,7 +118,10 @@ export async function sweepOnce(o: ProcessorOptions, limit = 20): Promise<number
   let n = 0;
   for (const ids of groups.values()) {
     n += ids.size;
-    await processUnits([...ids], o);
+    await processUnits([...ids], o).catch((e: Error) => {
+      recordError("sweep group failed", e);
+      o.log?.(`sweep group failed: ${e.message}`);
+    });
   }
   return n;
 }

@@ -8,13 +8,12 @@ import { fetchTitle } from "./extract/title.js";
 import { runDigestion, type DigestOptions } from "./digest/run.js";
 import { promptRevisionText } from "./digest/prompt.js";
 import type { Store } from "./store.js";
+import { UNLIMITED } from "./limits.js";
 import type { IngestedUnit, StoredArtifact } from "./types.js";
 
 export interface IngestOptions {
   geminiKey: string;
-  /** Optional X reading key; provider behavior and Article limits are documented in ./README.md. */
   twitterApiKey?: string;
-  /** Nimble key; without it Substack posts fail with a clear error. */
   nimbleKey?: string;
   store: Store;
   windowSeconds?: number;
@@ -23,16 +22,11 @@ export interface IngestOptions {
   retries?: number;
 }
 
-/**
- * Extracts one existing unit (already claimed as running) from its stored source_url and start time.
- * Always saves and returns the unit with its actual status/error; never throws.
- */
 export async function extractUnit(unit: IngestedUnit, o: IngestOptions): Promise<IngestedUnit> {
   if (unit.contentType === "x_post") return extractXPostUnit(unit, o);
   if (unit.contentType === "substack_post") return extractSubstackUnit(unit, o);
   let out: IngestedUnit = { ...unit, extractionMethod: `gemini:${o.geminiModel ?? GEMINI_MODEL}` };
   try {
-    // Gemini is handed a YouTube link as a video; any other page would be fetched as HTML and rejected.
     parseYouTubeUrl(unit.sourceUrl);
     const window = windowFor(unit.startSeconds, o.windowSeconds);
     const [extracted, title] = await Promise.all([
@@ -50,7 +44,6 @@ export async function extractUnit(unit: IngestedUnit, o: IngestOptions): Promise
   return out;
 }
 
-/** X posts are read as text, never by a model: from twitterapi.io when it has a key and answers, else from X's public embed endpoint. */
 async function extractXPostUnit(unit: IngestedUnit, o: IngestOptions): Promise<IngestedUnit> {
   let out: IngestedUnit = { ...unit, extractionMethod: X_POST_METHOD, extractedAt: new Date() };
   try {
@@ -77,7 +70,6 @@ async function extractXPostUnit(unit: IngestedUnit, o: IngestOptions): Promise<I
   return out;
 }
 
-/** Substack posts are fetched through Nimble as markdown and split into numbered sections; no model is involved in extraction. */
 async function extractSubstackUnit(unit: IngestedUnit, o: IngestOptions): Promise<IngestedUnit> {
   let out: IngestedUnit = { ...unit, extractionMethod: "nimble:markdown", extractedAt: new Date() };
   try {
@@ -91,7 +83,6 @@ async function extractSubstackUnit(unit: IngestedUnit, o: IngestOptions): Promis
   return out;
 }
 
-/** Import one submitted link (dev route/CLI). Returns a unit with its actual status/error; never throws for per-link failures. */
 export async function ingestLink(link: string, o: IngestOptions, onUpdate?: (u: IngestedUnit) => void): Promise<IngestedUnit> {
   const base: IngestedUnit = {
     id: randomUUID(), submittedUrl: link, sourceUrl: link, startSeconds: null, title: null, transcript: null,
@@ -131,9 +122,15 @@ export async function ingestLinks(links: string[], o: IngestOptions): Promise<In
 
 export interface DigestAndStoreOptions extends DigestOptions {
   store: Store;
+  reservation: string;
 }
 
-/** Runs the Digestion Prompt, registers its revision, and stores artifacts and exclusions tied to that revision. */
+export async function reserveDigest(store: Store, units: IngestedUnit[]) {
+  const { allowed, deferred, reservation } = await store.reserveDigests(units.map((u) => u.id), UNLIMITED);
+  if (deferred.length) throw new Error(`${deferred.length} unit(s) already have a digest for their importers and were not digested`);
+  return { units: units.filter((u) => allowed.includes(u.id)), reservation };
+}
+
 export async function digestAndStore(o: DigestAndStoreOptions) {
   const result = await runDigestion(o);
   let promptId: string | null = null;
@@ -141,7 +138,7 @@ export async function digestAndStore(o: DigestAndStoreOptions) {
   let storeError: string | null = null;
   try {
     promptId = await o.store.registerPrompt(promptRevisionText(o.request), o.fewShot ?? []);
-    stored = await o.store.saveArtifacts(result.artifacts, result.exclusions, promptId);
+    stored = await o.store.saveArtifacts(result.artifacts, result.exclusions, promptId, o.reservation);
   } catch (e) {
     storeError = (e as Error).message;
   }

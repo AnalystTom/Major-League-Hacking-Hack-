@@ -1,14 +1,8 @@
-// Runs the whole text path for a few links and writes what each step produced:
-// extraction -> Digestion Prompt artifacts -> one concise skill per artifact. Task handoffs are paused.
-//
-// usage: npm run handoff -- [--out <dir>] <youtube-url>...
-// env: GEMINI_API_KEY, OPENAI_API_KEY; optional D1_URL and D1_TOKEN (also stores units, artifacts and skills), DIGESTION_REQUEST.
-
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { databaseFromEnv } from "../db.js";
 import { DEFAULT_CATEGORIZATION_REQUEST } from "../ingest/digest/prompt.js";
-import { digestAndStore, ingestLinks } from "../ingest/pipeline.js";
+import { digestAndStore, ingestLinks, reserveDigest } from "../ingest/pipeline.js";
 import { MemoryStore, D1Store, type Store } from "../ingest/store.js";
 import type { StoredArtifact } from "../ingest/types.js";
 import { type HandoffSkill } from "./handoff.js";
@@ -44,7 +38,8 @@ const ready = units.filter((u) => u.status === "ready");
 if (!ready.length) throw new Error("no link was extracted");
 
 step(`digesting ${ready.length} unit(s)`);
-const d = await digestAndStore({ apiKey: openaiKey, model, units: ready, request: process.env.DIGESTION_REQUEST ?? DEFAULT_CATEGORIZATION_REQUEST, store });
+const reserved = await reserveDigest(store, ready);
+const d = await digestAndStore({ reservation: reserved.reservation, apiKey: openaiKey, model, units: reserved.units, request: process.env.DIGESTION_REQUEST ?? DEFAULT_CATEGORIZATION_REQUEST, store });
 if (d.storeError) throw new Error(`could not store the digest: ${d.storeError}`);
 await write("2-digest.json", d.result);
 const artifacts = (d.stored ?? []) as StoredArtifact[];
@@ -78,7 +73,6 @@ for (const a of artifacts) {
   }
 }
 if (!skills.length) throw new Error("no skill was written");
-// Read back what the processor route would read, so the handoff runs on the stored rows when there is a database.
 const selected = db ? await new D1HandoffStore(db).loadSkills(skillIds) : uniqueSlugs(skills);
 for (const s of selected) await write(`3-skills/${s.slug}/SKILL.md`, s.skill_markdown);
 await write("3-skills/skills.json", selected);

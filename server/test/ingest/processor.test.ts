@@ -28,6 +28,26 @@ test("extracts a pending unit from its stored URL/start, fetches the title, and 
   assert.equal("project_context" in (calls.lastDigestRequest as object), false, "no project is sent to the model");
 });
 
+test("a unit deleted mid-extraction fails alone while the rest of the batch is extracted and digested", async () => {
+  const store = new MemoryStore();
+  const gone = pendingUnit("aaaaaaaaaaa"), kept = pendingUnit("VQy50fuxI34");
+  await store.saveUnit(gone);
+  await store.saveUnit(kept);
+  const saveUnit = store.saveUnit.bind(store);
+  store.saveUnit = async (u) => {
+    if (u.id !== gone.id) return saveUnit(u);
+    store.units.delete(u.id);
+    throw new Error(`unit ${u.id} does not exist`);
+  };
+  const { impl } = mockFetch();
+  const summary = await processUnits([gone.id, kept.id], base(store, impl));
+
+  assert.equal(summary.extracted.failed, 1);
+  assert.equal(summary.digested, 1);
+  assert.equal((await store.getUnits([kept.id]))[0].status, "ready");
+  assert.deepEqual(store.artifacts.map((a) => a.source_ids), [[kept.id]]);
+});
+
 test("a unit that already has a digest is skipped on a repeat request", async () => {
   const store = new MemoryStore();
   const unit = pendingUnit("VQy50fuxI34");
@@ -48,7 +68,7 @@ test("a unit the digest excluded is not sent to the model again", async () => {
   const { impl, calls } = mockFetch();
   await processUnits([unit.id], { ...base(store, impl), openaiKey: undefined });
   const promptId = await store.registerPrompt(promptRevisionText(DEFAULT_CATEGORIZATION_REQUEST), []);
-  await store.saveArtifacts([], [{ unit_id: unit.id, reason: "Nothing to explain." }], promptId);
+  await store.saveArtifacts([], [{ unit_id: unit.id, reason: "Nothing to explain." }], promptId, "unchecked-in-memory");
   const s = await processUnits([unit.id], base(store, impl));
   assert.match(s.skipped ?? "", /nothing new/);
   assert.equal(calls.openai, 0);
@@ -63,7 +83,7 @@ test("requests and sweeps reconsider exclusions from an older prompt without re-
     const { impl, calls } = mockFetch();
     await processUnits([unit.id], { ...base(store, impl), openaiKey: undefined });
     const oldPrompt = await store.registerPrompt("Engineering only", []);
-    await store.saveArtifacts([], [{ unit_id: unit.id, reason: "Off topic." }], oldPrompt);
+    await store.saveArtifacts([], [{ unit_id: unit.id, reason: "Off topic." }], oldPrompt, "unchecked-in-memory");
     if (sweep) assert.equal(await sweepOnce(base(store, impl)), 1);
     else assert.equal((await processUnits([unit.id], base(store, impl))).digested, 1);
     assert.equal(calls.gemini, 1);
@@ -176,7 +196,6 @@ test("POST /process requires the bearer token, validates the body, and returns 2
   assert.equal((await send(auth, { unit_ids: ["nope"] })).status, 400);
   assert.equal((await send(auth, { unit_ids: [] })).status, 400);
 
-  // An older caller that still sends `project` is accepted; the key is ignored.
   const res = await send(auth, { ...good, project: null });
   assert.equal(res.status, 202);
   assert.deepEqual(await res.json(), { accepted: 1 });
