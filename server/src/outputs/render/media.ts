@@ -1,16 +1,12 @@
-// Verify the stored size before saving a reference, so an incomplete upload cannot become a ready video.
-
 import { readFile, stat, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run } from "./ffmpeg.js";
 import { recordError } from "../../activity.js";
 
-/** How a stored file is referenced in D1 (media_ref, caption_ref, narration_ref); the web Worker resolves it. */
 export const r2Ref = (key: string) => `r2:${key}`;
 
 export interface MediaStore {
-  /** Uploads a local file under key and checks it's there with the same size. Returns `r2:<key>`. */
   put(key: string, file: string, contentType: string): Promise<string>;
   delete(key: string): Promise<void>;
 }
@@ -25,7 +21,6 @@ export async function discardMedia(media: MediaStore, refs: string[]) {
   }));
 }
 
-/** R2 through the processor Worker's /internal/media bridge, which holds the R2 binding; the container only has its bearer token. */
 export class WorkerMedia implements MediaStore {
   constructor(private o: { url: string; token: string; fetchImpl?: typeof fetch }) {}
   async put(key: string, file: string, contentType: string) {
@@ -45,11 +40,6 @@ export class WorkerMedia implements MediaStore {
   }
 }
 
-/**
- * Local development: writes into the web Worker's local R2 simulation with `wrangler r2 object put --local`,
- * the same store `npm run dev` in web/ serves /media/ from. MEDIA_LOCAL_WEB_DIR points at web/; set
- * MEDIA_LOCAL_PERSIST_TO when that dev server runs with --persist-to.
- */
 export class WranglerLocalMedia implements MediaStore {
   constructor(private o: { webDir: string; bucket: string; persistTo?: string }) {}
   private wrangler(args: string[]) {
@@ -76,6 +66,6 @@ export class WranglerLocalMedia implements MediaStore {
 export function mediaFromEnv(env: NodeJS.ProcessEnv = process.env): MediaStore | null {
   const bucket = env.R2_BUCKET ?? "resurface-media";
   if (env.MEDIA_LOCAL_WEB_DIR) return new WranglerLocalMedia({ webDir: env.MEDIA_LOCAL_WEB_DIR, bucket, persistTo: env.MEDIA_LOCAL_PERSIST_TO });
-  if (env.D1_URL && env.D1_TOKEN) return new WorkerMedia({ url: new URL("/internal/media", env.D1_URL).href, token: env.D1_TOKEN });
+  if (env.D1_URL && env.MEDIA_TOKEN) return new WorkerMedia({ url: new URL("/internal/media", env.D1_URL).href, token: env.MEDIA_TOKEN });
   return null;
 }

@@ -2,7 +2,6 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 import { decodeRow, type Database, type Statement } from '../../src/db.js';
 
-// Real SQLite, with the exact migration Wrangler applies to D1. No skipped database tests.
 export function testDatabase() {
   const sqlite = new DatabaseSync(':memory:');
   sqlite.exec('PRAGMA foreign_keys=ON');
@@ -14,7 +13,6 @@ export function testDatabase() {
   sqlite.exec(readFileSync(new URL('../../../web/migrations/0009_video_rejection_releases.sql', import.meta.url),'utf8'));
   const execute = (s: Statement) => {
     const query = sqlite.prepare(s.sql);
-    // SQLite's Node API binds ?NNN parameters by name, matching D1's positional bindings.
     const params = Object.fromEntries((s.params ?? []).flatMap((v,i) => s.sql.match(new RegExp('\\?' + (i+1) + '(?![0-9])')) ? [[String(i+1),v]] : []));
     const rows = query.all(params as Record<string, string | number | null>).map((r) => decodeRow(r));
     return { rows, rowCount: Number((sqlite.prepare('SELECT changes() AS n').get() as { n: number }).n) };

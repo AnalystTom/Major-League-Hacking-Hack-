@@ -19,36 +19,35 @@ import { decodeRow as decodeWebRow } from '../../../web/src/db.js';
 import type { RenderedVideo } from '../../src/outputs/types.js';
 
 async function setup() {
-  const { db,sqlite }=testDatabase();
-  const store=new D1Store(db),outputs=new D1OutputStore(db),handoffs=new D1HandoffStore(db);
-  const user=(await db.query("INSERT INTO users(email,password_hash) VALUES(?1,'x') RETURNING id",[`test-${randomUUID()}@example.com`])).rows[0].id;
+  const { db:raw,sqlite }=testDatabase();
+  const store=new D1Store(raw),outputs=new D1OutputStore(raw),handoffs=new D1HandoffStore(raw);
+  const user=(await raw.query("INSERT INTO users(email,password_hash) VALUES(?1,'x') RETURNING id",[`test-${randomUUID()}@example.com`])).rows[0].id;
   async function unit(status='pending') {
     const id=randomUUID();
-    await db.query(`INSERT INTO ingested_units(id,submitted_url,source_url,status,transcript) VALUES(?1,?2,?2,?3,?4)`,
+    await raw.query(`INSERT INTO ingested_units(id,submitted_url,source_url,status,transcript) VALUES(?1,?2,?2,?3,?4)`,
       [id,'https://www.youtube.com/watch?v=VQy50fuxI34',status,status==='ready' ? '{"evidence_items":[]}' : null]);
-    await db.query('INSERT INTO user_imports(user_id,unit_id) VALUES(?1,?2)',[user,id]);
+    await raw.query('INSERT INTO user_imports(user_id,unit_id) VALUES(?1,?2)',[user,id]);
     return id;
   }
   const prompt=await store.registerPrompt('test',[]);
   const videoOwners=new Map<string,string>();
   async function artifact(ids: string[]) {
     const a = (await store.saveArtifacts([{ name:'Check first',source_ids:ids,category:'Evals',processed_text:'content',selection_reason:'reason',evidence:[] }],[],prompt))[0];
-    await db.query('INSERT INTO user_skill_choices(user_id,artifact_id,artifact_version,kept,video_requested) VALUES(?1,?2,?3,1,1) ON CONFLICT DO NOTHING',[user,a.id,a.version]);
-    // Independent video fixtures use independent accounts; duplicate artifacts reuse their owner.
+    await raw.query('INSERT INTO user_skill_choices(user_id,artifact_id,artifact_version,kept,video_requested) VALUES(?1,?2,?3,1,1) ON CONFLICT DO NOTHING',[user,a.id,a.version]);
     let videoOwner=videoOwners.get(a.id);
     if (!videoOwner) {
       videoOwner=videoOwners.size===0 ? user : randomUUID();
       videoOwners.set(a.id,videoOwner);
       if (videoOwner!==user) {
-        await db.query("INSERT INTO users(id,email,password_hash) VALUES(?1,?2,'test')",[videoOwner,`video-${videoOwner}@example.test`]);
-        await db.query('INSERT INTO user_imports(user_id,unit_id) SELECT ?1,id FROM ingested_units WHERE id IN (SELECT value FROM json_each(?2))',[videoOwner,JSON.stringify(ids)]);
-        await db.query('INSERT INTO user_skill_choices(user_id,artifact_id,artifact_version,kept,video_requested) VALUES(?1,?2,?3,1,1)',[videoOwner,a.id,a.version]);
+        await raw.query("INSERT INTO users(id,email,password_hash) VALUES(?1,?2,'test')",[videoOwner,`video-${videoOwner}@example.test`]);
+        await raw.query('INSERT INTO user_imports(user_id,unit_id) SELECT ?1,id FROM ingested_units WHERE id IN (SELECT value FROM json_each(?2))',[videoOwner,JSON.stringify(ids)]);
+        await raw.query('INSERT INTO user_skill_choices(user_id,artifact_id,artifact_version,kept,video_requested) VALUES(?1,?2,?3,1,1)',[videoOwner,a.id,a.version]);
       }
     }
-    await db.query('INSERT INTO user_video_requests(user_id,artifact_id,artifact_version) VALUES(?1,?2,?3) ON CONFLICT DO NOTHING',[videoOwner,a.id,a.version]);
+    await raw.query('INSERT INTO user_video_requests(user_id,artifact_id,artifact_version) VALUES(?1,?2,?3) ON CONFLICT DO NOTHING',[videoOwner,a.id,a.version]);
     return a;
   }
-  return { db,sqlite,store,outputs,handoffs,user,unit,prompt,artifact };
+  return { db: raw,sqlite,store,outputs,handoffs,user,unit,prompt,artifact };
 }
 
 test('D1 stores preserve extraction, prompt revisions, artifacts and failed digest retry limits',async()=>{

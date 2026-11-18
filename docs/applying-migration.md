@@ -22,12 +22,15 @@ and processing start IDs as autoincrement integers. Artifact revisions remain im
 
 The Node container cannot receive a D1 binding directly. The processor Worker handles
 `POST /internal/d1` using its binding and `DB.batch()`, which runs each batch as one transaction.
-It authenticates this route with `INGEST_TOKEN` and never wakes the container for database calls.
-The container receives `D1_URL` and a `D1_TOKEN` derived from that token at startup. No Cloudflare
+It authenticates this route with `D1_BRIDGE_TOKEN`, accepts only the statements the container issues
+(`deploy/processor/src/d1-allowlist.js`), and never wakes the container for database calls.
+The container receives `D1_URL` and a `D1_TOKEN` from that secret at startup. No Cloudflare
 account API token or PostgreSQL credentials are passed to the container.
 
 For a standalone Node processor, set `D1_URL` to the processor Worker's `/internal/d1` URL and
-`D1_TOKEN` to its ingest token. Leave both unset only for ephemeral CLI/test runs.
+`D1_TOKEN` to the value of `D1_BRIDGE_TOKEN`. Leave both unset only for ephemeral CLI/test runs.
+Any change to a statement the container issues needs the allow-list updated in the same commit; the
+store tests fail until it is.
 
 ## Existing TigerData records
 

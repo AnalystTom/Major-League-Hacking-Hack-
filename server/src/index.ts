@@ -46,8 +46,6 @@ if (process.env.GEMINI_API_KEY) {
     store: db ? new D1Store(db) : new MemoryStore(),
     log: (m: string) => console.log(`[ingest] ${m}`),
   };
-  // Each ready artifact gets a concise skill and a rendered short (src/outputs). Renders need ffmpeg on
-  // this host and media storage: R2_* for the bucket, or MEDIA_LOCAL_WEB_DIR for local wrangler dev.
   const outputs = {
     outputs: db ? new D1OutputStore(db) : new MemoryOutputStore(),
     limits: options.limits,
@@ -72,7 +70,7 @@ if (process.env.GEMINI_API_KEY) {
   }
   console.log(`Processing limits: ${options.limits.daily} new units a day, ${options.limits.monthly} a month (UTC)`);
   console.log(`Ingestion mounted at /api/ingest (${db ? "D1, sweeping pending units and outputs" : "in-memory"}); ` +
-    `media: ${outputs.media ? outputs.media.constructor.name : "not configured, renders will fail with that reason"}`);
+    `media: ${outputs.media ? outputs.media.constructor.name : "not configured (set MEDIA_TOKEN with D1_URL, as the processor Worker secret MEDIA_UPLOAD_TOKEN, or R2_*/MEDIA_LOCAL_WEB_DIR); renders will fail"}`);
 }
 
 const port = Number(process.env.PORT ?? 3000);

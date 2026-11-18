@@ -38,7 +38,8 @@ test("WorkerMedia asks the processor bridge to delete a key and reports a refuse
   await assert.rejects(store(reply(500)).delete("audio/a/1/narration.m4a"), /delete of audio\/a\/1\/narration\.m4a failed: HTTP 500/);
 });
 
-test("mediaFromEnv uses the processor bridge when D1 is configured, and nothing otherwise", () => {
-  assert.ok(mediaFromEnv({ D1_URL: "https://p.example/internal/d1", D1_TOKEN: "t" }) instanceof WorkerMedia);
+test("mediaFromEnv uses the processor bridge only with its own media token", () => {
+  assert.ok(mediaFromEnv({ D1_URL: "https://p.example/internal/d1", MEDIA_TOKEN: "t" }) instanceof WorkerMedia);
+  assert.equal(mediaFromEnv({ D1_URL: "https://p.example/internal/d1", D1_TOKEN: "t" }), null);
   assert.equal(mediaFromEnv({}), null);
 });

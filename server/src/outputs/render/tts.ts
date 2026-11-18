@@ -1,5 +1,3 @@
-// Narration with Gemini TTS through the Interactions API. A unary reply is base64 WAV (16-bit PCM, mono, 24 kHz).
-
 import { httpError } from "../../httpError.js";
 import { geminiUsage, recordUsage } from "../../usage.js";
 
@@ -13,23 +11,18 @@ export interface TtsOptions {
   voice?: string;
   fetchImpl?: typeof fetch;
   retries?: number;
-  /** Workers AI through the processor Worker, used once Gemini is out of quota; defaults to D1_URL/D1_TOKEN. */
   fallback?: TtsFallback | null;
 }
 
-/** The processor Worker's /internal/tts bridge, which holds the Workers AI binding (deploy/processor/src/tts.js). */
 export interface TtsFallback { url: string; token: string }
 export const FALLBACK_TTS_MODEL = "workers-ai:@cf/deepgram/aura-2-en";
 export const ttsFallbackFromEnv = (env: NodeJS.ProcessEnv = process.env): TtsFallback | null =>
-  env.D1_URL && env.D1_TOKEN ? { url: new URL("/internal/tts", env.D1_URL).href, token: env.D1_TOKEN } : null;
+  env.D1_URL && env.TTS_TOKEN ? { url: new URL("/internal/tts", env.D1_URL).href, token: env.TTS_TOKEN } : null;
 
-// After a Gemini quota error, narrate with the fallback for an hour instead of spending retries on more 429s.
 const QUOTA_PAUSE_MS = 3_600_000;
 let geminiPausedUntil = 0;
-/** The voice the next narration uses: the Gemini model, or the fallback while Gemini is paused for quota. */
 export const narrationVoice = (model?: string, fallback = ttsFallbackFromEnv()) =>
   fallback && Date.now() < geminiPausedUntil ? FALLBACK_TTS_MODEL : model ?? TTS_MODEL;
-/** Test hook: forget a quota pause. */
 export const resetTtsQuotaPause = () => { geminiPausedUntil = 0; };
 
 async function speakWithFallback(text: string, f: TtsFallback, fetchImpl: typeof fetch): Promise<Buffer> {
@@ -44,7 +37,6 @@ async function speakWithFallback(text: string, f: TtsFallback, fetchImpl: typeof
   return bytes;
 }
 
-/** Wraps headerless 16-bit mono PCM in a WAV header, for replies that come back as raw audio/l16. */
 export function pcmToWav(pcm: Buffer, sampleRate = 24_000): Buffer {
   const h = Buffer.alloc(44);
   h.write("RIFF", 0); h.writeUInt32LE(36 + pcm.length, 4); h.write("WAVE", 8);
@@ -60,7 +52,6 @@ function audioFrom(body: any): string | undefined {
   return parts.filter((p) => p?.type === "audio" && typeof p.data === "string").at(-1)?.data ?? body?.output_audio?.data;
 }
 
-/** Speaks one passage and returns WAV bytes, or throws with the actual failure. Retries 429/5xx. */
 export async function synthesize(text: string, o: TtsOptions): Promise<Buffer> {
   const f = o.fetchImpl ?? fetch;
   const fallback = o.fallback === undefined ? ttsFallbackFromEnv() : o.fallback;
