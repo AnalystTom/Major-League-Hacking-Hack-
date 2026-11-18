@@ -99,10 +99,10 @@ function seed(sqlite) {
     { id: 'art-b', name: 'B only', source_url: 'https://x.com/b/status/3', source_ids: ['unit-b'], processed_text: 't', ingestion_status: 'ready' },
   ]);
   insert(sqlite, 'video_results', [
-    { id: 'vid-a', artifact_id: 'art-a', artifact_version: 1, status: 'ready', duration_seconds: 12, media_ref: 'r2:videos/art-a/1/short.mp4', caption_ref: 'r2:captions/art-a/1/short.vtt', narration_ref: 'r2:videos/art-a/1/narration.mp3', music_ref: 'https://example.com/music.mp3' },
-    { id: 'vid-shared', artifact_id: 'art-shared', artifact_version: 1, status: 'ready', duration_seconds: 12, media_ref: 'r2:videos/art-shared/1/short.mp4', caption_ref: 'r2:captions/art-shared/1/short.vtt', narration_ref: 'r2:videos/art-shared/1/narration.mp3' },
-    { id: 'vid-b', artifact_id: 'art-b', artifact_version: 1, status: 'ready', duration_seconds: 12, media_ref: 'r2:videos/art-b/1/short.mp4', caption_ref: 'r2:captions/art-b/1/short.vtt', narration_ref: 'r2:videos/art-b/1/narration.mp3' },
-    { id: 'vid-mixed', artifact_id: 'art-mixed', artifact_version: 1, status: 'ready', duration_seconds: 12, media_ref: 'r2:videos/art-mixed/1/short.mp4', caption_ref: 'r2:captions/art-mixed/1/short.vtt', narration_ref: 'r2:videos/art-mixed/1/narration.mp3', review_status: 'approved', review_feedback: { judge: 'short-judge-v1', passed: 1, captions_burned: 1 }, feed_order: 1 },
+    { id: 'vid-a', artifact_id: 'art-a', artifact_version: 1, status: 'ready', duration_seconds: 12, media_ref: 'r2:videos/art-a/1/short.mp4', caption_ref: 'r2:captions/art-a/1/short.vtt', narration_ref: 'r2:audio/art-a/1/narration.m4a', music_ref: 'https://example.com/music.mp3' },
+    { id: 'vid-shared', artifact_id: 'art-shared', artifact_version: 1, status: 'ready', duration_seconds: 12, media_ref: 'r2:videos/art-shared/1/short.mp4', caption_ref: 'r2:captions/art-shared/1/short.vtt', narration_ref: 'r2:audio/art-shared/1/narration.m4a' },
+    { id: 'vid-b', artifact_id: 'art-b', artifact_version: 1, status: 'ready', duration_seconds: 12, media_ref: 'r2:videos/art-b/1/short.mp4', caption_ref: 'r2:captions/art-b/1/short.vtt', narration_ref: 'r2:audio/art-b/1/narration.m4a' },
+    { id: 'vid-mixed', artifact_id: 'art-mixed', artifact_version: 1, status: 'ready', duration_seconds: 12, media_ref: 'r2:videos/art-mixed/1/short.mp4', caption_ref: 'r2:captions/art-mixed/1/short.vtt', narration_ref: 'r2:audio/art-mixed/1/narration.m4a', review_status: 'approved', review_feedback: { judge: 'short-judge-v1', passed: 1, captions_burned: 1 }, feed_order: 1 },
   ]);
   insert(sqlite, 'skill_results', [
     { id: 'skill-a', artifact_id: 'art-a', artifact_version: 1, status: 'ready', skill_markdown: '# a' },
@@ -230,10 +230,9 @@ test('DELETE /api/me removes every artifact built from the account units and eve
     }
 
     assert.deepEqual([...deleted].sort(), [
+      'audio/art-a/1/narration.m4a', 'audio/art-mixed/1/narration.m4a', 'audio/art-shared/1/narration.m4a',
       'captions/art-a/1/short.vtt', 'captions/art-mixed/1/short.vtt', 'captions/art-shared/1/short.vtt',
-      'videos/art-a/1/narration.mp3', 'videos/art-a/1/short.mp4',
-      'videos/art-mixed/1/narration.mp3', 'videos/art-mixed/1/short.mp4',
-      'videos/art-shared/1/narration.mp3', 'videos/art-shared/1/short.mp4',
+      'videos/art-a/1/short.mp4', 'videos/art-mixed/1/short.mp4', 'videos/art-shared/1/short.mp4',
     ]);
 
     assert.deepEqual(userRowCounts(sqlite, B), {

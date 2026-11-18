@@ -1,4 +1,4 @@
-import { isMediaKey } from "./media.js";
+import { isObjectKey } from "./media.js";
 
 const ownedUnits = "SELECT unit_id FROM user_imports WHERE user_id = ?1";
 const ownedArtifact = (artifact) => `EXISTS (SELECT 1 FROM json_each(${artifact}.source_ids) src WHERE src.value IN (${ownedUnits}))`;
@@ -13,7 +13,7 @@ export async function deleteAccount(env, userId) {
   const mediaKeys = [...new Set(mediaRows.flatMap((row) => Object.values(row))
     .filter((ref) => typeof ref === "string" && ref.startsWith("r2:"))
     .map((ref) => ref.slice(3))
-    .filter(isMediaKey))];
+    .filter(isObjectKey))];
   await Promise.all(mediaKeys.map((key) => env.MEDIA.delete(key)));
 
   await env.DB.batch([
