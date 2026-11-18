@@ -175,7 +175,7 @@ export class D1Store implements Store {
       WHERE id=?1 AND status='running' AND ?6 IN ('ready','failed')`,
       [u.id,u.title,u.transcript && JSON.stringify(u.transcript),u.extractionMethod,u.extractedAt?.toISOString() ?? null,u.status,u.error]);
     if (rowCount === 1) return;
-    if ((await this.getUnits([u.id])).length === 0) throw new Error(`new-link ingest is unsupported through the D1 bridge: unit ${u.id} does not exist, and production imports create units in the web app`);
+    if ((await this.getUnits([u.id])).length === 0) throw new Error(`unit ${u.id} does not exist: new links cannot be created through the D1 bridge (production imports create units in the web app), and a unit deleted mid-extraction also ends here`);
     throw new Error(`unit ${u.id} is not claimed for extraction; its result was not saved`);
   }
   async heartbeat(ids: string[]) {
@@ -275,19 +275,20 @@ export class D1Store implements Store {
     return results[1].rows[0].id as string;
   }
   async saveArtifacts(artifacts: DigestArtifact[], exclusions: Exclusion[], promptId: string | null, reservation: string) {
-    const units = await this.getUnits([...new Set(artifacts.flatMap((a) => a.source_ids))]);
     artifacts = artifacts.filter((a, i) => artifacts.findIndex((b) => JSON.stringify([...b.source_ids].sort()) === JSON.stringify([...a.source_ids].sort())) === i);
     const statements: Statement[] = artifacts.flatMap((a) => {
-      const src = a.source_ids.map((id) => units.find((u) => u.id===id)).filter((u): u is IngestedUnit => !!u);
-      const sources = src.map((u) => ({ url: u.sourceUrl,title: u.title,content_type: u.contentType,retrieved_at: u.extractedAt }));
-      const sameSources = `ingestion_status='ready' AND json_array_length(source_ids)=json_array_length(?3)
-        AND NOT EXISTS(SELECT 1 FROM json_each(source_ids) WHERE value NOT IN (SELECT value FROM json_each(?3)))`;
+      const sameSources = (ids: string) => `ingestion_status='ready' AND json_array_length(source_ids)=json_array_length(${ids})
+        AND NOT EXISTS(SELECT 1 FROM json_each(source_ids) WHERE value NOT IN (SELECT value FROM json_each(${ids})))`;
       return [{ sql: `INSERT INTO artifacts(name,source_url,source_ids,sources,processed_text,category,selection_reason,evidence,
-        digestion_prompt_id,ingestion_status,processed_at) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,'ready',${NOW}
-        WHERE NOT EXISTS(SELECT 1 FROM artifacts WHERE ${sameSources})
-          AND NOT EXISTS(SELECT 1 FROM json_each(?3) s WHERE NOT EXISTS(SELECT 1 FROM ingested_units u WHERE u.id=s.value AND ${RESERVED_FOR_DIGEST('u','?10')}))`,
-        params: [a.name,src[0]?.sourceUrl ?? '',JSON.stringify(a.source_ids),JSON.stringify(sources),a.processed_text,a.category,a.selection_reason,JSON.stringify(a.evidence),promptId,reservation] },
-        { sql: `SELECT * FROM artifacts WHERE ${sameSources} ORDER BY created_at DESC,id LIMIT 1`, params: [null,null,JSON.stringify(a.source_ids)] }];
+        digestion_prompt_id,ingestion_status,processed_at)
+        SELECT ?1,(SELECT u.source_url FROM ingested_units u WHERE u.id=json_extract(?2,'$[0]')),?2,
+          (SELECT json_group_array(json(x)) FROM (SELECT json_object('url',u.source_url,'title',u.title,'content_type',u.content_type,'retrieved_at',u.extracted_at) AS x
+            FROM json_each(?2) s JOIN ingested_units u ON u.id=s.value ORDER BY s.key)),
+          ?3,?4,?5,?6,?7,'ready',${NOW}
+        WHERE json_array_length(?2)>0 AND NOT EXISTS(SELECT 1 FROM artifacts WHERE ${sameSources('?2')})
+          AND NOT EXISTS(SELECT 1 FROM json_each(?2) s WHERE NOT EXISTS(SELECT 1 FROM ingested_units u WHERE u.id=s.value AND ${RESERVED_FOR_DIGEST('u','?8')}))`,
+        params: [a.name,JSON.stringify(a.source_ids),a.processed_text,a.category,a.selection_reason,JSON.stringify(a.evidence),promptId,reservation] },
+        { sql: `SELECT * FROM artifacts WHERE ${sameSources('?3')} ORDER BY created_at DESC,id LIMIT 1`, params: [null,null,JSON.stringify(a.source_ids)] }];
     });
     if (promptId) for (const e of exclusions) statements.push({ sql: `INSERT INTO artifact_exclusions(unit_id,digestion_prompt_id,reason)
       SELECT ?1,?2,?3 WHERE EXISTS(SELECT 1 FROM ingested_units u WHERE u.id=?1 AND ${RESERVED_FOR_DIGEST('u','?4')})`, params: [e.unit_id,promptId,e.reason,reservation] });

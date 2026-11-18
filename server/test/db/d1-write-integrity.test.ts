@@ -133,9 +133,9 @@ test('forged artifact, failure and exclusion writes are refused without the cont
     const prompt = await s.prompt();
     const artifacts = await s.count('SELECT count(*) AS n FROM artifacts');
     const forgedArtifact = (sourceIds: string[], reservation: string) => s.db.query(READY_ARTIFACT,
-      ['Planted skill', 'https://example.test', JSON.stringify(sourceIds), '[]', 'forged text', 'Evals', 'forged', '[]', prompt, reservation]);
+      ['Planted skill', JSON.stringify(sourceIds), 'forged text', 'Evals', 'forged', '[]', prompt, reservation]);
 
-    for (const sources of [[waiting], [digested], [digested, waiting], [randomUUID()]]) {
+    for (const sources of [[waiting], [digested], [digested, waiting], [randomUUID()], []]) {
       assert.equal((await forgedArtifact(sources, randomUUID())).rowCount, 0, `artifact from ${sources.length} source(s)`);
     }
     assert.equal((await s.db.query(FAILED_ARTIFACT, [waiting, prompt, 'forged failure', randomUUID()])).rowCount, 0);
@@ -147,12 +147,28 @@ test('forged artifact, failure and exclusion writes are refused without the cont
   } finally { s.sqlite.close(); }
 });
 
+test('a ready artifact takes its attribution from the reserved unit rows', async () => {
+  const s = await setup();
+  try {
+    const waiting = await s.importVideo('aaaaaaaaaaa');
+    await processUnits([waiting], s.options(mockFetch().impl, { digest: false }));
+    const unit = await s.unit(waiting);
+    const token = randomUUID();
+    assert.equal((await s.db.query(RESERVE_DIGEST, [...UNSPENT, waiting, token])).rowCount, 1);
+    const prompt = await s.prompt();
+    assert.equal((await s.db.query(READY_ARTIFACT, ['Real skill', JSON.stringify([waiting]), 'text', 'Evals', 'reason', '[]', prompt, token])).rowCount, 1);
+    const [row] = (await s.direct.query('SELECT source_url, sources FROM artifacts WHERE source_ids=?1', [JSON.stringify([waiting])])).rows;
+    assert.equal(row.source_url, unit.source_url);
+    assert.deepEqual(row.sources, [{ url: unit.source_url, title: unit.title, content_type: unit.content_type, retrieved_at: unit.extracted_at }]);
+  } finally { s.sqlite.close(); }
+});
+
 test('a new link cannot be created through the D1 bridge and leaves no unit behind', async () => {
   const s = await setup();
   try {
     const link = randomUUID();
     const unit = { id: link, submittedUrl: 'https://www.youtube.com/watch?v=VQy50fuxI34', sourceUrl: 'https://www.youtube.com/watch?v=VQy50fuxI34', startSeconds: null, title: 'New', transcript: null, extractionMethod: 'gemini', extractedAt: new Date(), status: 'failed' as const, error: 'x' };
-    await assert.rejects(s.store.saveUnit(unit), /new-link ingest is unsupported through the D1 bridge: unit .* does not exist, and production imports create units in the web app/);
+    await assert.rejects(s.store.saveUnit(unit), /unit .* does not exist: new links cannot be created through the D1 bridge/);
     assert.equal(await s.count('SELECT count(*) AS n FROM ingested_units WHERE id=?1', link), 0);
   } finally { s.sqlite.close(); }
 });
