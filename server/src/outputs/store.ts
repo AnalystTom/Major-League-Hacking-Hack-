@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { Database } from "../db.js";
 import { UNLIMITED, type Limits } from "../ingest/limits.js";
 import { available, limitParams, NOW } from "../ingest/ledger.js";
-import { STALE_CLAIM_MINUTES } from "../claims.js";
+import { EXHAUSTED_CLAIM_ERROR, STALE_CLAIM_MINUTES } from "../claims.js";
 import { sourceRefs, type GeneratedSkill, type ReadyArtifact, type RenderedVideo, type ShortJudgment } from "./types.js";
 import type { SkillCard } from "./render/motion-skill.js";
 import { SKILL_PROMPT_REVISION } from "./skills.js";
@@ -25,6 +25,9 @@ const CLAIMABLE = (r: string, kind: Kind) => `(${r}.status = 'pending'
       AND julianday(${r}.updated_at) < julianday('now', '-${STALE_CLAIM_MINUTES} minutes'))
   OR (${r}.status = 'failed' AND ${r}.attempts < ${MAX_OUTPUT_ATTEMPTS}
       AND julianday(${r}.updated_at) < julianday('now', '-' || (${RETRY_AFTER_MINUTES} * ${r}.attempts) || ' minutes')))`;
+
+const EXHAUSTED_RUNNING = (r: string) => `(${r}.status = 'running' AND NOT (${regenerating(r)}) AND ${r}.attempts >= ${MAX_OUTPUT_ATTEMPTS}
+  AND julianday(${r}.updated_at) < julianday('now', '-${STALE_CLAIM_MINUTES} minutes'))`;
 
 export interface Claim { id: string; token: string }
 
@@ -74,11 +77,16 @@ function rowToArtifact(r: any): ReadyArtifact {
 
 export class D1OutputStore implements OutputStore {
   constructor(private db: Database) {}
+  private async failExhausted(kind: Kind) {
+    await this.db.query(`UPDATE ${TABLE[kind]} SET status='failed',error=?1,claim_token=NULL,updated_at=${NOW}
+      WHERE ${EXHAUSTED_RUNNING(TABLE[kind])}`, [EXHAUSTED_CLAIM_ERROR]);
+  }
   async videoRequested(a: ReadyArtifact) {
     const { rows } = await this.db.query(`SELECT a.id FROM artifacts a WHERE a.id=?1 AND a.version=?2 AND ${VIDEO_REQUESTED}`, [a.id,a.version]);
     return rows.length > 0;
   }
   async artifactsNeeding(kind: Kind, limit: number) {
+    await this.failExhausted(kind);
     const { rows } = await this.db.query(`SELECT a.* FROM artifacts a
       WHERE a.ingestion_status='ready' AND a.digestion_prompt_id IS NOT NULL
       ${kind === 'video' ? `AND ${VIDEO_REQUESTED}` : ''}
@@ -89,6 +97,7 @@ export class D1OutputStore implements OutputStore {
     return rows.map(rowToArtifact);
   }
   async claim(kind: Kind, a: ReadyArtifact, limits = UNLIMITED) {
+    await this.failExhausted(kind);
     const t = TABLE[kind], token = randomUUID();
     const [claimed] = await this.db.batch([{ sql: `INSERT INTO ${t}(artifact_id,artifact_version,status,updated_at,claim_token,attempts,review_feedback)
       SELECT ?1,?2,'running',${NOW},?3,1,${kind === 'video' ? `json_object('generator_revision','${VIDEO_GENERATOR_REVISION}')` : 'NULL'}

@@ -13,6 +13,7 @@ import { mockFetch } from '../ingest/helpers.js';
 import { UNLIMITED } from '../../src/ingest/limits.js';
 import { DEFAULT_CATEGORIZATION_REQUEST, promptRevisionText } from '../../src/ingest/digest/prompt.js';
 import { SKILL_PROMPT_REVISION } from '../../src/outputs/skills.js';
+import { EXHAUSTED_CLAIM_ERROR } from '../../src/claims.js';
 import { readFeed, canReadMedia } from '../../../web/src/feed.js';
 import { decodeRow as decodeWebRow } from '../../../web/src/db.js';
 import type { RenderedVideo } from '../../src/outputs/types.js';
@@ -498,6 +499,11 @@ test('a render that keeps crashing while holding its claim is reclaimed only up 
     }
     assert.equal(reclaimed.filter(Boolean).length,MAX_OUTPUT_ATTEMPTS);
     assert.equal((await s.db.query('SELECT attempts FROM skill_results')).rows[0].attempts,MAX_OUTPUT_ATTEMPTS);
+    await s.outputs.artifactsNeeding('skill',50);
+    const row=(await s.db.query('SELECT status,error FROM skill_results')).rows[0];
+    assert.equal(row.status,'failed','an exhausted claim is settled, not left running');
+    assert.equal(row.error,EXHAUSTED_CLAIM_ERROR);
+    assert.equal(await s.outputs.claim('skill',a,UNLIMITED),null);
   } finally {s.sqlite.close();}
 });
 
@@ -512,6 +518,10 @@ test('an extraction that keeps dying while holding its claim is reclaimed only u
     }
     assert.equal(claimed.reduce((n,c)=>n+c,0),MAX_EXTRACT_ATTEMPTS);
     assert.equal((await s.db.query("SELECT count(*) AS n FROM processing_starts WHERE unit_id=?1 AND kind='extract'",[id])).rows[0].n,MAX_EXTRACT_ATTEMPTS);
+    await s.store.listPendingUnitIds(10);
+    const unit=(await s.store.getUnits([id]))[0];
+    assert.equal(unit.status,'failed','an exhausted extraction is settled, not left running');
+    assert.equal(unit.error,EXHAUSTED_CLAIM_ERROR);
   } finally {s.sqlite.close();}
 });
 

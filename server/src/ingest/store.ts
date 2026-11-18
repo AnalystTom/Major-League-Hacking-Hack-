@@ -3,7 +3,7 @@ import type { Database, Statement } from "../db.js";
 import type { DigestArtifact, IngestedUnit, StoredArtifact } from "./types.js";
 import { remaining, resumesAt, type Limits } from "./limits.js";
 import { available, deferredUntil, limitParams, NOW, USED_DAY, USED_MONTH } from "./ledger.js";
-import { STALE_CLAIM_MINUTES } from "../claims.js";
+import { EXHAUSTED_CLAIM_ERROR, STALE_CLAIM_MINUTES } from "../claims.js";
 
 export interface Claimed { claimed: IngestedUnit[]; deferred: string[]; resumesAt: Date | null }
 export interface Reserved { allowed: string[]; deferred: string[]; resumesAt: Date | null }
@@ -151,9 +151,10 @@ function rowToUnit(r: any): IngestedUnit {
   };
 }
 
-const CLAIMABLE = (u: string) => `(${u}.status = 'pending' OR (${u}.status = 'running'
-  AND (${u}.claimed_at IS NULL OR julianday(${u}.claimed_at) < julianday('now', '-${STALE_CLAIM_MINUTES} minutes'))
-  AND (SELECT count(*) FROM processing_starts p WHERE p.unit_id = ${u}.id AND p.kind = 'extract') < ${MAX_EXTRACT_ATTEMPTS}))`;
+const EXTRACT_STARTS = (u: string) => `(SELECT count(*) FROM processing_starts p WHERE p.unit_id = ${u}.id AND p.kind = 'extract')`;
+const STALE_UNIT = (u: string) => `(${u}.claimed_at IS NULL OR julianday(${u}.claimed_at) < julianday('now', '-${STALE_CLAIM_MINUTES} minutes'))`;
+const CLAIMABLE = (u: string) => `(${u}.status = 'pending' OR (${u}.status = 'running' AND ${STALE_UNIT(u)} AND ${EXTRACT_STARTS(u)} < ${MAX_EXTRACT_ATTEMPTS}))`;
+const EXHAUSTED = (u: string) => `(${u}.status = 'running' AND ${STALE_UNIT(u)} AND ${EXTRACT_STARTS(u)} >= ${MAX_EXTRACT_ATTEMPTS})`;
 const UNSEEN_BY = (user: string) => `NOT EXISTS (
   SELECT 1 FROM artifacts a WHERE EXISTS (SELECT 1 FROM json_each(a.source_ids) WHERE value = u.id)
     AND a.ingestion_status <> 'failed'
@@ -180,7 +181,11 @@ export class D1Store implements Store {
   async listReadyUnits() {
     return (await this.db.query(`SELECT * FROM ingested_units WHERE status='ready' ORDER BY created_at`)).rows.map(rowToUnit);
   }
+  private async failExhaustedUnits() {
+    await this.db.query(`UPDATE ingested_units SET status='failed',error=?1 WHERE ${EXHAUSTED('ingested_units')}`, [EXHAUSTED_CLAIM_ERROR]);
+  }
   async claimPendingUnits(ids?: string[], limit = 50) {
+    await this.failExhaustedUnits();
     const { rows } = await this.db.query(`UPDATE ingested_units SET status='running',claimed_at=${NOW}
       WHERE id IN (SELECT id FROM ingested_units WHERE ${CLAIMABLE('ingested_units')}
         AND (?1 IS NULL OR id IN (SELECT value FROM json_each(?1))) ORDER BY created_at LIMIT ?2) RETURNING *`,
@@ -190,6 +195,7 @@ export class D1Store implements Store {
   async claimWithinLimits(ids: string[], limits: Limits): Promise<Claimed> {
     const token = randomUUID();
     const params = [...limitParams(limits), JSON.stringify(ids), token];
+    await this.failExhaustedUnits();
     const results = await this.db.batch([
       { sql: `INSERT INTO processing_starts(unit_id,kind,charged,batch_token)
         SELECT id,'extract',1,?4 FROM ingested_units WHERE ${CLAIMABLE('ingested_units')} AND id IN (SELECT value FROM json_each(?3))
@@ -223,6 +229,7 @@ export class D1Store implements Store {
     return { allowed: ids.filter((id) => allowed.has(id)),deferred: ids.filter((id) => !allowed.has(id)),resumesAt: deferred.length ? new Date(deferred[0].deferred_until) : null };
   }
   async listPendingUnitIds(limit: number) {
+    await this.failExhaustedUnits();
     const { rows } = await this.db.query(`SELECT u.id FROM ingested_units u WHERE ${CLAIMABLE('u')}
       AND EXISTS(SELECT 1 FROM user_imports ui WHERE ui.unit_id=u.id) ORDER BY u.created_at LIMIT ?1`, [limit]);
     return rows.map((r) => r.id as string);
