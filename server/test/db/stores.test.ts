@@ -4,8 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { testDatabase } from './helpers.js';
-import { D1Store, MAX_EXTRACT_ATTEMPTS } from '../../src/ingest/store.js';
-import { D1OutputStore, MAX_OUTPUT_ATTEMPTS } from '../../src/outputs/store.js';
+import { D1Store } from '../../src/ingest/store.js';
+import { D1OutputStore } from '../../src/outputs/store.js';
 import { D1HandoffStore } from '../../src/outputs/handoff-store.js';
 import { saveUsage } from '../../src/usage.js';
 import { processUnits, sweepOnce } from '../../src/ingest/processor.js';
@@ -13,7 +13,6 @@ import { mockFetch } from '../ingest/helpers.js';
 import { UNLIMITED } from '../../src/ingest/limits.js';
 import { DEFAULT_CATEGORIZATION_REQUEST, promptRevisionText } from '../../src/ingest/digest/prompt.js';
 import { SKILL_PROMPT_REVISION } from '../../src/outputs/skills.js';
-import { EXHAUSTED_CLAIM_ERROR } from '../../src/claims.js';
 import { readFeed, canReadMedia } from '../../../web/src/feed.js';
 import { decodeRow as decodeWebRow } from '../../../web/src/db.js';
 import type { RenderedVideo } from '../../src/outputs/types.js';
@@ -493,16 +492,16 @@ test('a render that keeps crashing while holding its claim is reclaimed only up 
   try {
     const a=await s.artifact([await s.unit('ready')]);
     const reclaimed:boolean[]=[];
-    for (let crash=0;crash<MAX_OUTPUT_ATTEMPTS+3;crash++) {
+    for (let crash=0;crash<6;crash++) {
       reclaimed.push(await s.outputs.claim('skill',a,UNLIMITED)!==null);
       await s.db.query("UPDATE skill_results SET updated_at='2000-01-01'");
     }
-    assert.equal(reclaimed.filter(Boolean).length,MAX_OUTPUT_ATTEMPTS);
-    assert.equal((await s.db.query('SELECT attempts FROM skill_results')).rows[0].attempts,MAX_OUTPUT_ATTEMPTS);
+    assert.equal(reclaimed.filter(Boolean).length,3);
+    assert.equal((await s.db.query('SELECT attempts FROM skill_results')).rows[0].attempts,3);
     await s.outputs.artifactsNeeding('skill',50);
     const row=(await s.db.query('SELECT status,error FROM skill_results')).rows[0];
     assert.equal(row.status,'failed','an exhausted claim is settled, not left running');
-    assert.equal(row.error,EXHAUSTED_CLAIM_ERROR);
+    assert.equal(row.error,'stopped responding after the maximum attempts');
     assert.equal(await s.outputs.claim('skill',a,UNLIMITED),null);
   } finally {s.sqlite.close();}
 });
@@ -512,16 +511,16 @@ test('an extraction that keeps dying while holding its claim is reclaimed only u
   try {
     const id=await s.unit();
     const claimed:number[]=[];
-    for (let crash=0;crash<MAX_EXTRACT_ATTEMPTS+3;crash++) {
+    for (let crash=0;crash<6;crash++) {
       claimed.push((await s.store.claimWithinLimits([id],UNLIMITED)).claimed.length);
       await s.db.query("UPDATE ingested_units SET claimed_at='2000-01-01'");
     }
-    assert.equal(claimed.reduce((n,c)=>n+c,0),MAX_EXTRACT_ATTEMPTS);
-    assert.equal((await s.db.query("SELECT count(*) AS n FROM processing_starts WHERE unit_id=?1 AND kind='extract'",[id])).rows[0].n,MAX_EXTRACT_ATTEMPTS);
+    assert.equal(claimed.reduce((n,c)=>n+c,0),3);
+    assert.equal((await s.db.query("SELECT count(*) AS n FROM processing_starts WHERE unit_id=?1 AND kind='extract'",[id])).rows[0].n,3);
     await s.store.listPendingUnitIds(10);
     const unit=(await s.store.getUnits([id]))[0];
     assert.equal(unit.status,'failed','an exhausted extraction is settled, not left running');
-    assert.equal(unit.error,EXHAUSTED_CLAIM_ERROR);
+    assert.equal(unit.error,'stopped responding after the maximum attempts');
   } finally {s.sqlite.close();}
 });
 
