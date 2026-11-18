@@ -19,9 +19,11 @@ Each account has **one lifetime video slot**, recorded by the primary key on
 keeps that skill. The server rejects a second selection, even with parallel requests,
 a new session or a different artifact version. Duplicate submissions for the same
 selection are idempotent. Retries work on that same video; a failure does not create
-a fresh account allowance. Historical allocations are backfilled without deleting
-existing videos or media; a failed historical video does not use the slot. Shared source/approved-video reuse and the public catalogue
-remain available.
+a fresh account allowance. A video the quality judge rejects releases the slot once,
+so the account can choose another kept skill; the release is recorded in
+`video_rejection_releases` (migration `0009`). Historical allocations are backfilled
+without deleting existing videos or media; a failed historical video does not use the
+slot. Shared source/approved-video reuse and the public catalogue remain available.
 
 Two atomic database controls bound new work across all accounts:
 
@@ -61,8 +63,9 @@ not a new paid measurement or a guaranteed unit price.
 At that observed rate, a fully used allowance of **20 video starts × USD 0.45 is
 about USD 9/day globally**; **400 × USD 0.45 is about USD 180/month**. This is the
 worst-case allowance calculation **at the observed unit rate**, not a hard dollar
-ceiling. One account gets one video, with retries of that same allocation counted
-against these global limits. Do not quote USD 9 as a guaranteed per-user bill cap.
+ceiling. One account gets one video at a time, with retries of that same allocation
+counted against these global limits; a judge-rejected video releases its slot once.
+Do not quote USD 9 as a guaranteed per-user bill cap.
 
 Token/narration length, internal validation calls, two render/judge rounds,
 extraction/digestion, hosting/storage and optional X reads can vary or add cost.
