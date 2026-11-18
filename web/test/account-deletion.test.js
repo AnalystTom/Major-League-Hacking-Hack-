@@ -13,7 +13,7 @@ import { createUnits } from '../src/imports.js';
 const MIGRATIONS = [
   '0002_application.sql', '0003_video_duration.sql', '0004_usage_events.sql', '0005_skill_choices.sql',
   '0005_x_oauth.sql', '0006_x_read_budget.sql', '0007_video_limits.sql', '0008_signup_events.sql',
-  '0010_anonymous_spend_ledgers.sql',
+  '0009_video_rejection_releases.sql', '0010_anonymous_spend_ledgers.sql',
 ];
 const A = 'user-a';
 const B = 'user-b';
@@ -49,7 +49,7 @@ function database({ mediaDelete } = {}) {
     },
   };
   const env = {
-    DB, MEDIA,
+    DB, MEDIA, SHORTS: 'on',
     USER_DAILY_IMPORT_LIMIT: '1000',
     SIGNUP_IP_DAILY_LIMIT: '1000',
     AUTH_LIMITER: { async limit() { return { success: true }; } },
