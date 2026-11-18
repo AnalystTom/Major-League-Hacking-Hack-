@@ -17,6 +17,9 @@ export async function deleteAccount(env, userId) {
   await Promise.all(mediaKeys.map((key) => env.MEDIA.delete(key)));
 
   await env.DB.batch([
+    env.DB.prepare(`DELETE FROM agent_briefs WHERE EXISTS (SELECT 1 FROM json_each(agent_briefs.skill_result_ids) ref
+      WHERE ref.value IN (SELECT s.id FROM skill_results s JOIN artifacts a ON a.id = s.artifact_id AND a.version = s.artifact_version
+        WHERE ${ownedArtifact("a")}))`).bind(userId),
     env.DB.prepare(`
       DELETE FROM handoffs WHERE EXISTS (SELECT 1 FROM skill_results s JOIN artifacts a ON a.id = s.artifact_id AND a.version = s.artifact_version
         WHERE s.id = handoffs.skill_result_id AND ${ownedArtifact("a")})`).bind(userId),
