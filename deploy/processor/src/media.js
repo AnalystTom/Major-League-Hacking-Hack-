@@ -6,6 +6,15 @@ export async function media(request, env) {
   if (!env.MEDIA) return Response.json({ error: 'R2 is not configured' }, { status: 503 });
   const key = new URL(request.url).searchParams.get('key') ?? '';
   if (!KEY.test(key)) return new Response('Invalid key', { status: 400 });
+  if (request.method === 'DELETE') {
+    try {
+      await env.MEDIA.delete(key);
+      return Response.json({ deleted: true });
+    } catch (e) {
+      console.error('R2 delete failed', e.message);
+      return Response.json({ error: 'R2 delete failed' }, { status: 500 });
+    }
+  }
   const size = Number(request.headers.get('content-length'));
   if (!Number.isInteger(size) || size <= 0 || size > MAX_BYTES) return new Response('Invalid size', { status: 413 });
   try {
