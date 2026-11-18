@@ -278,19 +278,21 @@ export class D1Store implements Store {
         AND NOT EXISTS(SELECT 1 FROM json_each(source_ids) WHERE value NOT IN (SELECT value FROM json_each(?3)))`;
       return [{ sql: `INSERT INTO artifacts(name,source_url,source_ids,sources,processed_text,category,selection_reason,evidence,
         digestion_prompt_id,ingestion_status,processed_at) SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,'ready',${NOW}
-        WHERE NOT EXISTS(SELECT 1 FROM artifacts WHERE ${sameSources})`,
+        WHERE NOT EXISTS(SELECT 1 FROM artifacts WHERE ${sameSources})
+          AND NOT EXISTS(SELECT 1 FROM json_each(?3) s WHERE NOT EXISTS(SELECT 1 FROM ingested_units u WHERE u.id=s.value))`,
         params: [a.name,src[0]?.sourceUrl ?? '',JSON.stringify(a.source_ids),JSON.stringify(sources),a.processed_text,a.category,a.selection_reason,JSON.stringify(a.evidence),promptId] },
         { sql: `SELECT * FROM artifacts WHERE ${sameSources} ORDER BY created_at DESC,id LIMIT 1`, params: [null,null,JSON.stringify(a.source_ids)] }];
     });
-    if (promptId) for (const e of exclusions) statements.push({ sql: `INSERT INTO artifact_exclusions(unit_id,digestion_prompt_id,reason) VALUES(?1,?2,?3)`, params: [e.unit_id,promptId,e.reason] });
+    if (promptId) for (const e of exclusions) statements.push({ sql: `INSERT INTO artifact_exclusions(unit_id,digestion_prompt_id,reason)
+      SELECT ?1,?2,?3 WHERE EXISTS(SELECT 1 FROM ingested_units WHERE id=?1)`, params: [e.unit_id,promptId,e.reason] });
     const results = await this.db.batch(statements);
-    return artifacts.map((a,i) => ({ ...a,...results[i*2+1].rows[0] })) as StoredArtifact[];
+    return artifacts.flatMap((a,i) => results[i*2+1].rows[0] ? [{ ...a,...results[i*2+1].rows[0] } as StoredArtifact] : []);
   }
   async saveFailedArtifacts(ids: string[], error: string, promptId: string | null) {
     const statements: Statement[] = (await this.getUnits(ids)).map((u) => ({
       sql: `INSERT INTO artifacts(name,source_url,source_ids,sources,digestion_prompt_id,ingestion_status,error,processed_at)
-        VALUES('Digestion failed',?1,?2,?3,?4,'failed',?5,${NOW})`,
-      params: [u.sourceUrl,JSON.stringify([u.id]),JSON.stringify([{ url:u.sourceUrl,title:u.title,content_type:u.contentType,retrieved_at:u.extractedAt }]),promptId,error],
+        SELECT 'Digestion failed',?1,?2,?3,?4,'failed',?5,${NOW} WHERE EXISTS(SELECT 1 FROM ingested_units WHERE id=?6)`,
+      params: [u.sourceUrl,JSON.stringify([u.id]),JSON.stringify([{ url:u.sourceUrl,title:u.title,content_type:u.contentType,retrieved_at:u.extractedAt }]),promptId,error,u.id],
     }));
     await this.db.batch(statements);
   }
