@@ -1,15 +1,19 @@
 import { isMediaKey } from "./media.js";
 
-const artifactKey = (row) => `${row.id}@${row.version}`;
 const json = (values) => JSON.stringify(values);
+
+const ownedUnitIds = `SELECT owned.unit_id FROM user_imports owned
+  WHERE owned.user_id = ? AND NOT EXISTS (SELECT 1 FROM user_imports other WHERE other.unit_id = owned.unit_id AND other.user_id <> owned.user_id)`;
+const doomedArtifact = (artifact) => `EXISTS (SELECT 1 FROM json_each(${artifact}.source_ids) s WHERE s.value IN (${ownedUnitIds}))`;
+const doomedChild = (table) => `EXISTS (SELECT 1 FROM artifacts a
+  WHERE a.id = ${table}.artifact_id AND a.version = ${table}.artifact_version AND ${doomedArtifact("a")})`;
 
 export async function deleteAccount(env, sql, userId) {
   const unitIds = (await sql`SELECT unit_id FROM user_imports WHERE user_id = ${userId}`).map((r) => r.unit_id);
-  const sharedUnitIds = [...new Set((await sql`
+  const sharedUnitIds = new Set((await sql`
     SELECT DISTINCT unit_id FROM user_imports
-    WHERE user_id <> ${userId} AND unit_id IN (SELECT value FROM json_each(${json(unitIds)}))`).map((r) => r.unit_id))];
-  const sharedSet = new Set(sharedUnitIds);
-  const deletedUnitIds = unitIds.filter((id) => !sharedSet.has(id));
+    WHERE user_id <> ${userId} AND unit_id IN (SELECT value FROM json_each(${json(unitIds)}))`).map((r) => r.unit_id));
+  const deletedUnitIds = unitIds.filter((id) => !sharedUnitIds.has(id));
 
   const doomed = await sql`
     SELECT id, version FROM artifacts
@@ -26,24 +30,20 @@ export async function deleteAccount(env, sql, userId) {
     .filter(isMediaKey))];
   await Promise.all(mediaKeys.map((key) => env.MEDIA.delete(key)));
 
-  const forDoomedArtifacts = (table) => `
-    EXISTS (SELECT 1 FROM json_each(?) p
-      WHERE ${table}.artifact_id = json_extract(p.value, '$.id') AND ${table}.artifact_version = json_extract(p.value, '$.version'))`;
   await env.DB.batch([
+    env.DB.prepare(`
+      DELETE FROM handoffs WHERE EXISTS (SELECT 1 FROM skill_results s JOIN artifacts a ON a.id = s.artifact_id AND a.version = s.artifact_version
+        WHERE s.id = handoffs.skill_result_id AND ${doomedArtifact("a")})`).bind(userId),
+    env.DB.prepare(`DELETE FROM skill_results WHERE ${doomedChild("skill_results")}`).bind(userId),
+    env.DB.prepare(`DELETE FROM video_results WHERE ${doomedChild("video_results")}`).bind(userId),
+    env.DB.prepare(`DELETE FROM video_starts WHERE ${doomedChild("video_starts")}`).bind(userId),
+    env.DB.prepare(`DELETE FROM user_skill_choices WHERE ${doomedChild("user_skill_choices")}`).bind(userId),
+    env.DB.prepare(`DELETE FROM user_video_requests WHERE ${doomedChild("user_video_requests")}`).bind(userId),
+    env.DB.prepare(`DELETE FROM artifacts WHERE ${doomedArtifact("artifacts")}`).bind(userId),
+    env.DB.prepare(`UPDATE ingested_units SET submitted_url = source_url
+      WHERE id IN (SELECT unit_id FROM user_imports WHERE user_id = ?)`).bind(userId),
     env.DB.prepare("DELETE FROM users WHERE id = ?").bind(userId),
-    env.DB.prepare(`
-      DELETE FROM handoffs WHERE EXISTS (SELECT 1 FROM skill_results s JOIN json_each(?) p
-        ON s.artifact_id = json_extract(p.value, '$.id') AND s.artifact_version = json_extract(p.value, '$.version')
-        WHERE s.id = handoffs.skill_result_id)`).bind(artifactPairs),
-    env.DB.prepare(`DELETE FROM skill_results WHERE ${forDoomedArtifacts("skill_results")}`).bind(artifactPairs),
-    env.DB.prepare(`DELETE FROM video_results WHERE ${forDoomedArtifacts("video_results")}`).bind(artifactPairs),
-    env.DB.prepare(`DELETE FROM video_starts WHERE ${forDoomedArtifacts("video_starts")}`).bind(artifactPairs),
-    env.DB.prepare(`DELETE FROM user_skill_choices WHERE ${forDoomedArtifacts("user_skill_choices")}`).bind(artifactPairs),
-    env.DB.prepare(`DELETE FROM user_video_requests WHERE ${forDoomedArtifacts("user_video_requests")}`).bind(artifactPairs),
-    env.DB.prepare(`
-      DELETE FROM artifacts WHERE EXISTS (SELECT 1 FROM json_each(?) p
-        WHERE artifacts.id = json_extract(p.value, '$.id') AND artifacts.version = json_extract(p.value, '$.version'))`).bind(artifactPairs),
-    env.DB.prepare("UPDATE ingested_units SET submitted_url = source_url WHERE id IN (SELECT value FROM json_each(?))").bind(json(sharedUnitIds)),
+    env.DB.prepare("DELETE FROM x_read_requests WHERE user_key = ?").bind(userId),
     env.DB.prepare("DELETE FROM artifact_exclusions WHERE unit_id IN (SELECT value FROM json_each(?))").bind(json(deletedUnitIds)),
     env.DB.prepare("DELETE FROM ingested_units WHERE id IN (SELECT value FROM json_each(?))").bind(json(deletedUnitIds)),
   ]);

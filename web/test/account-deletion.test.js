@@ -140,6 +140,10 @@ function seed(sqlite) {
     { user_id: A, post_id: '1' },
     { user_id: B, post_id: '3' },
   ]);
+  insert(sqlite, 'x_read_requests', [
+    { day: '2026-11-17', user_key: A },
+    { day: '2026-11-17', user_key: B },
+  ]);
   insert(sqlite, 'x_oauth_attempts', [
     { state_hash: 'state-a', browser_hash: 'browser-a', verifier: 'v', user_id: A, expires_at: 1 },
     { state_hash: 'state-b', browser_hash: 'browser-b', verifier: 'v', user_id: B, expires_at: 1 },
@@ -188,6 +192,8 @@ test('DELETE /api/me removes every row the account owns and only the content no 
     assert.match(response.headers.get('set-cookie'), /^rs_session=;.*Max-Age=0/);
 
     assert.equal(count(sqlite, 'SELECT count(*) AS n FROM users WHERE id = ?', A), 0);
+    assert.equal(count(sqlite, 'SELECT count(*) AS n FROM x_read_requests WHERE user_key = ?', A), 0);
+    assert.equal(count(sqlite, 'SELECT count(*) AS n FROM x_read_requests WHERE user_key = ?', B), 1);
     assert.deepEqual(userRowCounts(sqlite, A), {
       sessions: 0, user_imports: 0, agent_briefs: 0, x_connections: 0, x_seen_bookmarks: 0,
       x_oauth_attempts: 0, user_skill_choices: 0, user_video_requests: 0,
