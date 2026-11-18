@@ -39,12 +39,13 @@ test("parseImport validates, reports every bad line, and de-duplicates", () => {
   assert.equal(ok.ok, true);
   assert.equal(ok.value.links.length, 1);
 
-  // One bad line no longer rejects the batch: the valid line imports and the bad one is reported with its reason.
   const mixed = parseImport({ links: ["https://youtu.be/VQy50fuxI34", "https://vimeo.com/1", "https://a.substack.com/"] });
   assert.equal(mixed.ok, true);
   assert.deepEqual(mixed.value.links.map((l) => l.source_url), ["https://www.youtube.com/watch?v=VQy50fuxI34"]);
   assert.deepEqual(mixed.value.invalid.map((i) => i.link), ["https://vimeo.com/1", "https://a.substack.com/"]);
   assert.ok(mixed.value.invalid.every((i) => i.error));
+  const customDomain = parseImport({ links: ["https://youtu.be/VQy50fuxI34", "https://newsletter.pragmaticengineer.com/p/how-anthropic-built-artifacts"] });
+  assert.equal(customDomain.value.invalid[0].error, "Only YouTube videos, X posts and Substack posts on a substack.com address are supported for now.");
   assert.deepEqual(parseImport({ links: ["https://youtu.be/VQy50fuxI34"] }).value.invalid, []);
   const bad = parseImport({ links: ["https://vimeo.com/1", "https://vimeo.com/2"] });
   assert.equal(bad.status, 400);
@@ -71,7 +72,6 @@ test("describeUnit never shows a raw provider error", () => {
   const failed = describeUnit(unit);
   assert.equal(failed.error, "Resurface couldn't turn this into a skill.");
   assert.doesNotMatch(JSON.stringify(failed), /Gemini|MIME|INVALID_ARGUMENT|HTTP/);
-  // Reasons already written in plain English pass through, including a short that isn't worth making.
   assert.equal(describeUnit({ ...unit, error: "X post unavailable: not found, deleted or protected" }).error, "X post unavailable: not found, deleted or protected");
   assert.equal(describeUnit({ ...unit, status: "ready", exclusions: ["The post is a greeting with nothing to explain."] }).error, "The post is a greeting with nothing to explain.");
   assert.equal(describeUnit({ ...unit, status: "ready", exclusions: ["A post about API pricing with no detail."] }).error, "A post about API pricing with no detail.");
@@ -187,7 +187,6 @@ test("requestProcessing reports what actually happened", async () => {
   assert.deepEqual(JSON.parse(sent.init.body), { unit_ids: [ID] });
 });
 
-
 test("final progress is read before the feed so a just-rendered clip is not missed", async (t) => {
   const calls = [];
   let release;
@@ -265,7 +264,6 @@ test("a unit held back by the processing limit says when it starts, and counts a
   assert.match(held.error, /processing limit .* starts after 2026-10-12 00:00 UTC\./);
   assert.equal(describeUnit({ ...row, deferred_until: "2026-10-11T00:00:00Z" }, now).stage, "queued", "past the time, it's just queued");
   assert.equal(describeUnit({ ...row, deferred_until: null }, now).stage, "queued");
-  // Already read, waiting for room to be digested again.
   const ready = { ...row, status: "ready", exclusions: [], artifacts: [] };
   assert.equal(describeUnit({ ...ready, deferred_until: "2026-10-12T00:00:00Z" }, now).stage, "limited");
   assert.equal(describeUnit({ ...ready, deferred_until: null }, now).stage, "digesting");

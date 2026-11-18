@@ -325,3 +325,45 @@ test("every page loads under the content security policy without violations", as
   }
   expect(violations).toEqual([]);
 });
+
+test("an unsupported link's error wraps inside the card on a phone", async ({
+  page,
+}) => {
+  await page.route("**/api/x", (route) =>
+    route.fulfill({ json: { available: false, connected: false } }),
+  );
+  const response = await page.request.post("/api/auth/signup", {
+    data: {
+      email: `wrap-${Date.now()}@example.test`,
+      password: "isolated-fixture-password",
+    },
+  });
+  expect(response.ok()).toBe(true);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/app");
+  await page
+    .locator("[data-add] textarea")
+    .fill(
+      "https://newsletter.pragmaticengineer.com/p/how-anthropic-built-artifacts",
+    );
+  await page.locator('[data-add] button[type="submit"]').click();
+  const status = page.locator("[data-add] .form-status");
+  await expect(status).toContainText("substack.com address");
+  const card = await page.locator("[data-first]").boundingBox();
+  const message = await status.boundingBox();
+  expect(message.x + message.width).toBeLessThanOrEqual(card.x + card.width);
+  expect(
+    await status.evaluate((node) => node.scrollWidth <= node.clientWidth),
+  ).toBe(true);
+});
+
+test("an unknown address shows the not-found page", async ({ page }) => {
+  const response = await page.goto("/no-such-page");
+  expect(response.status()).toBe(404);
+  await expect(
+    page.getByRole("heading", { name: "Page not found" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Home", exact: true }),
+  ).toHaveAttribute("href", "/");
+});

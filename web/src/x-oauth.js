@@ -13,6 +13,7 @@ const hash = async value => b64(await crypto.subtle.digest('SHA-256', enc.encode
 const now = () => Math.floor(Date.now() / 1000);
 const json = (body, status = 200, headers = {}) => Response.json(body, { status, headers: { 'cache-control': 'no-store', ...headers } });
 const redirect = (path, cookies = []) => new Response(null, { status: 303, headers: [['location', path], ['cache-control', 'no-store'], ['referrer-policy', 'no-referrer'], ...cookies.map(c => ['set-cookie', c])] });
+const xFailure = (user, code, cookies = []) => redirect(`${user ? '/app' : '/start'}?x=${code}`, cookies);
 const nonceCookie = (value, request, age = 600) => `rs_x_nonce=${value}; Path=/api/auth/x; HttpOnly; SameSite=Lax; Max-Age=${age}${cookieSecure(request.url) ? '; Secure' : ''}`;
 const callbackUrl = env => env.X_CALLBACK_URL;
 const SCOPES = 'tweet.read users.read bookmark.read offline.access';
@@ -57,7 +58,7 @@ async function unseal(env, value) {
 const clientAuth = env => `Basic ${btoa(`${encodeURIComponent(env.X_CLIENT_ID)}:${encodeURIComponent(env.X_CLIENT_SECRET)}`)}`;
 
 async function start(request, env, sql, user) {
-  if (!xAvailable(env)) return redirect('/start?x=unavailable');
+  if (!xAvailable(env)) return xFailure(user, 'unavailable');
   const rejection = await rateLimit(env.AUTH_LIMITER, requestIp(request));
   if (rejection) return rejection;
   await sql`DELETE FROM x_oauth_attempts WHERE expires_at < ${now()}`;
@@ -77,36 +78,36 @@ async function start(request, env, sql, user) {
 
 async function callback(request, env, sql, user) {
   const clear = nonceCookie('', request, 0);
-  if (!xAvailable(env)) return redirect('/start?x=unavailable', [clear]);
+  if (!xAvailable(env)) return xFailure(user, 'unavailable', [clear]);
   const rejection = await rateLimit(env.AUTH_LIMITER, requestIp(request));
   if (rejection) return rejection;
   const url = new URL(request.url), state = url.searchParams.get('state');
   const browser = readCookie(request.headers.get('cookie'), 'rs_x_nonce');
-  if (!state || state.length > 200 || !browser) return redirect('/start?x=invalid', [clear]);
+  if (!state || state.length > 200 || !browser) return xFailure(user, 'invalid', [clear]);
   const [attempt] = await sql`DELETE FROM x_oauth_attempts WHERE state_hash=${await hash(state)} AND browser_hash=${await hash(browser)} RETURNING *`;
-  if (!attempt || attempt.expires_at < now() || (attempt.user_id ?? null) !== (user?.id ?? null)) return redirect('/start?x=invalid', [clear]);
-  if (url.searchParams.has('error')) return redirect('/start?x=denied', [clear]);
+  if (!attempt || attempt.expires_at < now() || (attempt.user_id ?? null) !== (user?.id ?? null)) return xFailure(user, 'invalid', [clear]);
+  if (url.searchParams.has('error')) return xFailure(user, 'denied', [clear]);
   const code = url.searchParams.get('code');
-  if (!code || code.length > 2000) return redirect('/start?x=invalid', [clear]);
+  if (!code || code.length > 2000) return xFailure(user, 'invalid', [clear]);
   try {
-    if (!(await reserveRead(env, sql, user?.id ?? `auth:${attempt.browser_hash}`))) return redirect('/start?x=budget', [clear]);
+    if (!(await reserveRead(env, sql, user?.id ?? `auth:${attempt.browser_hash}`))) return xFailure(user, 'budget', [clear]);
     const tokenResponse = await provider(env, '/2/oauth2/token', { method: 'POST', headers: { authorization: clientAuth(env), 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: callbackUrl(env), code_verifier: attempt.verifier }).toString() });
-    if (!tokenResponse.ok) return redirect('/start?x=failed', [clear]);
+    if (!tokenResponse.ok) return xFailure(user, 'failed', [clear]);
     const token = await tokenResponse.json();
     if (typeof token.access_token !== 'string' || token.access_token.length > 8000 || !Number.isFinite(token.expires_in) || token.expires_in <= 0 ||
-        !SCOPES.split(' ').every(s => String(token.scope ?? '').split(' ').includes(s))) return redirect('/start?x=failed', [clear]);
+        !SCOPES.split(' ').every(s => String(token.scope ?? '').split(' ').includes(s))) return xFailure(user, 'failed', [clear]);
     const identityResponse = await provider(env, '/2/users/me', { headers: { authorization: `Bearer ${token.access_token}` } });
-    if (!identityResponse.ok) return redirect('/start?x=failed', [clear]);
+    if (!identityResponse.ok) return xFailure(user, 'failed', [clear]);
     const { data } = await identityResponse.json();
-    if (!/^\d{1,19}$/.test(data?.id) || !/^[A-Za-z0-9_]{1,15}$/.test(data?.username)) return redirect('/start?x=failed', [clear]);
+    if (!/^\d{1,19}$/.test(data?.id) || !/^[A-Za-z0-9_]{1,15}$/.test(data?.username)) return xFailure(user, 'failed', [clear]);
     const [linked] = await sql`SELECT user_id FROM x_connections WHERE x_user_id=${data.id}`;
-    if (user && linked && linked.user_id !== user.id) return redirect('/app?x=conflict', [clear]);
+    if (user && linked && linked.user_id !== user.id) return xFailure(user, 'conflict', [clear]);
     let userId = user?.id ?? linked?.user_id;
     if (!userId) {
-      if (signupsPaused(env)) return redirect('/start?x=paused', [clear]);
+      if (signupsPaused(env)) return xFailure(user, 'paused', [clear]);
       const slot = await reserveSignup(env, sql, requestIp(request));
-      if (slot.full) return redirect('/start?x=full', [clear]);
+      if (slot.full) return xFailure(user, 'full', [clear]);
       const email = 'oauth:x:' + data.id;
       const [created] = await sql`INSERT INTO users(email,name,password_hash) VALUES(${email},${String(data.name ?? data.username).slice(0,80)},'')
         ON CONFLICT(email) DO NOTHING RETURNING id`;
@@ -125,7 +126,7 @@ async function callback(request, env, sql, user) {
     const session = await createSession(sql, userId);
     return redirect('/app?import=x', [clear, sessionCookie(session, undefined, cookieSecure(request.url))]);
   } catch {
-    return redirect('/start?x=failed', [clear]);
+    return xFailure(user, 'failed', [clear]);
   }
 }
 

@@ -1,5 +1,3 @@
-// Each ready artifact's SKILL.md and the path where the chosen agent reads it. Every API string goes in through textContent.
-
 import { AGENTS, agentOrDefault, skillAnchor, skillFile, skillSlug } from "./agents.js";
 import { api } from "./api.js";
 import { el } from "./dom.js";
@@ -76,7 +74,6 @@ export function createSkills({ skillsList, picker, skillsStatus, review = false,
     render();
   });
 
-  // Status messages go to the section's live region and clear after a moment.
   const timers = new Map();
   function say(region, ok, done, failed) {
     region.textContent = ok ? done : failed;
@@ -135,7 +132,7 @@ export function createSkills({ skillsList, picker, skillsStatus, review = false,
       el("div", { class: "skill-actions" },
         el("button", { type: "button", class: "btn btn-small", text: "Copy SKILL.md",
           onclick: async () => say(skillsStatus, await copyText(file.content),
-            `Copied. Save it as ${file.path} in your repo.`, "Your browser blocked copying. Use Download instead.") }),
+            `Copied. ${file.save}`, "Your browser blocked copying. Use Download instead.") }),
         el("button", { type: "button", class: "btn-line", text: "Download",
           onclick: () => download(agent === "cursor" ? `${skillSlug(s)}.mdc` : "SKILL.md", file.content) }),
         toggle
@@ -160,7 +157,6 @@ export function createSkills({ skillsList, picker, skillsStatus, review = false,
   }
 
   return {
-    /** Re-renders only when something changed, so polling doesn't close an open SKILL.md or move focus. */
     update(next, video) {
       const same = JSON.stringify(next) === JSON.stringify(skills) && (video === undefined || JSON.stringify(video) === JSON.stringify(videoState));
       skills = next;

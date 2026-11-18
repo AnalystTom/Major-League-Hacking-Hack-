@@ -7,7 +7,8 @@
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
-    "run_worker_first": true
+    "run_worker_first": true,
+    "not_found_handling": "404-page"
   },
   "services": [{ "binding": "PROCESSOR", "service": "resurface-processor" }],
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "resurface-media" }],

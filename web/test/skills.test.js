@@ -49,6 +49,8 @@ test("each agent gets its own path; Cursor gets rule frontmatter", () => {
   assert.equal(skillFile(s, "claude-code").path, ".claude/skills/verify-before-done/SKILL.md");
   assert.equal(skillFile(s, "codex").path, ".agents/skills/verify-before-done/SKILL.md");
   assert.equal(skillFile(s, "hermes").path, "~/.hermes/skills/verify-before-done/SKILL.md");
+  assert.equal(skillFile(s, "hermes").save, "Save it as ~/.hermes/skills/verify-before-done/SKILL.md.");
+  assert.equal(skillFile(s, "codex").save, "Save it as .agents/skills/verify-before-done/SKILL.md in your repo.");
   const cursor = skillFile(s, "cursor");
   assert.equal(cursor.path, ".cursor/rules/verify-before-done.mdc");
   assert.match(cursor.content, /^---\ndescription: "Make the agent prove a change: \\"red\\" first\."\nalwaysApply: false\n---\n\n# Verify before done/);

@@ -1,13 +1,8 @@
-/* Resurface: your backlog, as shorts.
-   Four colour palettes share one set of tokens; pick with ?palette= (or ?pick for the swatch picker).
-   Video previews play on a dark screen. */
-
 :root {
   --display: "Funnel Display", "Funnel Sans", system-ui, sans-serif;
   --sans: "Funnel Sans", system-ui, sans-serif;
   --mono: "Martian Mono", ui-monospace, monospace;
 
-  /* one accent per short, shared by every palette */
   --sh-violet: #b9a4f5;
   --sh-signal: #4cc38f;
   --sh-amber: #f2b84b;
@@ -21,8 +16,6 @@
   --max: 1200px;
   --inline: max(var(--gutter), calc((100% - var(--max)) / 2));
 }
-
-/* ---------- Palettes: light ---------- */
 
 :root[data-palette="hn"] {
   --bg: #f6f6ef; --bg-2: #ededE3; --paper: #ffffff;
@@ -60,8 +53,6 @@
   --shadow: 0 1px 0 rgba(29, 35, 64, .08), 0 18px 40px -24px rgba(29, 35, 64, .5);
   color-scheme: light;
 }
-
-/* ---------- Palettes: dark ---------- */
 
 @media (prefers-color-scheme: dark) {
   :root[data-palette="hn"] {
@@ -102,8 +93,6 @@
   }
 }
 
-/* ---------- Base ---------- */
-
 *, *::before, *::after { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; scroll-padding-top: 80px; }
 
@@ -125,15 +114,12 @@ button { font: inherit; color: inherit; }
 
 :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
 
-/* The hidden attribute always wins over a component's display value. */
 [hidden] { display: none !important; }
 
 .visually-hidden {
   position: absolute !important; width: 1px; height: 1px; overflow: hidden;
   clip: rect(0 0 0 0); white-space: nowrap; padding: 0; margin: -1px; border: 0;
 }
-
-/* ---------- Video previews ---------- */
 
 .hero-demo { margin: clamp(48px, 7vw, 88px) 0 0; }
 .video-frame {
@@ -144,8 +130,6 @@ button { font: inherit; color: inherit; }
 .hero-demo figcaption, .watch-link { margin-top: 12px; font-size: .9375rem; color: var(--ink-soft); }
 .walkthrough { background: var(--bg-2); }
 .walkthrough .video-frame { margin-top: 32px; }
-
-/* ---------- Buttons ---------- */
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
@@ -160,8 +144,6 @@ button { font: inherit; color: inherit; }
 .btn:active { transform: translateY(0); box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .16); }
 .btn:disabled { opacity: .55; cursor: default; transform: none; box-shadow: none; }
 .btn-small { font-size: .9375rem; padding: 11px 16px; border-radius: 10px; }
-
-/* ---------- Top bar ---------- */
 
 .topbar {
   position: sticky; top: 0; z-index: 20;
@@ -185,8 +167,6 @@ button { font: inherit; color: inherit; }
 .topnav a { text-decoration: none; font-weight: 600; font-size: .9375rem; color: var(--ink-soft); }
 .topnav a:hover { color: var(--ink); }
 
-/* ---------- Hero ---------- */
-
 .hero { padding: clamp(40px, 7vw, 96px) var(--inline) clamp(64px, 9vw, 120px); }
 
 .badge {
@@ -207,8 +187,6 @@ button { font: inherit; color: inherit; }
 }
 .hero-title .line { display: block; }
 
-/* Kinetic words: each arrives blurred and spaced out, then snaps tight. Plays once on load for the
-   headline, and every time a short starts. */
 .kw { display: inline-block; letter-spacing: var(--ls, 0); }
 .play .kw { animation: kw-in .85s var(--ease-out) both; animation-delay: calc(var(--i) * 70ms + .1s); }
 .kw[data-i="0"] { --i: 0; } .kw[data-i="1"] { --i: 1; } .kw[data-i="2"] { --i: 2; } .kw[data-i="3"] { --i: 3; }
@@ -220,10 +198,8 @@ button { font: inherit; color: inherit; }
 
 .lede { margin-top: 28px; font-size: clamp(1.125rem, 1.6vw, 1.375rem); line-height: 1.5; color: var(--ink-soft); max-width: 38em; }
 
-/* ---------- Forms ---------- */
-
 .form-status { grid-column: 1 / -1; }
-.form-status { min-height: 1.4em; font-size: .9375rem; font-weight: 600; }
+.form-status { min-height: 1.4em; font-size: .9375rem; font-weight: 600; overflow-wrap: anywhere; }
 .form-status[data-tone="error"] { color: var(--late); }
 .form-status[data-tone="ok"] { color: var(--accent-ink); }
 
@@ -233,12 +209,7 @@ button { font: inherit; color: inherit; }
 .works-with li { display: inline-flex; align-items: center; gap: 8px; font-family: var(--display); font-weight: 700; font-size: 1.0625rem; }
 .works-with .logo { width: 20px; height: 20px; }
 
-/* shared by the shorts' progress bars */
 @keyframes fill-x { from { transform: scaleX(0); } to { transform: scaleX(1); } }
-
-/* ======================================================
-   Sections
-   ====================================================== */
 
 .feed, .steps, .walkthrough { padding: clamp(72px, 10vw, 128px) var(--inline); }
 .feed { background: var(--bg-2); }
@@ -246,10 +217,6 @@ button { font: inherit; color: inherit; }
 .section-head { max-width: 46rem; }
 .section-head h2 { font-weight: 800; font-size: clamp(2.25rem, 5.2vw, 4.25rem); letter-spacing: -.035em; line-height: .98; }
 .section-head p { margin-top: 16px; font-size: 1.1875rem; color: var(--ink-soft); }
-
-/* ======================================================
-   A short: one takeaway, one motion scene
-   ====================================================== */
 
 .short {
   --acc: var(--sh-violet);
@@ -266,7 +233,6 @@ button { font: inherit; color: inherit; }
 .short[data-accent="coral"] { --acc: var(--sh-coral); }
 .short[data-accent="sky"] { --acc: var(--sh-sky); }
 
-/* an accent disc behind the scene swells as the short starts */
 .short::before {
   content: ""; position: absolute; width: 120cqi; aspect-ratio: 1; border-radius: 50%;
   left: 40cqi; bottom: -62cqi; background: var(--acc); opacity: .14;
@@ -298,7 +264,6 @@ button { font: inherit; color: inherit; }
 .short[data-sent] .short-sent { animation: stamp .35s cubic-bezier(.3, 1.6, .5, 1) both; }
 @keyframes stamp { from { opacity: 0; transform: rotate(-8deg) scale(1.8); } to { opacity: 1; transform: rotate(-8deg) scale(1); } }
 
-/* Scene entrances run while the short plays; at rest each scene shows its end state. */
 .short.play .sc [style*="--d"] { animation: pop-in .55s var(--ease-out) both; animation-delay: var(--d); }
 @keyframes pop-in { from { opacity: 0; transform: translateY(10px) scale(.92); } to { opacity: 1; transform: none; } }
 
@@ -377,10 +342,6 @@ button { font: inherit; color: inherit; }
 .short.play .runner { animation: run-down 2.4s var(--ease-slide) .9s both; }
 @keyframes run-down { from { top: 0; } to { top: calc(100% - 7cqi); } }
 
-/* ======================================================
-   Shorts feed: filmstrip
-   ====================================================== */
-
 .fb-strip { position: relative; margin: 44px calc(50% - 50vw) 0; }
 .fb-viewport {
   overflow: hidden; padding: 18px 0 28px; touch-action: pan-y;
@@ -427,8 +388,6 @@ button { font: inherit; color: inherit; }
 }
 .nudge p { font-family: var(--display); font-weight: 700; font-size: 1.3125rem; letter-spacing: -.01em; }
 
-/* ---------- Your import: progress and the reel ---------- */
-
 .run-progress h2 { font-size: 1.25rem; font-weight: 800; letter-spacing: -.01em; }
 .units { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 8px; }
 .units li {
@@ -439,7 +398,6 @@ button { font: inherit; color: inherit; }
 .unit-stage { font-weight: 700; font-size: .875rem; color: var(--ink-soft); text-align: right; }
 .units li:is([data-stage="ready"], [data-stage="skill_ready"]) .unit-stage { color: var(--accent-ink); }
 .units li:is([data-stage="failed"], [data-stage="render_failed"]) .unit-stage { color: var(--late); }
-/* Each lane is a real processing phase, not a percentage or a timer. */
 .unit-scan { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
 .unit-scan span { position: relative; overflow: hidden; padding-top: 10px; color: var(--ink-soft); font-size: .75rem; }
 .unit-scan span::before { content: ""; position: absolute; inset: 0 0 auto; height: 2px; background: var(--rule); }
@@ -519,8 +477,6 @@ button { font: inherit; color: inherit; }
 .reel-counter { margin-top: 10px; text-align: center; font-weight: 600; font-size: .875rem; color: var(--ink-soft); }
 a.reel-btn { text-decoration: none; }
 
-/* ---------- Saved -> Reel -> Skills -> Tasks on the signed-in home ---------- */
-
 .journey { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 28px; }
 .journey a {
   display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px;
@@ -597,14 +553,10 @@ a.reel-btn { text-decoration: none; }
 .handoff-run { display: grid; gap: 6px; font-size: .875rem; color: var(--ink-soft); }
 .handoff-run code { font-family: var(--mono); font-size: .75rem; color: var(--ink); background: var(--bg-2); border-radius: 8px; padding: 6px 8px; overflow-wrap: anywhere; }
 
-/* ---------- Get started (landing) ---------- */
-
 .hero-cta { margin-top: 34px; display: flex; flex-wrap: wrap; align-items: center; gap: 14px 22px; max-width: 46rem; }
 .hero-cta p { flex: 1 1 18rem; color: var(--ink-soft); font-size: 1rem; line-height: 1.5; }
 .topnav-signin { font-weight: 600; font-size: .9375rem; color: var(--ink-soft); text-decoration: none; }
 .topnav-signin:hover { color: var(--ink); }
-
-/* ---------- Onboarding ---------- */
 
 .onboard { padding: clamp(28px, 5vw, 64px) var(--inline) 96px; display: grid; justify-items: center; gap: 28px; }
 .onboard-loading { color: var(--ink-soft); }
@@ -634,10 +586,6 @@ a.reel-btn { text-decoration: none; }
 .linkish { font: inherit; font-weight: 700; color: var(--accent-ink); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .onboard-switch { display: flex; flex-wrap: wrap; gap: 6px; font-size: .9375rem; color: var(--ink-soft); }
 
-
-
-/* ---------- Home (signed in) ---------- */
-
 .who { margin-left: auto; font-size: .9375rem; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .wordmark + .who { margin-left: auto; }
 .topbar-inner:has(.who) .wordmark { margin-right: 0; }
@@ -659,10 +607,6 @@ a.reel-btn { text-decoration: none; }
 }
 .reel-placeholder-title { font-family: var(--display); font-weight: 800; font-size: 1.375rem; color: var(--ink); }
 
-/* ---------- Full-screen reel (/app) ----------
-   The signed-in page is the reel on a dark stage. Link stages sit in a top-bar popover, more videos come in
-   through a sheet, and the first-run paste box takes the reel's frame until a short is ready. */
-
 .app-page { --bar: 61px; background: var(--night); color: var(--on-night); }
 .app-bar { background: color-mix(in srgb, var(--night) 90%, transparent); border-bottom-color: rgba(255, 255, 255, .08); color: var(--on-night); }
 .app-bar .topbar-inner { gap: 10px; }
@@ -672,7 +616,6 @@ a.reel-btn { text-decoration: none; }
 
 .stage { height: calc(100svh - var(--bar)); display: grid; place-items: center; padding: 12px var(--gutter); }
 .stage-frame { width: 100%; height: 100%; display: grid; place-items: center; }
-/* A fixed 9:16 width capped by max-width: a percentage inside this auto-sized grid would collapse. */
 .app-page .reel { --h: calc(100svh - var(--bar) - 24px - 30px); width: calc(var(--h) * 9 / 16); max-width: 100%; }
 .app-page .reel-counter { color: var(--on-night-soft); }
 
@@ -681,7 +624,6 @@ a.reel-btn { text-decoration: none; }
   display: flex; flex-direction: column; gap: 14px; padding: 28px 24px;
   background: var(--night-2); border-radius: 24px;
 }
-/* Forms and progress use document flow; only the video reel needs a portrait frame. */
 .stage:has([data-first]:not([hidden])) { height: auto; min-height: calc(100svh - var(--bar)); align-items: start; padding-block: 28px; }
 .stage-frame:has([data-first]:not([hidden])) { height: auto; align-items: start; }
 .frame-card .form-status:empty { display: none; }
@@ -729,8 +671,6 @@ a.reel-btn { text-decoration: none; }
 .topbar-pill:hover { border-color: var(--on-night); }
 .topbar-pill b { min-width: 1.5em; padding: 0 7px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: .75rem; text-align: center; }
 
-/* Skills and Tasks sheet: a dark drawer over the reel. The page tokens point at the night palette here,
-   so the skill and task cards keep their own styles. */
 .skills-sheet {
   --bg: var(--night); --bg-2: rgba(255, 255, 255, .06); --paper: var(--night-2);
   --ink: var(--on-night); --ink-soft: var(--on-night-soft); --rule: rgba(255, 255, 255, .14);
@@ -766,32 +706,25 @@ a.reel-btn { text-decoration: none; }
   .stage:has([data-first]:not([hidden])) { padding: 16px; }
   .app-page .reel-track { border-radius: 0; }
   .app-page .reel-counter { display: none; }
-  /* Populated controls wrap to two rows while retaining their touch targets. */
   .app-bar .btn-small { padding: 9px 12px; }
   .app-bar .add-label { display: none; }
   .add-open span[aria-hidden] { font-size: 1.25rem; line-height: .8; }
   .status > summary { max-width: 34vw; overflow: hidden; text-overflow: ellipsis; }
-  /* Anchored to the bar's edges, not the small chip, so the list stays on screen. The bar's backdrop
-     filter makes it the containing block for this fixed panel. */
   .status-panel { position: fixed; left: 12px; right: 12px; top: calc(var(--bar) + 6px); width: auto; }
   .app-bar .wordmark { display: none; }
   .app-bar .topbar-inner { justify-content: flex-end; flex-wrap: wrap; min-height: calc(var(--bar) - 1px); }
   .topbar-tasks { display: none; }
   .topbar-pill { padding: 6px 10px; font-size: .8125rem; }
   .status > summary { padding: 6px 10px; font-size: .8125rem; }
-  /* 44 px tap targets with 6 px vertical padding per row. */
   .app-bar .topbar-inner { padding-block: 6px; }
 }
 
-/* Touch targets: at least 44 px tall on a phone. */
 @media (max-width: 640px) {
   .btn-small, .status > summary, .topnav-signin, .wordmark, .watch-link a, .footer a, .onboard-switch .linkish { display: inline-flex; align-items: center; min-height: 44px; }
   .topbar-pill { min-height: 44px; }
   .btn-small, .topbar-pill { justify-content: center; }
   .add-open { min-width: 44px; }
 }
-
-/* ---------- How it works ---------- */
 
 .steps ol {
   list-style: none; counter-reset: step; margin: 48px 0 0; padding: 0;
@@ -806,8 +739,6 @@ a.reel-btn { text-decoration: none; }
 .steps h3 { font-size: 1.5rem; font-weight: 800; letter-spacing: -.02em; line-height: 1.1; margin-bottom: 10px; }
 .steps p { color: var(--ink-soft); }
 
-/* ---------- Agent logos: monochrome masks that follow the text colour ---------- */
-
 .logo {
   display: inline-block; flex: none; width: 1.15em; height: 1.15em;
   background: currentColor;
@@ -819,16 +750,12 @@ a.reel-btn { text-decoration: none; }
 .logo-cursor { --logo: url(/logos/cursor.svg); }
 .logo-hermes { --logo: url(/logos/hermes.svg); }
 
-/* ---------- Footer ---------- */
-
 .footer {
   padding: 36px var(--inline) 48px; border-top: 1px solid var(--rule);
   display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px;
   font-size: .9375rem; color: var(--ink-soft);
 }
 .footer a { font-weight: 700; color: var(--ink); }
-
-/* ---------- Palette picker (review only, ?pick) ---------- */
 
 .palette-picker {
   position: fixed; left: 16px; bottom: 16px; z-index: 30;
@@ -849,8 +776,6 @@ a.reel-btn { text-decoration: none; }
 .sw-highlighter { background: linear-gradient(135deg, #0f1b2d 50%, #ffd23f 50%); }
 .sw-cobalt { background: linear-gradient(135deg, #f1f3fa 50%, #2f54eb 50%); }
 .sw-violet { background: linear-gradient(135deg, #e3ebe5 50%, #5a3cb0 50%); }
-
-/* ---------- Responsive ---------- */
 
 @media (max-width: 960px) {
   .steps ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -885,8 +810,6 @@ a.reel-btn { text-decoration: none; }
   *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important; }
 }
 
-/* ---------- Forms ---------- */
-
 .signup input[type="email"] {
   font: inherit; font-size: 1.125rem; color: var(--ink);
   background: var(--paper);
@@ -913,7 +836,6 @@ a.reel-btn { text-decoration: none; }
 
 .public-catalogue .topbar-pill { color: var(--ink); }
 
-/* X remains one action; paste/email are available as fallbacks. */
 .x-connect { display: grid; gap: 12px; min-width: 0; }
 .x-connect .btn { justify-self: start; }
 .email-fallback { display: grid; gap: 18px; }
