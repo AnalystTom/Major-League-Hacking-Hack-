@@ -15,7 +15,6 @@ export interface MediaStore {
   delete(key: string): Promise<void>;
 }
 
-/** Removes stored files that no row will reference. A failed delete is recorded, not thrown over the error that caused the cleanup. */
 export async function discardMedia(media: MediaStore, refs: string[]) {
   await Promise.all(refs.map(async (ref) => {
     try {

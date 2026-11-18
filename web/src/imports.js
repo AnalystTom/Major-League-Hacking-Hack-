@@ -113,6 +113,7 @@ export async function createUnits(sql, links, { userId = null } = {}) {
           RETURNING unit_id`;
       } catch (error) {
         if (unit?.reused === false) await sql`DELETE FROM ingested_units WHERE id = ${resolved.id}
+          AND NOT EXISTS (SELECT 1 FROM users WHERE id = ${userId})
           AND NOT EXISTS (SELECT 1 FROM user_imports WHERE unit_id = ${resolved.id})`;
         throw error;
       }

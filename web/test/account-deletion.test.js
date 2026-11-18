@@ -128,6 +128,9 @@ function seed(sqlite) {
     { user_id: A, artifact_id: 'art-a', artifact_version: 1 },
     { user_id: B, artifact_id: 'art-b', artifact_version: 1 },
   ]);
+  insert(sqlite, 'video_rejection_releases', [
+    { user_id: B, artifact_id: 'art-shared', artifact_version: 1, claim_token: 'claim-rejected' },
+  ]);
   insert(sqlite, 'video_starts', [
     { claim_token: 'claim-a', artifact_id: 'art-a', artifact_version: 1 },
     { claim_token: 'claim-b', artifact_id: 'art-b', artifact_version: 1 },
@@ -219,6 +222,7 @@ test('DELETE /api/me removes every artifact built from the account units and eve
       ['user_skill_choices', "artifact_id = 'art-a'"],
       ['user_skill_choices', "artifact_id = 'art-shared'"],
       ['user_video_requests', "artifact_id = 'art-a'"],
+      ['video_rejection_releases', "artifact_id = 'art-shared'"],
       ['artifact_exclusions', "unit_id = 'unit-a'"],
       ['processing_starts', "unit_id = 'unit-a'"],
       ['ingested_units', "id = 'unit-a'"],
@@ -376,6 +380,23 @@ test('an import whose user is deleted before its link commits leaves no unit beh
     await assert.rejects(createUnits(sql, [link], { userId: 'user-deleted-mid-import' }));
     assert.equal(count(sqlite, 'SELECT count(*) AS n FROM ingested_units WHERE source_url = ?', link.source_url), 0);
     assert.equal(count(sqlite, 'SELECT count(*) AS n FROM ingested_units WHERE submitted_url = ?', link.submitted_url), 0);
+  } finally {
+    sqlite.close();
+  }
+});
+
+test('a transient link failure for a live user keeps the new unit', async () => {
+  const { sqlite, sql } = database();
+  try {
+    seed(sqlite);
+    const link = { submitted_url: 'https://x.com/a/status/11', source_url: 'https://x.com/a/status/11', start_seconds: null, content_type: 'x_post' };
+    const flakySql = (parts, ...values) => {
+      if (parts.join('').includes('INSERT INTO user_imports')) throw new Error('D1 timeout');
+      return sql(parts, ...values);
+    };
+    await assert.rejects(createUnits(flakySql, [link], { userId: A }), /D1 timeout/);
+    assert.equal(count(sqlite, 'SELECT count(*) AS n FROM users WHERE id = ?', A), 1);
+    assert.equal(count(sqlite, 'SELECT count(*) AS n FROM ingested_units WHERE source_url = ?', link.source_url), 1);
   } finally {
     sqlite.close();
   }
