@@ -47,7 +47,7 @@ async function produceNow(kind: Kind, a: ReadyArtifact, o: OutputOptions) {
         await o.outputs.finishSkill(claim, skill);
       } else {
         if (!geminiKey) throw new Error("GEMINI_API_KEY isn't configured on the processor");
-        if (!media) throw new Error("Media storage isn't configured on the processor (R2_* or MEDIA_LOCAL_WEB_DIR)");
+        if (!media) throw new Error("Media storage isn't configured on the processor (R2_*, MEDIA_LOCAL_WEB_DIR, or D1_URL with the MEDIA_UPLOAD_TOKEN secret)");
         const skillCard = o.outputs.skillCard?.bind(o.outputs);
         const video = await whileHeld(heartbeat, () => renderArtifact(a, { ...o, openaiKey, geminiKey, media, skillCard }));
         try {

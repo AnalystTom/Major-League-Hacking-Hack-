@@ -13,13 +13,13 @@ const ALLOWED = 'INSERT INTO artifact_exclusions(unit_id,digestion_prompt_id,rea
 const json = (body) => JSON.stringify(body);
 
 const ROUTES = [
-  { method: 'GET', path: '/health', secret: 'INGEST_TOKEN' },
-  { method: 'POST', path: '/api/ingest/process', secret: 'INGEST_TOKEN', body: json({ unit_ids: [] }) },
-  { method: 'POST', path: '/api/ingest/handoff', secret: 'INGEST_TOKEN', body: json({}) },
-  { method: 'GET', path: '/settings-status', secret: 'INGEST_TOKEN' },
-  { method: 'POST', path: '/internal/d1', secret: 'D1_BRIDGE_TOKEN', body: json({ statements: [{ sql: ALLOWED, params: ['u', 1, 'r'] }] }) },
-  { method: 'PUT', path: '/internal/media?key=videos%2Fabc-123%2F1%2Fshort.mp4', secret: 'MEDIA_UPLOAD_TOKEN', body: 'abc' },
-  { method: 'POST', path: '/internal/tts', secret: 'TTS_BRIDGE_TOKEN', body: json({ text: 'hello' }) },
+  { method: 'GET', path: '/health', secret: 'INGEST_TOKEN', status: 202 },
+  { method: 'POST', path: '/api/ingest/process', secret: 'INGEST_TOKEN', body: json({ unit_ids: [] }), status: 202 },
+  { method: 'POST', path: '/api/ingest/handoff', secret: 'INGEST_TOKEN', body: json({}), status: 202 },
+  { method: 'GET', path: '/settings-status', secret: 'INGEST_TOKEN', status: 200 },
+  { method: 'POST', path: '/internal/d1', secret: 'D1_BRIDGE_TOKEN', body: json({ statements: [{ sql: ALLOWED, params: ['u', 1, 'r'] }] }), status: 200 },
+  { method: 'PUT', path: '/internal/media?key=videos%2Fabc-123%2F1%2Fshort.mp4', secret: 'MEDIA_UPLOAD_TOKEN', body: 'abc', status: 200 },
+  { method: 'POST', path: '/internal/tts', secret: 'TTS_BRIDGE_TOKEN', body: json({ text: 'hello' }), status: 200 },
 ];
 
 test('each Worker route accepts only the secret for its own bridge', { timeout: 20000 }, async (t) => {
@@ -40,13 +40,14 @@ test('each Worker route accepts only the secret for its own bridge', { timeout: 
     AI: { async run() { return new Uint8Array([1, 2, 3, 4]).buffer; } },
   };
   const send = (route, authorization) => {
-    const headers = { 'content-type': 'application/json', ...(authorization === undefined ? {} : { authorization: `Bearer ${authorization}` }) };
-    return worker.fetch(new Request(`https://processor${route.path}`, { method: route.method, headers, body: route.method === 'GET' ? undefined : route.body ?? 'abc' }), env, { waitUntil() {} });
+    const body = route.method === 'GET' ? undefined : route.body ?? 'abc';
+    const headers = { 'content-type': 'application/json', 'content-length': String(new TextEncoder().encode(body ?? '').length), ...(authorization === undefined ? {} : { authorization: `Bearer ${authorization}` }) };
+    return worker.fetch(new Request(`https://processor${route.path}`, { method: route.method, headers, body }), env, { waitUntil() {} });
   };
 
   for (const route of ROUTES) {
     const own = await send(route, env[route.secret]);
-    assert.notEqual(own.status, 401, `${route.method} ${route.path} accepts its own secret`);
+    assert.equal(own.status, route.status, `${route.method} ${route.path} accepts its own secret`);
     for (const other of Object.keys(SECRETS).filter((name) => name !== route.secret)) {
       const wrong = await send(route, env[other]);
       assert.equal(wrong.status, 401, `${route.method} ${route.path} refuses ${other}`);
