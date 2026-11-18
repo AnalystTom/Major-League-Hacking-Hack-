@@ -11,6 +11,7 @@ import { deleteAccount } from '../src/account.js';
 const MIGRATIONS = [
   '0002_application.sql', '0003_video_duration.sql', '0004_usage_events.sql', '0005_skill_choices.sql',
   '0005_x_oauth.sql', '0006_x_read_budget.sql', '0007_video_limits.sql', '0008_signup_events.sql',
+  '0009_anonymous_spend_ledgers.sql',
 ];
 const A = 'user-a';
 const B = 'user-b';
@@ -314,6 +315,32 @@ test('an import committed after the artifact read is removed with the account', 
     assert.equal(raced, true);
     assert.equal(count(sqlite, "SELECT count(*) AS n FROM ingested_units WHERE id = 'unit-race'"), 0);
     assert.deepEqual(rowsMentioning(sqlite, 'https://x.com/a/status/9'), []);
+  } finally {
+    sqlite.close();
+  }
+});
+
+test('deleting an account keeps its spend in the global caps without linking it to the account', async () => {
+  const { sqlite, env } = database();
+  try {
+    seed(sqlite);
+    const spend = () => ({
+      video_starts: count(sqlite, 'SELECT count(*) AS n FROM video_starts'),
+      user_video_requests: count(sqlite, 'SELECT count(*) AS n FROM user_video_requests'),
+      charged_processing_starts: count(sqlite, 'SELECT count(*) AS n FROM processing_starts WHERE charged = 1'),
+      x_read_requests: count(sqlite, 'SELECT count(*) AS n FROM x_read_requests'),
+    });
+    const seededSpend = { video_starts: 2, user_video_requests: 2, charged_processing_starts: 2, x_read_requests: 2 };
+    assert.deepEqual(spend(), seededSpend);
+
+    await deleteAccount(env, A);
+
+    assert.deepEqual(spend(), seededSpend);
+    assert.equal(count(sqlite, "SELECT count(*) AS n FROM video_starts WHERE claim_token = 'claim-a' AND artifact_id IS NULL AND artifact_version IS NULL"), 1);
+    assert.equal(count(sqlite, "SELECT count(*) AS n FROM user_video_requests WHERE user_id IS NULL AND artifact_id IS NULL"), 1);
+    assert.equal(count(sqlite, 'SELECT count(*) AS n FROM processing_starts WHERE charged = 1 AND unit_id IS NULL'), 1);
+    assert.equal(count(sqlite, 'SELECT count(*) AS n FROM x_read_requests WHERE user_key IS NULL'), 1);
+    assert.deepEqual(rowsMentioning(sqlite, A), []);
   } finally {
     sqlite.close();
   }
