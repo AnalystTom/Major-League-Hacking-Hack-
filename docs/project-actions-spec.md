@@ -234,6 +234,7 @@ Static assets serve everything except `/api/*` and `/media/*`: the landing page,
 | `POST /api/auth/login` | none | `{ email, password }` → `200 { user, imports }` and session cookie. Unknown email and wrong password both get `401`. |
 | `POST /api/auth/logout` | none | Ends the session and clears the cookie. |
 | `GET /api/me` | optional session | Signed in: `{ user, imports }`; signed out: `{ user: null }`. |
+| `DELETE /api/me` | session | Permanently deletes the account and its saved content, skills, videos and X connection, then clears the cookie: `{ deleted: true }`. Anonymous spend ledgers are kept unlinked. `503` if the deletion batch fails. |
 | `POST /api/imports` | session | `{ links: string[] \| string, company?: honeypot }` → `201 { units, processor, invalid }`. |
 | `GET /api/imports` | session | `{ units }`: the user's imports, newest first, with exact duplicate sources hidden. |
 | `GET /api/feed?scope=mine` | session | `{ items }`: ready shorts built from the user's links, as in the [feed read contract](#feed-read-contract). |
