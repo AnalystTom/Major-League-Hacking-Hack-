@@ -497,6 +497,24 @@ test('paused shorts refuse the request with a retry message and keep the one vid
   } finally {sqlite.close();}
 });
 
+test('paused shorts keep an existing reservation idempotent and refuse only new ones',async()=>{
+  const {sqlite,env,sql}=database();
+  try {
+    const a=await videoAccount(env,sql,'shorts-duplicate@example.test');
+    assert.equal((await a.request(a.ids[0])).status,200);
+    env.SHORTS='off';
+    const duplicate=await a.request(a.ids[0]);
+    assert.equal(duplicate.status,200,'a paused duplicate for the held selection is not refused');
+    const body=await duplicate.json();
+    assert.equal(body.video.artifact.id,a.ids[0]);
+    assert.equal(body.video.status,'queued');
+    const other=await a.request(a.ids[1]);
+    assert.equal(other.status,409,'a paused second selection is still refused as already requested');
+    assert.equal((await other.json()).code,'video_already_requested');
+    assert.equal((await sql`SELECT * FROM user_video_requests`).length,1);
+  } finally {sqlite.close();}
+});
+
 test('zero and invalid video admission limits fail closed without consuming an account slot',async()=>{
   const {sqlite,env,sql}=database();
   try {

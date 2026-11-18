@@ -53,7 +53,15 @@ export async function readVideoRequest(sql, userId, env = {}) {
   return result;
 }
 
+function reservationFor(video, target) {
+  if (video.artifact.id === target.id && video.artifact.version === target.version) return { video };
+  return { error: video.status === "ready" ? "You've already made your video. Watch it below." : "You've already requested your one video. Its progress is shown below.",
+    code: "video_already_requested", status: 409, video };
+}
+
 export async function reserveVideo(sql, userId, target, env = {}) {
+  const existing = await readVideoRequest(sql, userId, env);
+  if (existing) return reservationFor(existing, target);
   if (env.SHORTS !== "on") return { error: "Video making is paused, try again later.", status: 503, code: "videos_paused" };
   const { daily, monthly } = limits(env);
   await sql`INSERT INTO user_video_requests(user_id,artifact_id,artifact_version)
@@ -68,11 +76,7 @@ export async function reserveVideo(sql, userId, target, env = {}) {
       AND (SELECT count(*) FROM video_starts WHERE created_at>=strftime('%Y-%m-01T00:00:00.000Z','now'))<${monthly}
     ON CONFLICT(user_id) DO NOTHING`;
   const video = await readVideoRequest(sql, userId, env);
-  if (video) {
-    if (video.artifact.id === target.id && video.artifact.version === target.version) return { video };
-    return { error: video.status === "ready" ? "You've already made your video. Watch it below." : "You've already requested your one video. Its progress is shown below.",
-      code: "video_already_requested", status: 409, video };
-  }
+  if (video) return reservationFor(video, target);
   const [unmakeable] = await sql`SELECT 1 FROM video_results WHERE artifact_id=${target.id} AND artifact_version=${target.version} AND status='failed' AND attempts>=${MAX_VIDEO_ATTEMPTS}`;
   if (unmakeable) return { error: "This skill's video couldn't be made. Choose another skill for your video.", status: 409, code: "video_unavailable" };
   const held = limitMessage(await budget(sql, env));
