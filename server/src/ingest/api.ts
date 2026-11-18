@@ -5,8 +5,7 @@ import { bearerAuth } from "hono/bearer-auth";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { MAX_WINDOW_SECONDS, MIN_WINDOW_SECONDS } from "./extract/gemini.js";
-import { digestAndStore, ingestLink } from "./pipeline.js";
-import { UNLIMITED } from "./limits.js";
+import { digestAndStore, ingestLink, reserveDigest } from "./pipeline.js";
 import { processUnits, type ProcessorOptions } from "./processor.js";
 import type { DigestOutput, IngestedUnit, StoredArtifact } from "./types.js";
 
@@ -64,8 +63,8 @@ export function createIngestApp(o: ApiOptions): Hono {
     if (ready.length === 0) { job.digest = { ...EMPTY_DIGEST, status: "skipped", error: "no successfully extracted sources" }; return; }
     job.digest.status = "running";
     try {
-      const { reservation } = await o.store.reserveDigests(ready.map((u) => u.id), UNLIMITED);
-      const d = await digestAndStore({ apiKey: o.openaiKey, model: o.openaiModel, maxOutputTokens: o.openaiMaxOutputTokens, units: ready, request: job.request, fetchImpl: o.fetchImpl, store: o.store, reservation });
+      const reserved = await reserveDigest(o.store, ready);
+      const d = await digestAndStore({ apiKey: o.openaiKey, model: o.openaiModel, maxOutputTokens: o.openaiMaxOutputTokens, units: reserved.units, request: job.request, fetchImpl: o.fetchImpl, store: o.store, reservation: reserved.reservation });
       job.digest = { status: d.storeError ? "failed" : "ready", error: d.storeError, result: d.result, digestion_prompt_id: d.promptId, stored_artifacts: d.stored, store_error: d.storeError };
     } catch (e) {
       job.digest = { ...EMPTY_DIGEST, status: "failed", error: (e as Error).message };

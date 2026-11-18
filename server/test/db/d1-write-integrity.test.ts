@@ -6,6 +6,7 @@ import { bridgedDatabase } from './helpers.js';
 import { D1Store } from '../../src/ingest/store.js';
 import { D1OutputStore } from '../../src/outputs/store.js';
 import { processUnits } from '../../src/ingest/processor.js';
+import { reserveDigest } from '../../src/ingest/pipeline.js';
 import { UNLIMITED } from '../../src/ingest/limits.js';
 import { DEFAULT_CATEGORIZATION_REQUEST, promptRevisionText } from '../../src/ingest/digest/prompt.js';
 import { mockFetch } from '../ingest/helpers.js';
@@ -143,6 +144,29 @@ test('forged artifact, failure and exclusion writes are refused without the cont
     assert.equal(await s.count('SELECT count(*) AS n FROM artifacts'), artifacts);
     assert.equal(await s.count('SELECT count(*) AS n FROM artifact_exclusions'), 0);
     assert.deepEqual(await s.store.unitsNeedingDigest([waiting], prompt), [waiting], 'the waiting unit is still digested by the container');
+  } finally { s.sqlite.close(); }
+});
+
+test('a new link cannot be created through the D1 bridge and leaves no unit behind', async () => {
+  const s = await setup();
+  try {
+    const link = randomUUID();
+    const unit = { id: link, submittedUrl: 'https://www.youtube.com/watch?v=VQy50fuxI34', sourceUrl: 'https://www.youtube.com/watch?v=VQy50fuxI34', startSeconds: null, title: 'New', transcript: null, extractionMethod: 'gemini', extractedAt: new Date(), status: 'failed' as const, error: 'x' };
+    await assert.rejects(s.store.saveUnit(unit), /new-link ingest is unsupported through the D1 bridge: unit .* does not exist, and production imports create units in the web app/);
+    assert.equal(await s.count('SELECT count(*) AS n FROM ingested_units WHERE id=?1', link), 0);
+  } finally { s.sqlite.close(); }
+});
+
+test('a digest reservation with a unit its importer has already seen fails instead of dropping it silently', async () => {
+  const s = await setup();
+  try {
+    const digested = await s.importVideo('VQy50fuxI34');
+    await processUnits([digested], s.options(mockFetch().impl));
+    await assert.rejects(reserveDigest(s.store, await s.store.getUnits([digested])), /1 unit\(s\) already have a digest/);
+    const waiting = await s.importVideo('aaaaaaaaaaa');
+    await processUnits([waiting], s.options(mockFetch().impl, { digest: false }));
+    const reserved = await reserveDigest(s.store, await s.store.getUnits([waiting]));
+    assert.deepEqual(reserved.units.map((u) => u.id), [waiting]);
   } finally { s.sqlite.close(); }
 });
 

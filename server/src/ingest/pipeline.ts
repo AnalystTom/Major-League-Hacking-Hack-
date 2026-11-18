@@ -8,6 +8,7 @@ import { fetchTitle } from "./extract/title.js";
 import { runDigestion, type DigestOptions } from "./digest/run.js";
 import { promptRevisionText } from "./digest/prompt.js";
 import type { Store } from "./store.js";
+import { UNLIMITED } from "./limits.js";
 import type { IngestedUnit, StoredArtifact } from "./types.js";
 
 export interface IngestOptions {
@@ -122,6 +123,12 @@ export async function ingestLinks(links: string[], o: IngestOptions): Promise<In
 export interface DigestAndStoreOptions extends DigestOptions {
   store: Store;
   reservation: string;
+}
+
+export async function reserveDigest(store: Store, units: IngestedUnit[]) {
+  const { allowed, deferred, reservation } = await store.reserveDigests(units.map((u) => u.id), UNLIMITED);
+  if (deferred.length) throw new Error(`${deferred.length} unit(s) already have a digest for their importers and were not digested`);
+  return { units: units.filter((u) => allowed.includes(u.id)), reservation };
 }
 
 export async function digestAndStore(o: DigestAndStoreOptions) {

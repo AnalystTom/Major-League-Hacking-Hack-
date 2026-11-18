@@ -193,6 +193,9 @@ leaked `D1_BRIDGE_TOKEN` cannot plant or overwrite rows under caller-chosen IDs:
   Skill and video claims need a `ready` artifact. A judge rejection releases an account's video request
   only under the current running claim.
 
+The server ingest CLI, the handoff CLI and the dev ingest API cannot create new units through the D1 bridge.
+A new link fails with an explicit error there, because production imports create units in the web app.
+
 `server/test/db/d1-write-integrity.test.ts` runs the container's real write sequence through the bridge and
 shows forged writes with caller-chosen IDs, finished units or no reservation are refused.
 

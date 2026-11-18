@@ -174,7 +174,9 @@ export class D1Store implements Store {
     const { rowCount } = await this.db.query(`UPDATE ingested_units SET title=?2,transcript=?3,extraction_method=?4,extracted_at=?5,status=?6,error=?7
       WHERE id=?1 AND status='running' AND ?6 IN ('ready','failed')`,
       [u.id,u.title,u.transcript && JSON.stringify(u.transcript),u.extractionMethod,u.extractedAt?.toISOString() ?? null,u.status,u.error]);
-    if (rowCount !== 1) throw new Error(`unit ${u.id} is not claimed for extraction; its result was not saved`);
+    if (rowCount === 1) return;
+    if ((await this.getUnits([u.id])).length === 0) throw new Error(`new-link ingest is unsupported through the D1 bridge: unit ${u.id} does not exist, and production imports create units in the web app`);
+    throw new Error(`unit ${u.id} is not claimed for extraction; its result was not saved`);
   }
   async heartbeat(ids: string[]) {
     await this.db.query(`UPDATE ingested_units SET claimed_at=${NOW} WHERE status='running' AND id IN (SELECT value FROM json_each(?1))`, [JSON.stringify(ids)]);
