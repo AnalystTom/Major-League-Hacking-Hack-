@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import app from '../src/index.js';
+import waitlistWorker from '../src/waitlist.js';
 import { CONTENT_SECURITY_POLICY } from '../src/security-headers.js';
 import { serveMedia } from '../src/media.js';
 import { xRoute } from '../src/x-oauth.js';
@@ -40,6 +41,15 @@ test('the policy blocks inline code, foreign scripts and framing, and admits the
   assert.deepEqual(directives['frame-src'], ['https://www.loom.com']);
   assert.deepEqual(directives['style-src'], ["'self'", 'https://fonts.googleapis.com']);
   assert.deepEqual(directives['font-src'], ["'self'", 'https://fonts.gstatic.com']);
+});
+
+test('the waitlist Worker entry point sends the security headers on its own responses', async () => {
+  const response = await waitlistWorker.fetch(new Request('http://localhost/api/waitlist'), { WAITLIST_LIMITER: allow }, {});
+  assert.equal(response.status, 405);
+  assert.equal(response.headers.get('content-security-policy'), CONTENT_SECURITY_POLICY);
+  assert.equal(response.headers.get('x-frame-options'), 'DENY');
+  assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(response.headers.get('referrer-policy'), 'strict-origin-when-cross-origin');
 });
 
 test('media is served with the type its extension names, never a stored type', async () => {
