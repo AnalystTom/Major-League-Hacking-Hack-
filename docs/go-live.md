@@ -1,9 +1,10 @@
 # Go live: captain-operated release
 
-This change enables shorts in source configuration, not in production. Do not deploy,
-remove the pre-launch gate or pay for a real short as part of this PR. Firstmate deploys
-and runs the real-short check after merge. The captain alone authorizes opening the
-site. X remains disabled until its separate setup is complete. No credentials belong
+Shorts are enabled in source configuration. Firstmate deploys merged changes and runs
+the single authorized real-short check. The captain authorized opening the public
+product flow (sign-in, X login, bookmark import, skills) on 2026-11-17; the
+[morning checklist](#morning-checklist-captain) lists what only the captain can do.
+X stays unavailable until its secrets and variables are set. No credentials belong
 in this repository, chat, screenshots or command arguments.
 
 ## Shorts and cost controls
@@ -137,11 +138,17 @@ npm exec --prefix deploy/processor -- wrangler deployments list --config deploy/
    choices, processing ledger and X tables are shared by both Workers. Apply `0007_video_limits.sql` and `0008_signup_events.sql` before deploying either Worker: it adds the lifetime reservations and video-start ledger. Back up and review historical allocations first. The migration retains existing media and can reduce multiple old request flags to the single preserved allocation, and failed videos do not count as an allocation.
 2. Apply reviewed pending migrations before either code release:
    `npm run db:migrate:remote --prefix web`. Preserve all existing data.
-3. Deploy the web Worker, retaining both gate secrets:
-   `npm run deploy --prefix web`. Verify unauthenticated `/`, `/available`, `/api/feed`
-   and a known media path still challenge with 401; verify half-configured gates
-   are not present. Authenticate using the existing operator login, then verify
-   email sign-in, paste imports, kept skills and explicit video opt-in.
+3. Deploy the web Worker: `npm run deploy --prefix web`. `wrangler deploy` replaces
+   dashboard-set plain-text variables with the `vars` in `web/wrangler.jsonc`, which
+   does not declare `X_CALLBACK_URL` or `X_READS_ENABLED`; secrets survive. Before the
+   first deploy, run `npm exec --prefix web -- wrangler secret list --config web/wrangler.jsonc`
+   and check where those two X values live. If they are dashboard variables, the deploy
+   switches X sign-in off: store them as secrets or add them to `vars` (a name that
+   exists as a secret cannot also be a var). Then run `npm run smoke:live` (see
+   [Live smoke](#live-smoke)). Before the site is opened, the public-access checks
+   fail by design, and the rest of the journey needs `SMOKE_ACCESS_CLIENT_*` or
+   `SMOKE_GATE_*`. After it is opened, every check must pass. A half-configured
+   in-app gate answers `503`.
 4. Deploy the processor last: `npm run deploy --prefix deploy/processor`. A local
    image build needs Docker; alternatively use the existing authorized Workers
    Builds path. Do not enable a second deployment mechanism. The processor applies
@@ -195,3 +202,123 @@ than the site's Basic challenge. Close the verification context afterward.
   If a previous version is schema-incompatible, pause and prepare a forward fix.
   X reads remain disabled unless separately authorized; disabling X reads is
   independent of pausing videos or controlling the site gate.
+
+## Open the public product flow (Cloudflare Access)
+
+As of 2026-11-18 every live path, including `/privacy`, `/terms` and
+`/api/auth/x/callback`, answers `302` to the Cloudflare Access login at
+`muddy-breeze-11de.cloudflareaccess.com`. The login metadata names the Worker, so this
+Access application protects the `resurface` Worker's workers.dev URL. It lives in the
+Cloudflare account, not in this repository, and only a signed-in account member can
+change it. The in-app gate (`SITE_GATE_USER`/`SITE_GATE_PASSWORD`, `web/src/site-gate.js`)
+is a second, independent control. Cloudflare Access is the gate that is currently
+enforced. Whether the in-app secrets are also set shows only in
+`npm exec --prefix web -- wrangler secret list --config web/wrangler.jsonc`.
+Application sessions protect private API and media either way.
+
+**Option A: open the site (the captain's decision C1).**
+
+1. Record what you are about to change, so it can be restored. In
+   [Zero Trust](https://one.dash.cloudflare.com/), go to **Access → Applications** and
+   open the application whose domain is `resurface.thomasmann2001.workers.dev`. Note its
+   name and its policies (action, include rules, allowed emails or groups).
+2. In the [Cloudflare dashboard](https://dash.cloudflare.com/), go to **Workers & Pages →
+   resurface → Settings → Domains & Routes**. On the `workers.dev` row, turn Cloudflare
+   Access off. Leave the `workers.dev` route itself enabled. If that row offers no Access
+   control, delete the application from step 1 in **Access → Applications** instead.
+3. If the secret list shows `SITE_GATE_USER` or `SITE_GATE_PASSWORD`, run the commands in
+   [Remove the gate](#remove-the-gate-only-when-the-captain-says-launch). C1 authorizes it.
+4. Run `npm run smoke:live`. All public checks must pass with no operator access.
+
+To revert, turn Cloudflare Access back on for the same `workers.dev` row, or recreate the
+application. Then restore the policies recorded in step 1 and confirm that `/` answers
+`302` to the Access login again.
+
+**Option B: keep the site private and bypass only what X needs.** In **Access →
+Applications**, choose **Add an application → Self-hosted**. Use the hostname
+`resurface.thomasmann2001.workers.dev` and add the paths `privacy`, `terms` and
+`api/auth/x/callback`. Add one policy with action **Bypass** that includes **Everyone**.
+A more specific Access path takes precedence over the hostname-wide application. If the
+domain picker does not offer the workers.dev hostname, use Option A. With Option B the
+product stays private: every user must still pass Access, and the in-app gate, when set,
+still challenges the callback. A browser that has already passed the in-app gate resends
+its credentials on X's redirect. To revert, delete the bypass application.
+
+## Live smoke
+
+`npm run smoke:live` runs `ci/live-smoke.js`, the repeatable new-user check, against
+`https://resurface.thomasmann2001.workers.dev`. It uses a fresh headless Chromium context
+and makes no X request, paid call or email. It checks:
+
+- `/privacy` and `/terms` are public;
+- the X callback reaches the app;
+- `/` is public;
+- signed-out and private API boundaries hold;
+- X sign-in is configured;
+- **Continue with X** issues a PKCE S256 authorization to `https://x.com/i/oauth2/authorize`,
+  with the live callback and the `tweet.read users.read bookmark.read offline.access` scopes;
+- a new user can sign up, sign out and sign back in with email.
+
+Each run creates one throwaway account `resurface-smoke+<time>-<random>@example.com`.
+`example.com` delivers nowhere. The account counts toward the sign-up caps (200 per day,
+5 per IP). The script writes screenshots and `report.json` to `SMOKE_EVIDENCE_DIR`
+(default `test-results/live-smoke-<time>`), prints PASS/FAIL for each check and exits
+non-zero on any failure.
+
+| Variable | Effect |
+|---|---|
+| `SMOKE_BASE_URL` | Target origin, for example `http://127.0.0.1:28757` for the local fixture app |
+| `SMOKE_GATE_USER`, `SMOKE_GATE_PASSWORD` | In-app gate credentials, sent only to the target origin, so the journey can run while that gate is on |
+| `SMOKE_ACCESS_CLIENT_ID`, `SMOKE_ACCESS_CLIENT_SECRET` | Cloudflare Access service token, sent only to the target origin |
+| `SMOKE_LOAD_X_CONSENT=1` | Also loads X's authorize page and screenshots it. It reads nothing from X |
+| `SMOKE_IMPORT_URL` | **Paid.** Pastes this public link and requires `processor=requested`, then waits for a ready skill (`SMOKE_IMPORT_TIMEOUT_MS`, default 10 minutes). It keeps the skill (`generateVideos: false`) and checks SKILL.md and Download. It never requests a video |
+
+Pass credentials through the environment, never as arguments. The public checks always
+run anonymously, so they keep reporting the gate state truthfully. For local proof, run
+`node ci/fixture-server.js` and
+`SMOKE_BASE_URL=http://127.0.0.1:28757 SMOKE_IMPORT_URL=https://x.com/i/status/1234567890123456789 npm run smoke:live`.
+The fixture's X provider and processor are synthetic, so this run costs nothing.
+
+## Morning checklist (captain)
+
+Only the captain can do these steps. Never paste a password, key or secret into chat or
+give it to an agent.
+
+1. **Cloudflare sign-in.** On this machine, as user `russki`, run
+   `npm exec --prefix web -- wrangler login` from the repository root and approve the
+   Resurface Cloudflare account in the browser. Then run
+   `npm exec --prefix web -- wrangler whoami`. Firstmate's worker then deploys `main`
+   through [Deploy order](#deploy-order-after-merge-by-firstmate) and runs the live smoke.
+2. **Open the site.** Do Option A in [Open the public product flow](#open-the-public-product-flow-cloudflare-access).
+   The worker can do step 3 of Option A (in-app gate secrets) once Wrangler is signed in.
+   Only steps 1–2 need you in the dashboard.
+3. **X developer app.** If it is not set up yet, follow [x-setup-steps.md](x-setup-steps.md)
+   sections 1–2. Register the callback
+   `https://resurface.thomasmann2001.workers.dev/api/auth/x/callback`, use the public
+   `/privacy` and `/terms` URLs, request the scopes
+   `tweet.read users.read bookmark.read offline.access`, and fund the approved USD 20
+   once with auto-recharge off.
+4. **X credentials on the Worker.** `X_CLIENT_ID` and `X_CLIENT_SECRET` must become
+   secrets on the `resurface` Worker. The no-paste transfer helper in
+   x-setup-steps.md §3 is not built. The remaining path that keeps the values away from
+   any agent is for you to type them into Wrangler's hidden prompt in your own terminal:
+   `npm exec --prefix web -- wrangler secret put X_CLIENT_ID --config web/wrangler.jsonc`.
+   Repeat for `X_CLIENT_SECRET`. Each `secret put` publishes a new Worker version.
+   Then tell firstmate that the USD 20 is funded. The worker sets the non-secret
+   `X_CALLBACK_URL` and the cost switch `X_READS_ENABLED=true` so that they survive
+   deploys (see Deploy order step 3). It then confirms with the smoke check
+   "X sign-in is configured".
+5. **Your own X consent.** Use an ordinary browser window, not an agent's.
+   1. Open `https://resurface.thomasmann2001.workers.dev/start` and choose
+      **Continue with X**.
+   2. On X's screen, confirm that the app is Resurface and that it asks only to read
+      posts, profile and bookmarks and to stay connected. Choose **Authorize app**.
+   3. You land on `/app?import=x`, and the note reads "Extracting your X bookmarks…".
+      Within a few minutes the **Skills** count rises.
+   4. Open **Skills**, keep at least one skill with **Keep selected**, then use
+      **Copy SKILL.md** or **Download**.
+   5. To run the one authorized verification video, choose **Make my video** on one
+      skill. It uses this account's single lifetime video and counts against
+      20 per day and 400 per month.
+6. **Tell firstmate it is done.** The worker reruns `npm run smoke:live` with
+   `SMOKE_LOAD_X_CONSENT=1` and checks usage on your account.
