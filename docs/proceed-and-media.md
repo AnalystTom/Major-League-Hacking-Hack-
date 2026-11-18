@@ -179,4 +179,4 @@ and the page reports that state; no simulated clips or processing records are cr
 
 The landing page has an email form and **Join the waitlist** links. It shows success only after D1 accepts the signup; duplicate emails stay as one record. Existing waitlist rows are retained.
 
-Deploy with `npm run deploy:waitlist --prefix web`. `web/wrangler.waitlist.jsonc` targets the same `resurface` Worker and `resurface-waitlist` D1 database without requiring the product's D1 or R2 setup. This Worker redirects `/start` and `/app` to the form and does not expose product APIs. The normal `web/wrangler.jsonc` retains the product backend for development and a later launch. Apply `web/migrations/0001_waitlist.sql` only if the table does not exist.
+Production deploys with `npm run deploy --prefix web`, which uses `web/wrangler.jsonc` only. Apply `web/migrations/0001_waitlist.sql` only if the table does not exist.
