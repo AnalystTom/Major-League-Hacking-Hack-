@@ -2,23 +2,22 @@ import { isMediaKey } from "./media.js";
 
 const json = (values) => JSON.stringify(values);
 
-const ownedUnitIds = `SELECT owned.unit_id FROM user_imports owned
-  WHERE owned.user_id = ? AND NOT EXISTS (SELECT 1 FROM user_imports other WHERE other.unit_id = owned.unit_id AND other.user_id <> owned.user_id)`;
-const doomedArtifact = (artifact) => `EXISTS (SELECT 1 FROM json_each(${artifact}.source_ids) s WHERE s.value IN (${ownedUnitIds}))`;
-const doomedChild = (table) => `EXISTS (SELECT 1 FROM artifacts a
-  WHERE a.id = ${table}.artifact_id AND a.version = ${table}.artifact_version AND ${doomedArtifact("a")})`;
+const ownUnits = "SELECT unit_id FROM user_imports WHERE user_id = ?1";
+const otherUnits = "SELECT unit_id FROM user_imports WHERE user_id <> ?1";
+const soleOwnUnits = `SELECT o.unit_id FROM user_imports o WHERE o.user_id = ?1
+  AND NOT EXISTS (SELECT 1 FROM user_imports x WHERE x.unit_id = o.unit_id AND x.user_id <> ?1)`;
+const touchesOwn = (artifact) => `EXISTS (SELECT 1 FROM json_each(${artifact}.source_ids) src WHERE src.value IN (${ownUnits}))`;
+const removedArtifact = (artifact) => `${touchesOwn(artifact)}
+  AND NOT EXISTS (SELECT 1 FROM json_each(${artifact}.source_ids) src WHERE src.value IN (${otherUnits}))`;
+const removedChild = (table) => `EXISTS (SELECT 1 FROM artifacts a
+  WHERE a.id = ${table}.artifact_id AND a.version = ${table}.artifact_version AND ${removedArtifact("a")})`;
 
 export async function deleteAccount(env, sql, userId) {
-  const unitIds = (await sql`SELECT unit_id FROM user_imports WHERE user_id = ${userId}`).map((r) => r.unit_id);
-  const sharedUnitIds = new Set((await sql`
-    SELECT DISTINCT unit_id FROM user_imports
-    WHERE user_id <> ${userId} AND unit_id IN (SELECT value FROM json_each(${json(unitIds)}))`).map((r) => r.unit_id));
-  const deletedUnitIds = unitIds.filter((id) => !sharedUnitIds.has(id));
-
-  const doomed = await sql`
-    SELECT id, version FROM artifacts
-    WHERE EXISTS (SELECT 1 FROM json_each(source_ids) s WHERE s.value IN (SELECT value FROM json_each(${json(deletedUnitIds)})))`;
-  const artifactPairs = json(doomed.map((a) => ({ id: a.id, version: a.version })));
+  const removed = await sql`
+    SELECT a.id, a.version FROM artifacts a
+    WHERE EXISTS (SELECT 1 FROM json_each(a.source_ids) src WHERE src.value IN (SELECT unit_id FROM user_imports WHERE user_id = ${userId}))
+      AND NOT EXISTS (SELECT 1 FROM json_each(a.source_ids) src WHERE src.value IN (SELECT unit_id FROM user_imports WHERE user_id <> ${userId}))`;
+  const artifactPairs = json(removed.map((a) => ({ id: a.id, version: a.version })));
 
   const mediaRows = await sql`
     SELECT v.media_ref, v.caption_ref, v.narration_ref, v.music_ref FROM video_results v
@@ -33,18 +32,22 @@ export async function deleteAccount(env, sql, userId) {
   await env.DB.batch([
     env.DB.prepare(`
       DELETE FROM handoffs WHERE EXISTS (SELECT 1 FROM skill_results s JOIN artifacts a ON a.id = s.artifact_id AND a.version = s.artifact_version
-        WHERE s.id = handoffs.skill_result_id AND ${doomedArtifact("a")})`).bind(userId),
-    env.DB.prepare(`DELETE FROM skill_results WHERE ${doomedChild("skill_results")}`).bind(userId),
-    env.DB.prepare(`DELETE FROM video_results WHERE ${doomedChild("video_results")}`).bind(userId),
-    env.DB.prepare(`DELETE FROM video_starts WHERE ${doomedChild("video_starts")}`).bind(userId),
-    env.DB.prepare(`DELETE FROM user_skill_choices WHERE ${doomedChild("user_skill_choices")}`).bind(userId),
-    env.DB.prepare(`DELETE FROM user_video_requests WHERE ${doomedChild("user_video_requests")}`).bind(userId),
-    env.DB.prepare(`DELETE FROM artifacts WHERE ${doomedArtifact("artifacts")}`).bind(userId),
-    env.DB.prepare(`UPDATE ingested_units SET submitted_url = source_url
-      WHERE id IN (SELECT unit_id FROM user_imports WHERE user_id = ?)`).bind(userId),
-    env.DB.prepare("DELETE FROM users WHERE id = ?").bind(userId),
-    env.DB.prepare("DELETE FROM x_read_requests WHERE user_key = ?").bind(userId),
-    env.DB.prepare("DELETE FROM artifact_exclusions WHERE unit_id IN (SELECT value FROM json_each(?))").bind(json(deletedUnitIds)),
-    env.DB.prepare("DELETE FROM ingested_units WHERE id IN (SELECT value FROM json_each(?))").bind(json(deletedUnitIds)),
+        WHERE s.id = handoffs.skill_result_id AND ${removedArtifact("a")})`).bind(userId),
+    env.DB.prepare(`DELETE FROM skill_results WHERE ${removedChild("skill_results")}`).bind(userId),
+    env.DB.prepare(`DELETE FROM video_results WHERE ${removedChild("video_results")}`).bind(userId),
+    env.DB.prepare(`DELETE FROM video_starts WHERE ${removedChild("video_starts")}`).bind(userId),
+    env.DB.prepare(`DELETE FROM user_skill_choices WHERE ${removedChild("user_skill_choices")}`).bind(userId),
+    env.DB.prepare(`DELETE FROM user_video_requests WHERE ${removedChild("user_video_requests")}`).bind(userId),
+    env.DB.prepare(`DELETE FROM artifacts WHERE ${removedArtifact("artifacts")}`).bind(userId),
+    env.DB.prepare(`UPDATE artifacts SET
+        source_ids = (SELECT json_group_array(src.value) FROM json_each(artifacts.source_ids) src WHERE src.value NOT IN (${soleOwnUnits})),
+        source_url = (SELECT u.source_url FROM json_each(artifacts.source_ids) src JOIN ingested_units u ON u.id = src.value
+          WHERE src.value IN (${otherUnits}) ORDER BY src.key LIMIT 1)
+      WHERE ${touchesOwn("artifacts")}`).bind(userId),
+    env.DB.prepare(`UPDATE ingested_units SET submitted_url = source_url WHERE id IN (${ownUnits})`).bind(userId),
+    env.DB.prepare(`DELETE FROM artifact_exclusions WHERE unit_id IN (${soleOwnUnits})`).bind(userId),
+    env.DB.prepare(`DELETE FROM ingested_units WHERE id IN (${soleOwnUnits})`).bind(userId),
+    env.DB.prepare("DELETE FROM users WHERE id = ?1").bind(userId),
+    env.DB.prepare("DELETE FROM x_read_requests WHERE user_key = ?1").bind(userId),
   ]);
 }
