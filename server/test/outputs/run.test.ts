@@ -309,19 +309,39 @@ test("a short whose upload fails part-way removes the files that were already up
   const outputs = new MemoryOutputStore();
   outputs.videoRequests.add(`${a.id}:${a.version}`);
   const { impl } = outputsFetch(a);
-  const uploaded: string[] = [], removed: string[] = [];
+  const attempted: string[] = [], removed: string[] = [];
   const narrationFails: MediaStore = {
     put: async (key) => {
+      attempted.push(key);
       if (key.startsWith("audio/")) throw new Error("R2 HTTP 503: temporarily unavailable");
-      uploaded.push(key);
       return `r2:${key}`;
     },
     delete: async (key) => { removed.push(key); },
   };
   await produceOutputs([a], { outputs, openaiKey: "o", geminiKey: "g", media: narrationFails, fetchImpl: impl });
-  assert.equal(uploaded.length, 2);
-  assert.deepEqual([...removed].sort(), [...uploaded].sort());
+  assert.equal(attempted.length, 3);
+  assert.deepEqual([...removed].sort(), [...attempted].sort());
   const row = [...outputs.rows.video.values()][0];
   assert.equal(row.status, "failed");
   assert.match(row.error!, /R2 HTTP 503/);
+});
+
+test("a short whose save fails for a reason other than a lost claim keeps its uploaded files", { skip: !hasFfmpeg && "ffmpeg not installed", timeout: 360_000 }, async () => {
+  const a = artifact();
+  class SaveTimesOut extends MemoryOutputStore {
+    async finishVideo(): Promise<void> { throw new Error("D1 timed out after commit"); }
+  }
+  const outputs = new SaveTimesOut();
+  outputs.videoRequests.add(`${a.id}:${a.version}`);
+  const { impl } = outputsFetch(a);
+  const removed: string[] = [];
+  const media: MediaStore = {
+    put: async (key) => `r2:${key}`,
+    delete: async (key) => { removed.push(key); },
+  };
+  await produceOutputs([a], { outputs, openaiKey: "o", geminiKey: "g", media, fetchImpl: impl });
+  assert.deepEqual(removed, []);
+  const row = [...outputs.rows.video.values()][0];
+  assert.equal(row.status, "failed");
+  assert.match(row.error!, /D1 timed out after commit/);
 });

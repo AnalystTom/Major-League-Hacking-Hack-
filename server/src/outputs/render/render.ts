@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { assertJudged, judgeShort, publicationJudgment, QualityRejected } from "./judge.js";
 import { burnSubtitles, composeShort, probe } from "./ffmpeg.js";
-import { discardMedia, type MediaStore } from "./media.js";
+import { discardMedia, r2Ref, type MediaStore } from "./media.js";
 import { SCRIPT_PROMPT_REVISION, scriptEffort, shortModel, writeScript, reviseScript, type DraftScene } from "./script.js";
 import { captionCues, timeline, toVtt } from "./timeline.js";
 import { narrationVoice, synthesize } from "./tts.js";
@@ -86,16 +86,14 @@ async function renderRound(a: ReadyArtifact, draft: DraftScene[], dir: string, r
 }
 
 async function storeRender(media: MediaStore, base: string, files: { mp4: string; vtt: string; narration: string }) {
-  const refs: string[] = [];
+  const videoKey = `videos/${base}/short.mp4`, captionKey = `captions/${base}/short.vtt`, narrationKey = `audio/${base}/narration.m4a`;
   try {
-    const media_ref = await media.put(`videos/${base}/short.mp4`, files.mp4, "video/mp4");
-    refs.push(media_ref);
-    const caption_ref = await media.put(`captions/${base}/short.vtt`, files.vtt, "text/vtt; charset=utf-8");
-    refs.push(caption_ref);
-    const narration_ref = await media.put(`audio/${base}/narration.m4a`, files.narration, "audio/mp4");
+    const media_ref = await media.put(videoKey, files.mp4, "video/mp4");
+    const caption_ref = await media.put(captionKey, files.vtt, "text/vtt; charset=utf-8");
+    const narration_ref = await media.put(narrationKey, files.narration, "audio/mp4");
     return { media_ref, caption_ref, narration_ref };
   } catch (e) {
-    await discardMedia(media, refs);
+    await discardMedia(media, [r2Ref(videoKey), r2Ref(captionKey), r2Ref(narrationKey)]);
     throw e;
   }
 }

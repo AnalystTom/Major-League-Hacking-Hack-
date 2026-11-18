@@ -53,7 +53,7 @@ async function produceNow(kind: Kind, a: ReadyArtifact, o: OutputOptions) {
         try {
           await o.outputs.finishVideo(claim, video);
         } catch (e) {
-          await discardMedia(media, [video.media_ref, video.caption_ref, video.narration_ref]);
+          if (e instanceof LostClaim) await discardMedia(media, [video.media_ref, video.caption_ref, video.narration_ref]);
           throw e;
         }
       }
