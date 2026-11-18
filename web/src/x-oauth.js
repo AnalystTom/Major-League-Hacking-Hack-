@@ -11,7 +11,7 @@ const bytes = value => Uint8Array.from(atob(value), c => c.charCodeAt(0));
 const random = () => b64(crypto.getRandomValues(new Uint8Array(32))).replace(/[+/=]/g, c => ({ '+': '-', '/': '_', '=': '' })[c]);
 const hash = async value => b64(await crypto.subtle.digest('SHA-256', enc.encode(value)));
 const now = () => Math.floor(Date.now() / 1000);
-const json = (body, status = 200) => Response.json(body, { status, headers: { 'cache-control': 'no-store' } });
+const json = (body, status = 200, headers = {}) => Response.json(body, { status, headers: { 'cache-control': 'no-store', ...headers } });
 const redirect = (path, cookies = []) => new Response(null, { status: 303, headers: [['location', path], ['cache-control', 'no-store'], ['referrer-policy', 'no-referrer'], ...cookies.map(c => ['set-cookie', c])] });
 const nonceCookie = (value, request, age = 600) => `rs_x_nonce=${value}; Path=/api/auth/x; HttpOnly; SameSite=Lax; Max-Age=${age}${cookieSecure(request.url) ? '; Secure' : ''}`;
 const callbackUrl = env => env.X_CALLBACK_URL;
@@ -129,12 +129,12 @@ async function callback(request, env, sql, user) {
   }
 }
 
-async function status(env, sql, user) {
+async function status(request, env, sql, user) {
   const [row] = user ? await sql`SELECT username,expires_at,import_state,read_count,error,refresh_token IS NOT NULL AS renewable,access_token IS NOT NULL AS connected FROM x_connections WHERE user_id=${user.id}` : [];
   return json({ available: xAvailable(env), connected: Boolean(row?.connected), ...(row ? { username: row.username, expired: row.expires_at <= now() && !row.renewable, state: row.import_state, read: row.read_count, error: row.error } : {}) });
 }
 
-async function importBookmarks(env, sql, user, request) {
+async function importBookmarks(request, env, sql, user) {
   if (!xAvailable(env)) return json({ error: 'X bookmark import is unavailable. Paste links instead.' }, 503);
   const rejection = await rateLimit(env.IMPORT_LIMITER, user.id, "That's a lot of imports at once. Wait a minute and try again.");
   if (rejection) return rejection;
@@ -228,7 +228,7 @@ async function importBookmarks(env, sql, user, request) {
   }
 }
 
-async function disconnect(env, sql, user) {
+async function disconnect(request, env, sql, user) {
   const [row] = await sql`SELECT access_token,refresh_token FROM x_connections WHERE user_id=${user.id}`;
   await sql`UPDATE x_connections SET access_token=NULL,refresh_token=NULL,expires_at=0,lease_until=0,lease_token=NULL,import_state='disconnected',error=NULL WHERE user_id=${user.id}`;
   if (row?.access_token && xAvailable(env)) {
@@ -242,11 +242,11 @@ async function disconnect(env, sql, user) {
 const publicRoute = handler => ({ handler, signedIn: false });
 const privateRoute = handler => ({ handler, signedIn: true });
 const X_ROUTES = {
-  '/api/auth/x/start': { GET: publicRoute((request, env, sql, user) => start(request, env, sql, user)) },
-  '/api/auth/x/callback': { GET: publicRoute((request, env, sql, user) => callback(request, env, sql, user)) },
-  '/api/x': { GET: publicRoute((request, env, sql, user) => status(env, sql, user)) },
-  '/api/x/bookmarks': { POST: privateRoute((request, env, sql, user) => importBookmarks(env, sql, user, request)) },
-  '/api/x/disconnect': { POST: privateRoute((request, env, sql, user) => disconnect(env, sql, user)) },
+  '/api/auth/x/start': { GET: publicRoute(start) },
+  '/api/auth/x/callback': { GET: publicRoute(callback) },
+  '/api/x': { GET: publicRoute(status) },
+  '/api/x/bookmarks': { POST: privateRoute(importBookmarks) },
+  '/api/x/disconnect': { POST: privateRoute(disconnect) },
 };
 
 export async function xRoute(request, env, sql, user) {
@@ -254,7 +254,7 @@ export async function xRoute(request, env, sql, user) {
   const methods = Object.hasOwn(X_ROUTES, pathname) ? X_ROUTES[pathname] : null;
   if (!methods) return json({ error: 'Not found.' }, 404);
   const route = Object.hasOwn(methods, request.method) ? methods[request.method] : null;
-  if (!route) return Response.json({ error: 'Method not allowed.' }, { status: 405, headers: { allow: Object.keys(methods).join(', '), 'cache-control': 'no-store' } });
+  if (!route) return json({ error: 'Method not allowed.' }, 405, { allow: Object.keys(methods).join(', ') });
   if (route.signedIn && !user) return json({ error: 'Sign in to continue.' }, 401);
   return route.handler(request, env, sql, user);
 }
