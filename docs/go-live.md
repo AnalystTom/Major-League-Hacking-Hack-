@@ -83,8 +83,9 @@ python3 -c 'from pathlib import Path; import re; paths=[Path("web/wrangler.jsonc
 
 Zero or invalid admission limits refuse new video requests. Zero processing limits
 pause charged starts/video starts. Use `SHORTS=off` in both configs to pause new video
-requests and renders while skills continue; no config change interrupts already running work. Code processing defaults
-without release overrides remain 10/40; the web admission defaults are 20/400.
+requests and renders while skills continue; no config change interrupts already running
+work. Code processing defaults without release overrides remain 10/40; the web admission
+defaults are 20/400.
 
 ## X developer console: sign-in only
 
