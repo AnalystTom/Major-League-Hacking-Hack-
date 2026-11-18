@@ -1,6 +1,8 @@
 import { userUnitIds } from "./imports.js";
 import { readFeed } from "./feed.js";
 
+const MAX_VIDEO_ATTEMPTS = 3;
+
 const limits = (env) => {
   const daily = Number(env.DAILY_VIDEO_LIMIT ?? 20), monthly = Number(env.MONTHLY_VIDEO_LIMIT ?? 400);
   return { daily: Number.isSafeInteger(daily) && daily >= 0 ? daily : 0,
@@ -43,7 +45,7 @@ export async function readVideoRequest(sql, userId, env = {}) {
   if (item) return { ...result, status: "ready", message: "You've already made your video.", url: item.video.url };
   if (row.kept === 0) return { ...result, status: "cancelled", message: "Your video is paused because its skill is no longer kept." };
   if (row.status === "running") return { ...result, status: "running", message: "Your video is being made. You can leave; processing continues." };
-  if (row.status === "ready" || (row.status === "failed" && row.attempts >= 3)) return { ...result, status: "failed",
+  if (row.status === "ready" || (row.status === "failed" && row.attempts >= MAX_VIDEO_ATTEMPTS)) return { ...result, status: "failed",
     message: "Your video couldn't be made. You can still copy or download your skills." };
   const held = limitMessage(await budget(sql, env), false, row.attempts > 0);
   if (held) return { ...result, ...held, message: held.message.replace("Try again after", "Your video will retry after") };
@@ -52,11 +54,12 @@ export async function readVideoRequest(sql, userId, env = {}) {
 }
 
 export async function reserveVideo(sql, userId, target, env = {}) {
+  if (env.SHORTS !== "on") return { error: "Video making is paused, try again later.", status: 503, code: "videos_paused" };
   const { daily, monthly } = limits(env);
-  // The uniqueness check and both global admission ceilings execute in one serialized D1 statement.
   await sql`INSERT INTO user_video_requests(user_id,artifact_id,artifact_version)
     SELECT ${userId},a.id,a.version FROM artifacts a WHERE a.id=${target.id} AND a.version=${target.version}
       AND json_array_length(a.source_ids)>0
+      AND NOT EXISTS (SELECT 1 FROM video_results v WHERE v.artifact_id=a.id AND v.artifact_version=a.version AND v.status='failed' AND v.attempts>=${MAX_VIDEO_ATTEMPTS})
       AND NOT EXISTS (SELECT 1 FROM json_each(a.source_ids) src WHERE NOT EXISTS (
         SELECT 1 FROM user_imports ui WHERE ui.user_id=${userId} AND ui.unit_id=src.value))
       AND (SELECT count(*) FROM user_video_requests WHERE created_at>=strftime('%Y-%m-%dT00:00:00.000Z','now'))<${daily}
@@ -70,6 +73,8 @@ export async function reserveVideo(sql, userId, target, env = {}) {
     return { error: video.status === "ready" ? "You've already made your video. Watch it below." : "You've already requested your one video. Its progress is shown below.",
       code: "video_already_requested", status: 409, video };
   }
+  const [unmakeable] = await sql`SELECT 1 FROM video_results WHERE artifact_id=${target.id} AND artifact_version=${target.version} AND status='failed' AND attempts>=${MAX_VIDEO_ATTEMPTS}`;
+  if (unmakeable) return { error: "This skill's video couldn't be made. Choose another skill for your video.", status: 409, code: "video_unavailable" };
   const held = limitMessage(await budget(sql, env));
   return { error: held?.message ?? "This skill is unavailable. Refresh and try again.", status: held ? (held.retryAt ? 429 : 503) : 409,
     code: held ? (held.retryAt ? "video_limit" : "videos_unavailable") : "skill_unavailable", retryAt: held?.retryAt };

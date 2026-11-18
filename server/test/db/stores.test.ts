@@ -14,6 +14,7 @@ import { UNLIMITED } from '../../src/ingest/limits.js';
 import { DEFAULT_CATEGORIZATION_REQUEST, promptRevisionText } from '../../src/ingest/digest/prompt.js';
 import { SKILL_PROMPT_REVISION } from '../../src/outputs/skills.js';
 import { readFeed, canReadMedia } from '../../../web/src/feed.js';
+import { readVideoRequest, reserveVideo } from '../../../web/src/video-requests.js';
 import { decodeRow as decodeWebRow } from '../../../web/src/db.js';
 import type { RenderedVideo } from '../../src/outputs/types.js';
 
@@ -205,6 +206,39 @@ test('artifact creation reuses an identical source set and a quality rejection c
     assert.equal(await s.outputs.claim('video',a),null);
     assert.deepEqual(await s.outputs.artifactsNeeding('video',10),[]);
     assert.match((await s.db.query('SELECT error FROM video_results')).rows[0].error,/unsupported claim/);
+  } finally {s.sqlite.close();}
+});
+
+test('a judge rejection releases the one video reservation so the account can request another skill',async()=>{
+  const s=await setup();
+  try {
+    const sql = async (parts: TemplateStringsArray, ...params: unknown[]) =>
+      (await s.db.query(parts.reduce((text, part, i) => text + (i ? `?${i}` : '') + part, ''), params)).rows.map(decodeWebRow);
+    const env={SHORTS:'on'};
+    const rejected=await s.artifact([await s.unit('ready')]);
+    const other=(await s.store.saveArtifacts([{ name:'Second skill',source_ids:[await s.unit('ready')],category:'Evals',processed_text:'other',selection_reason:'reason',evidence:[] }],[],s.prompt))[0];
+    assert.equal((await readVideoRequest(sql,s.user,env))?.status,'queued');
+    const claim=(await s.outputs.claim('video',rejected))!;
+    assert.equal(await s.outputs.fail('video',claim,'Quality judge rejected: unsupported claim'),true);
+    assert.equal(await readVideoRequest(sql,s.user,env),null);
+    assert.equal(await s.outputs.videoRequested(rejected),false);
+    const again=await reserveVideo(sql,s.user,{id:rejected.id,version:rejected.version},env);
+    assert.equal(again.status,409);
+    assert.match(again.error,/couldn't be made/);
+    const reserved=await reserveVideo(sql,s.user,{id:other.id,version:other.version},env);
+    assert.equal(reserved.error,undefined);
+    assert.deepEqual(reserved.video.artifact,{id:other.id,version:other.version});
+  } finally {s.sqlite.close();}
+});
+
+test('a provider failure keeps the video reservation for its retries',async()=>{
+  const s=await setup();
+  try {
+    const a=await s.artifact([await s.unit('ready')]);
+    const claim=(await s.outputs.claim('video',a))!;
+    assert.equal(await s.outputs.fail('video',claim,'R2 upload failed',undefined,true),true);
+    assert.equal(await s.outputs.videoRequested(a),true);
+    assert.equal((await s.db.query('SELECT count(*) AS n FROM user_video_requests')).rows[0].n,1);
   } finally {s.sqlite.close();}
 });
 

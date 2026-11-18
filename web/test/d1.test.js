@@ -18,7 +18,7 @@ function database() {
   sqlite.exec(readFileSync(new URL('../migrations/0005_skill_choices.sql',import.meta.url),'utf8'));
   sqlite.exec(readFileSync(new URL('../migrations/0007_video_limits.sql',import.meta.url),'utf8'));
   sqlite.exec(readFileSync(new URL('../migrations/0008_signup_events.sql',import.meta.url),'utf8'));
-  const env={USER_DAILY_IMPORT_LIMIT:'1000',SIGNUP_IP_DAILY_LIMIT:'1000',AUTH_LIMITER:{async limit(){return {success:true}}},IMPORT_LIMITER:{async limit(){return {success:true}}},DB:{prepare(sql){return {bind(...params){return {async all(){return {results:sqlite.prepare(sql).all(...params)}}}}}}}};
+  const env={SHORTS:'on',USER_DAILY_IMPORT_LIMIT:'1000',SIGNUP_IP_DAILY_LIMIT:'1000',AUTH_LIMITER:{async limit(){return {success:true}}},IMPORT_LIMITER:{async limit(){return {success:true}}},DB:{prepare(sql){return {bind(...params){return {async all(){return {results:sqlite.prepare(sql).all(...params)}}}}}}}};
   return {sqlite,env,sql:connect(env)};
 }
 
@@ -476,6 +476,23 @@ test('migration preserves historical ready videos and assigns only one lifetime 
     const body=await response.json();
     assert.match(body.error,/already made/);
     assert.match(body.video.url,/^\/media\/videos\/history-/);
+  } finally {sqlite.close();}
+});
+
+test('paused shorts refuse the request with a retry message and keep the one video slot free',async()=>{
+  const {sqlite,env,sql}=database();
+  try {
+    const a=await videoAccount(env,sql,'shorts-paused@example.test');
+    for(const value of ['off','','ON']) {
+      env.SHORTS=value;
+      const response=await a.request(a.ids[0]);
+      assert.equal(response.status,503);
+      assert.equal((await response.json()).error,'Video making is paused, try again later.');
+      assert.equal((await sql`SELECT * FROM user_video_requests`).length,0);
+    }
+    env.SHORTS='on';
+    assert.equal((await a.request(a.ids[0])).status,200,'the slot is still available once shorts resume');
+    assert.equal((await sql`SELECT * FROM user_video_requests`).length,1);
   } finally {sqlite.close();}
 });
 
