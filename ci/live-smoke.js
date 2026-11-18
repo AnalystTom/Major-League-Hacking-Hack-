@@ -13,6 +13,12 @@ const X_SCOPES = [
   "offline.access",
 ];
 const LOOPBACK = new Set(["127.0.0.1", "localhost"]);
+const SECURITY_HEADERS = {
+  "content-security-policy": /frame-ancestors 'none'/,
+  "x-frame-options": /^DENY$/,
+  "x-content-type-options": /^nosniff$/,
+  "referrer-policy": /\S/,
+};
 
 const base = new URL(env.SMOKE_BASE_URL ?? LIVE_SITE).origin;
 const evidence = resolve(
@@ -139,6 +145,15 @@ async function apiBoundaryChecks(operator) {
     expect(body.error, "401 without an application error message");
     return `401 ${body.error}`;
   });
+  await check("pages send security headers", async () => {
+    const response = await operator.get("/start", { maxRedirects: 0 });
+    expect(response.ok(), `/start ${describeGate(response)}`);
+    const missing = Object.entries(SECURITY_HEADERS)
+      .filter(([name, value]) => !value.test(response.headers()[name] ?? ""))
+      .map(([name]) => name);
+    expect(missing.length === 0, `missing or wrong: ${missing.join(", ")}`);
+    return Object.keys(SECURITY_HEADERS).join(", ");
+  });
   await check("X sign-in is configured", async () => {
     const response = await operator.get("/api/x", { maxRedirects: 0 });
     expect(response.ok(), `/api/x ${describeGate(response)}`);
@@ -238,6 +253,10 @@ async function signUpJourney(context, account) {
   const page = await context.newPage();
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (/Content Security Policy/i.test(message.text()))
+      errors.push(message.text());
+  });
   const signedUp = await check("new user signs up with email", async () => {
     await openOnSite(page, "/start");
     await page.locator("[data-email-fallback] summary").click();
@@ -289,10 +308,13 @@ async function signUpJourney(context, account) {
     return "back on /app";
   });
   if (importLink) await importJourney(page);
-  await check("no page errors during the journey", async () => {
-    expect(errors.length === 0, errors.join(" | "));
-    return "0";
-  });
+  await check(
+    "no page errors or CSP violations during the journey",
+    async () => {
+      expect(errors.length === 0, errors.join(" | "));
+      return "0";
+    },
+  );
   await page.close();
 }
 

@@ -254,10 +254,12 @@ and makes no X request, paid call or email. It checks:
 - the X callback reaches the app;
 - `/` is public;
 - signed-out and private API boundaries hold;
+- pages send the security headers (CSP, `x-frame-options`, `nosniff`, referrer policy);
 - X sign-in is configured;
 - **Continue with X** issues a PKCE S256 authorization to `https://x.com/i/oauth2/authorize`,
   with the live callback and the `tweet.read users.read bookmark.read offline.access` scopes;
-- a new user can sign up, sign out and sign back in with email.
+- a new user can sign up, sign out and sign back in with email, with no page errors or
+  CSP violations.
 
 Each run creates one throwaway account `resurface-smoke+<time>-<random>@example.com`.
 `example.com` delivers nowhere. The account counts toward the sign-up caps (200 per day,
