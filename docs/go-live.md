@@ -154,11 +154,9 @@ npm exec --prefix deploy/processor -- wrangler deployments list --config deploy/
    fail by design, and the rest of the journey needs `SMOKE_ACCESS_CLIENT_*` or
    `SMOKE_GATE_*`. After it is opened, every check must pass. A half-configured
    in-app gate answers `503`.
-4. Deploy the processor last, after setting its three bridge secrets (`D1_BRIDGE_TOKEN`,
-   `MEDIA_UPLOAD_TOKEN`, `TTS_BRIDGE_TOKEN`; see Processor bridge secrets below). Without
-   `D1_BRIDGE_TOKEN` the container does not start. Run `npm run deploy --prefix deploy/processor`. A local
-   image build needs Docker; alternatively use the existing authorized Workers
-   Builds path. Do not enable a second deployment mechanism. The processor applies
+4. Deploy the processor last, after its bridge secrets are set ([Processor bridge secrets](#processor-bridge-secrets-required-before-the-processor-deploy)).
+   Run `npm run deploy --prefix deploy/processor`. A local image build needs Docker;
+   alternatively use the existing authorized Workers Builds path. Do not enable a second deployment mechanism. The processor applies
    changed settings on the next request when idle; busy work finishes first.
    Authenticated `/settings-status` reports matching `sent`, `held` and
    `started_with` hashes once new settings have reached the running container.
