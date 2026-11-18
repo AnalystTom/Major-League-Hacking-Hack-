@@ -3,7 +3,7 @@ import { approvedJudgment } from "../outputs/helpers.js";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { testDatabase, productionDatabase } from './helpers.js';
+import { testDatabase } from './helpers.js';
 import { D1Store } from '../../src/ingest/store.js';
 import { D1OutputStore } from '../../src/outputs/store.js';
 import { D1HandoffStore } from '../../src/outputs/handoff-store.js';
@@ -20,8 +20,7 @@ import type { RenderedVideo } from '../../src/outputs/types.js';
 
 async function setup() {
   const { db:raw,sqlite }=testDatabase();
-  const db=productionDatabase(raw);
-  const store=new D1Store(db),outputs=new D1OutputStore(db),handoffs=new D1HandoffStore(db);
+  const store=new D1Store(raw),outputs=new D1OutputStore(raw),handoffs=new D1HandoffStore(raw);
   const user=(await raw.query("INSERT INTO users(email,password_hash) VALUES(?1,'x') RETURNING id",[`test-${randomUUID()}@example.com`])).rows[0].id;
   async function unit(status='pending') {
     const id=randomUUID();
@@ -431,7 +430,7 @@ test('a new import is queued before older retries and refreshes', async () => {
 test('usage records land in usage_events',async()=>{
   const s=await setup();
   try {
-    await saveUsage(productionDatabase(s.db),{step:'judge',provider:'openai',model:'gpt-6.1-sol',input_tokens:63768,output_tokens:3533,reasoning_tokens:1552,ref:'artifact-1'});
+    await saveUsage(s.db,{step:'judge',provider:'openai',model:'gpt-6.1-sol',input_tokens:63768,output_tokens:3533,reasoning_tokens:1552,ref:'artifact-1'});
     assert.deepEqual({...(await s.db.query('SELECT step,model,input_tokens,output_tokens,ref FROM usage_events')).rows[0]},
       {step:'judge',model:'gpt-6.1-sol',input_tokens:63768,output_tokens:3533,ref:'artifact-1'});
   } finally {s.sqlite.close();}

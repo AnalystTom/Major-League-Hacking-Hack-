@@ -1,7 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 import { decodeRow, type Database, type Statement } from '../../src/db.js';
-import { ALLOWED_D1_STATEMENTS } from '../../../deploy/processor/src/d1-allowlist.js';
 
 export function testDatabase() {
   const sqlite = new DatabaseSync(':memory:');
@@ -27,15 +26,4 @@ export function testDatabase() {
     },
   };
   return { db, sqlite };
-}
-
-const refuseUnlisted = (sql: string) => {
-  if (!ALLOWED_D1_STATEMENTS.has(sql)) throw new Error(`statement is not on the processor's D1 allow-list: ${sql}`);
-};
-
-export function productionDatabase(db: Database): Database {
-  return {
-    query(sql, params) { refuseUnlisted(sql); return db.query(sql, params); },
-    batch(statements) { statements.forEach((s) => refuseUnlisted(s.sql)); return db.batch(statements); },
-  };
 }

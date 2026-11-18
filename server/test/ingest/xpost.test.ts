@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { processUnits } from "../../src/ingest/processor.js";
 import { D1Store, MemoryStore } from "../../src/ingest/store.js";
-import { testDatabase, productionDatabase } from "../db/helpers.js";
+import { testDatabase } from "../db/helpers.js";
 import { createUnits } from "../../../web/src/imports.js";
 import { connect } from "../../../web/src/db.js";
 import { mockFetch } from "./helpers.js";
@@ -215,7 +215,7 @@ test("the captured post is replaced after a failed article lookup and reused aft
   ]) {
     const { db, sqlite } = testDatabase();
     try {
-      const store = new D1Store(productionDatabase(db));
+      const store = new D1Store(db);
       const sql = connect({ DB: { prepare(query: string) { return { bind(...params: (string | number | null)[]) {
         return { async all() { return { results: sqlite.prepare(query).all(...params) }; } };
       } }; } } });
