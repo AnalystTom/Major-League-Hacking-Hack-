@@ -336,3 +336,20 @@ test('the daily import cap bounds the X page size and stops reads at the cap',as
   assert.equal((await t.call('/api/x/bookmarks',cookie,'POST')).status,429);
  }finally{t.db.close();}
 });
+
+test('unknown X paths return JSON 404 and wrong methods return 405 with Allow, never a non-Response',async()=>{
+  const t=setup();try {
+    for (const path of ['/api/auth/x/unknown','/api/auth/x/','/api/x/unknown','/api/xyz']) {
+      const response=await t.call(path);
+      assert.equal(response.status,404,path);
+      assert.deepEqual(await response.json(),{error:'Not found.'});
+    }
+    for (const [path,method,allow] of [['/api/auth/x/start','POST','GET'],['/api/auth/x/callback','POST','GET'],['/api/x','POST','GET'],['/api/x/bookmarks','GET','POST'],['/api/x/disconnect','GET','POST']]) {
+      const response=await t.call(path,'',method);
+      assert.equal(response.status,405,`${method} ${path}`);
+      assert.equal(response.headers.get('allow'),allow);
+      assert.deepEqual(await response.json(),{error:'Method not allowed.'});
+    }
+    assert.equal(t.calls.length,0);
+  } finally {t.db.close();}
+});
