@@ -49,6 +49,8 @@ test("each agent gets its own path; Cursor gets rule frontmatter", () => {
   assert.equal(skillFile(s, "claude-code").path, ".claude/skills/verify-before-done/SKILL.md");
   assert.equal(skillFile(s, "codex").path, ".agents/skills/verify-before-done/SKILL.md");
   assert.equal(skillFile(s, "hermes").path, "~/.hermes/skills/verify-before-done/SKILL.md");
+  assert.equal(skillFile(s, "hermes").save, "Save it as ~/.hermes/skills/verify-before-done/SKILL.md.");
+  assert.equal(skillFile(s, "codex").save, "Save it as .agents/skills/verify-before-done/SKILL.md in your repo.");
   const cursor = skillFile(s, "cursor");
   assert.equal(cursor.path, ".cursor/rules/verify-before-done.mdc");
   assert.match(cursor.content, /^---\ndescription: "Make the agent prove a change: \\"red\\" first\."\nalwaysApply: false\n---\n\n# Verify before done/);
@@ -166,4 +168,53 @@ test("a failed skill never shows a provider's error text, only a plain reason", 
   assert.equal(serializeSkill(row({ status: "failed", error: null, skill_markdown: null })).error, "Resurface couldn't turn this into a skill.");
   assert.equal(serializeSkill(row({ status: "failed", error: "Nimble HTTP 503", skill_markdown: null })).error, "Couldn't read this Substack post right now. Try again later.");
   assert.equal(serializeSkill(row({ status: "running", error: "OpenAI quota", skill_markdown: null })).error, null);
+});
+
+test("a stopped follower ignores the sign-out 401 that would send the page to /start", async (t) => {
+  let release;
+  const pending = new Promise((resolve) => (release = resolve));
+  t.mock.method(globalThis, "fetch", async () => {
+    await pending;
+    return Response.json({ error: "Sign in to continue." }, { status: 401 });
+  });
+  globalThis.document = { hidden: false };
+  t.after(() => delete globalThis.document);
+  const errors = [];
+  const follower = followImports({ onUnits: () => {}, onItems: () => {}, onSkills: () => {}, onError: (err) => errors.push(err.status) });
+  follower.stop();
+  release();
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+  assert.deepEqual(errors, []);
+  follower.refresh();
+  assert.deepEqual(errors, []);
+  await follower.resume();
+  assert.deepEqual(errors, [401]);
+});
+
+test("a poll that was in flight across stop and resume cannot outlive a later stop", async (t) => {
+  const requests = [];
+  let releaseFirst;
+  t.mock.method(globalThis, "fetch", async (url) => {
+    requests.push(url);
+    if (url === "/api/imports" && requests.length === 1) await new Promise((r) => (releaseFirst = r));
+    if (url === "/api/imports") return Response.json({ units: [{ stage: "queued", settled: false }] });
+    if (url === "/api/feed?scope=mine") return Response.json({ items: [] });
+    return Response.json({ skills: [], video: null });
+  });
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  globalThis.document = { hidden: false };
+  t.after(() => delete globalThis.document);
+  const flush = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
+  const follower = followImports({ onUnits: () => {}, onItems: () => {}, onSkills: () => {} });
+  await flush();
+  follower.stop();
+  follower.resume();
+  await flush();
+  releaseFirst();
+  await flush();
+  follower.stop();
+  const before = requests.length;
+  t.mock.timers.tick(60_000);
+  await flush();
+  assert.equal(requests.length, before);
 });

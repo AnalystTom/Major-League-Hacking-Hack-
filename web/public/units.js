@@ -1,11 +1,8 @@
-// The user's imported links and their real stages, kept up to date by polling on the home page.
-
 import { api } from "./api.js";
 import { skillWriting } from "./agents.js";
 
 const POLL_MS = 4000;
 
-/** Stages where a link stopped without a short: each shows its reason. */
 export const FAILED_STAGES = new Set(["failed", "render_failed", "not_selected"]);
 
 export const STAGE = {
@@ -32,7 +29,6 @@ export const PROCESSOR = {
   unavailable: "Your links are saved, but processing didn't answer. They're waiting in the queue.",
 };
 
-/** Drop the transient start message once the backend reports every imported link settled. */
 export function settledNote(note, units) {
   return units.length && units.every((u) => u.settled)
     ? note.replace(PROCESSOR.requested, "").trim()
@@ -41,7 +37,6 @@ export function settledNote(note, units) {
 
 const OPENABLE = /^https:\/\/(?:www\.youtube\.com\/watch\?v=[\w-]{11}|x\.com\/i\/status\/\d{1,19}|[a-z0-9-]+\.substack\.com\/p\/[\w-]+)$/;
 
-// The scan marks the reported phase, never elapsed time or estimated completion.
 const PHASE = {
   queued: 0, fetching: 0, digesting: 1,
   rendering: 2, reviewing: 2, render_retrying: 2, video_requested: 2,
@@ -57,7 +52,6 @@ export function unitScanState(unit) {
 }
 
 export function renderUnits(list, units) {
-  // Keep rows across polls so focus and the scan aren't restarted by an unchanged response.
   const existing = new Map(Array.from(list.children, (li) => [li.dataset.unit, li]));
   const rows = units.map((u) => {
     const state = unitScanState(u);
@@ -117,27 +111,23 @@ export function renderUnits(list, units) {
   });
 }
 
-
-// A ready short whose skill hasn't been started yet (the processor's sweep picks it up) gets slower checks for
-// a few minutes, so that skill still appears without polling forever for one that never comes.
 export const SKILL_WAIT_MS = 20_000;
 export const SKILL_WAIT_CHECKS = 15;
 
-/**
- * Polls the user's imports and shorts (and skills, with onSkills) every 4 s while something is moving,
- * and not at all once everything has settled. A skill can still be writing after its short is ready.
- */
 export function followImports({ onUnits, onItems, onSkills, onError }) {
   let timer = null;
   let skillChecks = 0;
-  async function refresh() {
+  let run = {};
+  const isCurrent = (token) => token === run;
+  function schedule(token, delay) {
+    clearTimeout(timer);
+    timer = setTimeout(() => poll(token), delay);
+  }
+  async function poll(token) {
     clearTimeout(timer);
     try {
-      // Read the feed after progress so a final ready update cannot stop polling before its clip arrives.
       const { units } = await api("/api/imports");
       const { items } = await api("/api/feed?scope=mine");
-      // Skills are read separately: if /api/skills fails, links and shorts still update, the last skills stay, and
-      // the next check retries them.
       let skills = [];
       let video = null;
       let skillsError = null;
@@ -149,23 +139,36 @@ export function followImports({ onUnits, onItems, onSkills, onError }) {
           skillsError = err;
         }
       }
+      if (!isCurrent(token)) return;
       const skillsFailed = skillsError !== null;
       onUnits(units);
       onItems(items);
       if (onSkills && !skillsFailed) onSkills(skills, video);
-      // Reported after the shorts, so a page that clears its error note on fresh shorts still shows this one.
       if (skillsFailed) onError?.(skillsError);
       const waiting = units.some((u) => !u.settled) || skills.some(skillWriting) || ["queued", "running", "retrying"].includes(video?.status) || skillsFailed;
       const skillDue = onSkills && items.some((i) => !i.skill) && skillChecks < SKILL_WAIT_CHECKS;
       if (waiting) skillChecks = 0;
       else if (skillDue) skillChecks++;
       const delay = waiting ? POLL_MS : skillDue ? SKILL_WAIT_MS : null;
-      if (delay) timer = setTimeout(refresh, document.hidden ? delay * 4 : delay);
+      if (delay) schedule(token, document.hidden ? delay * 4 : delay);
     } catch (err) {
+      if (!isCurrent(token)) return;
       onError?.(err);
-      if (err.status !== 401) timer = setTimeout(refresh, POLL_MS * 3);
+      if (err.status !== 401) schedule(token, POLL_MS * 3);
     }
   }
-  refresh();
-  return { refresh };
+  poll(run);
+  return {
+    refresh() {
+      if (run) poll(run);
+    },
+    stop() {
+      run = null;
+      clearTimeout(timer);
+    },
+    resume() {
+      run = {};
+      return poll(run);
+    },
+  };
 }

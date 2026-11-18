@@ -1,10 +1,8 @@
-// Turns a pasted YouTube link into the canonical watch URL and start time an ingested unit stores.
-// Kept free of Worker APIs so it can be unit tested with node --test.
+export const UNSUPPORTED_LINK = "Only YouTube videos, X posts and Substack posts on a substack.com address are supported for now.";
 
 const ID = /^[A-Za-z0-9_-]{11}$/;
 const HOSTS = new Set(["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"]);
 
-// "90", "90s", "1m30s", "1h2m3s" -> seconds; anything else -> null.
 function parseStart(value) {
   if (!value) return null;
   if (/^\d+$/.test(value)) return Number(value);
@@ -13,7 +11,6 @@ function parseStart(value) {
   return Number(m[1] ?? 0) * 3600 + Number(m[2] ?? 0) * 60 + Number(m[3] ?? 0);
 }
 
-/** Returns { ok, value: { submitted_url, source_url, start_seconds } } or { ok: false, error }. */
 export function parseYouTubeLink(input) {
   const submitted = typeof input === "string" ? input.trim() : "";
   let url;
@@ -23,7 +20,7 @@ export function parseYouTubeLink(input) {
     return { ok: false, error: "That isn't a link." };
   }
   const host = url.hostname.toLowerCase();
-  if (!HOSTS.has(host)) return { ok: false, error: "Only YouTube video, X post and Substack post links are supported for now." };
+  if (!HOSTS.has(host)) return { ok: false, error: UNSUPPORTED_LINK };
 
   let id = null;
   if (host === "youtu.be") id = url.pathname.slice(1).split("/")[0];

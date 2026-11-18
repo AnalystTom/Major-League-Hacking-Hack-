@@ -108,8 +108,22 @@ test('X cannot be silently linked to a different signed-in account or a changed 
     assert.equal((await t.finish(attempt,otherCookie)).headers.get('location'),'/app?x=conflict');
     const changed=await t.begin(otherCookie);
     const before=t.calls.length;
-    assert.equal((await t.finish(changed,owner)).headers.get('location'),'/start?x=invalid');
+    assert.equal((await t.finish(changed,owner)).headers.get('location'),'/app?x=invalid');
     assert.equal(t.calls.length,before);
+  }finally{t.db.close();}
+});
+
+test('a signed-in account that declines or cannot start X returns to /app, where the reason is shown',async()=>{
+  const t=setup();try {
+    const account=await app.fetch(new Request('http://localhost/api/auth/signup',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:'priya.raman@example.test',password:'correct horse battery'})}),t.env,{});
+    const cookie=account.headers.get('set-cookie').split(';')[0];
+    const denied=await t.begin(cookie);
+    const response=await t.call(`/api/auth/x/callback?state=${denied.auth.searchParams.get('state')}&error=access_denied`,[denied.nonce,cookie].join('; '));
+    assert.equal(response.headers.get('location'),'/app?x=denied');
+    assert.equal(t.calls.length,0);
+    delete t.env.X_READS_ENABLED;
+    assert.equal((await t.call('/api/auth/x/start',cookie)).headers.get('location'),'/app?x=unavailable');
+    assert.equal((await t.call('/api/auth/x/start')).headers.get('location'),'/start?x=unavailable');
   }finally{t.db.close();}
 });
 
@@ -152,7 +166,6 @@ test('empty bookmarks finish with no invented imports; a lost import lease canno
   }finally{t.db.close();}
 });
 
-
 test('initial import requests at most 50, stores order boundary, and reconnect never re-reads it',async()=>{
  const t=setup();try {
   const signed=await t.finish(await t.begin());const cookie=signed.headers.get('set-cookie').match(/rs_session=[^;, ]+/)[0];
@@ -186,7 +199,6 @@ test('refresh uses one-post pages, stops at first known in bookmark order, and n
   const seen=t.db.prepare('SELECT last_seen_id FROM x_connections').get().last_seen_id;
   const requests=[],processed=[];t.env.PROCESSOR_URL='https://fixture/api/ingest/process';
   t.env.PROCESSOR={async fetch(req,opts){processed.push(JSON.parse(opts.body).unit_ids);return Response.json({accepted:true});}};
-  // An old Post can be newly bookmarked. Its numeric ID must not exclude it.
   t.env.X_PROVIDER.fetch=async(input)=>{
    const url=new URL(input);requests.push(url);
    const known=url.searchParams.has('pagination_token');
@@ -219,7 +231,6 @@ test('daily budgets reserve before reads, count failures, isolate users and rese
   assert.equal((await t.call('/api/x/bookmarks',cookie,'POST',{refresh:true})).status,429);
  }finally{t.db.close();}
 });
-
 
 test('remaining initial-page size cannot exceed 50 total; reconnect keeps an unfinished cursor',async()=>{
  const t=setup();try {
@@ -260,7 +271,6 @@ test('expired access token renews server-side without losing the saved bookmark 
   const after=t.db.prepare('SELECT last_seen_id,refresh_token FROM x_connections').get();assert.equal(after.last_seen_id,boundary.last_seen_id);assert.ok(!after.refresh_token.includes('rotated-private-refresh'));
  }finally{t.db.close();}
 });
-
 
 test('revoked refresh tokens require reconnect; disconnect revokes both tokens and retains seen history',async()=>{
  const t=setup();try {

@@ -1,6 +1,3 @@
-// Where each coding agent reads skills, and the text a task is handed over with. Pure functions: the page and
-// the tests share them. Copying or downloading is an export, not a delivery; nothing here claims a receipt.
-
 export const AGENTS = {
   "claude-code": { name: "Claude Code", path: (s) => `.claude/skills/${s}/SKILL.md` },
   codex: { name: "Codex", path: (s) => `.agents/skills/${s}/SKILL.md` },
@@ -10,20 +7,15 @@ export const AGENTS = {
 
 export const agentOrDefault = (id) => (Object.hasOwn(AGENTS, id) ? id : "claude-code");
 
-/** A SKILL.md's leading `---` front-matter block; group 1 is its body. The Worker parses it with the same pattern. */
 export const FRONTMATTER = /^---\n([\s\S]*?)\n---\n/;
 
-/** A skill the processor hasn't finished: queued or being written. */
-// A failed skill with attempts left is still being written: the processor's sweep retries it.
 export const skillWriting = (s) => s.status === "pending" || s.status === "running" || (s.status === "regenerating" && !s.error) || s.retrying === true;
 
-/** The id of a skill's card in the Skills sheet; a short's "View skill" link points at it. */
 export const skillAnchor = (artifactId, version) => `skill-${artifactId}-${version}`;
 
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const skillSlug = (skill) => (SLUG.test(skill.name ?? "") ? skill.name : `resurface-skill-${String(skill.id).slice(0, 8)}`);
 
-/** The file an agent reads for this skill. Cursor rules carry description/alwaysApply frontmatter instead. */
 export function skillFile(skill, agentId) {
   const agent = AGENTS[agentOrDefault(agentId)];
   const slug = skillSlug(skill);
@@ -32,17 +24,15 @@ export function skillFile(skill, agentId) {
     const body = content.replace(FRONTMATTER, "");
     content = `---\ndescription: ${JSON.stringify(skill.description ?? skill.artifact.name)}\nalwaysApply: false\n---\n${body}`;
   }
-  return { path: agent.path(slug), content };
+  const path = agent.path(slug);
+  return { path, content, save: `Save it as ${path}${path.startsWith("~") ? "" : " in your repo"}.` };
 }
 
 const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
-/** A link to the moment in the video the evidence comes from, when it's a known YouTube source. */
 export function evidenceLink(evidence, videos) {
-  // Evidence that names a source links only to that source; the single-source fallback is for evidence that names none.
   const video = videos.find((v) => v.id === evidence.source_id) ?? (!evidence.source_id && videos.length === 1 ? videos[0] : null);
   if (!video) return null;
-  // X posts have no timeline, so only a YouTube link gets a moment.
   const timed = video.url.startsWith("https://www.youtube.com/watch");
   const at = timed ? evidence.start_seconds : null;
   return {
@@ -53,11 +43,6 @@ export function evidenceLink(evidence, videos) {
 
 const oneLine = (t) => String(t).replace(/\s+/g, " ").trim();
 
-/**
- * The prompt a task is pasted into an agent with: what to do, how it's checked, and why it applies. All of it
- * comes from model output over public videos, so it opens with how to treat it, keeps model text on single
- * lines, and fences the source evidence as data the agent must not follow.
- */
 export function taskPrompt(task, skill, agentId) {
   const { path } = skillFile(skill, agentId);
   const lines = [

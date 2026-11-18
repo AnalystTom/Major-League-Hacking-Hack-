@@ -11,7 +11,6 @@ test("Wrangler routes real static assets through the gate", { timeout: 60000 }, 
   const { rawConfig } = experimental_readRawConfig({ config: join(root, "wrangler.jsonc") });
   const directory = await mkdtemp(join(tmpdir(), "resurface-gate-"));
   const config = join(directory, "wrangler.json");
-  // Use production routing, without database, media or processor dependencies.
   await writeFile(config, JSON.stringify({
     name: "resurface-gate-test",
     main: resolve(root, rawConfig.main),
@@ -45,6 +44,10 @@ test("Wrangler routes real static assets through the gate", { timeout: 60000 }, 
       assert.equal(response.status, 200, path);
       assert.ok((await response.text()).length > 0, path);
     }
+    const missing = await worker.fetch("/no-such-page", { headers });
+    assert.equal(missing.status, 404);
+    assert.match(await missing.text(), /<h1 id="not-found-title">Page not found<\/h1>/);
+    assert.equal((await worker.fetch("/no-such-page")).status, 401);
   } finally {
     await worker?.stop();
     await rm(directory, { recursive: true, force: true });
