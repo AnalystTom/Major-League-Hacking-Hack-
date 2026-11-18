@@ -694,6 +694,8 @@ a.reel-btn { text-decoration: none; }
 .app-page .add-links textarea::placeholder { color: var(--on-night-soft); opacity: .7; }
 .app-page .add-links .btn { justify-self: start; }
 .app-page .form-status[data-tone="error"] { color: var(--late-on-night); }
+.app-page .footer { color: var(--on-night-soft); border-top-color: rgba(255, 255, 255, .08); }
+.app-page .footer a { color: var(--on-night); }
 
 .app-page .units li { background: rgba(255, 255, 255, .06); border-color: rgba(255, 255, 255, .1); color: var(--on-night); }
 .app-page .unit-stage, .app-page .unit-error, .app-page .unit-note, .app-page .hint { color: var(--on-night-soft); }
