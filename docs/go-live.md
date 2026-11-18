@@ -174,7 +174,7 @@ and narration. Each component holds only the secrets it needs:
 | --- | --- | --- |
 | `INGEST_TOKEN` | `GET /health`, `GET /settings-status`, `POST /api/ingest/process`, `POST /api/ingest/handoff` | web Worker (as its `PROCESSOR_TOKEN`), processor |
 | `D1_BRIDGE_TOKEN` | `POST /internal/d1` | processor (passed to the container as `D1_TOKEN`) |
-| `MEDIA_UPLOAD_TOKEN` | `PUT /internal/media` | processor (passed to the container as `MEDIA_TOKEN`) |
+| `MEDIA_UPLOAD_TOKEN` | `PUT` and `DELETE /internal/media` | processor (passed to the container as `MEDIA_TOKEN`) |
 | `TTS_BRIDGE_TOKEN` | `POST /internal/tts` | processor (passed to the container as `TTS_TOKEN`) |
 
 The D1 bridge accepts only the statements the container issues (`deploy/processor/src/d1-allowlist.js`)
