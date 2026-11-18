@@ -11,7 +11,6 @@ import { deleteAccount } from '../src/account.js';
 const MIGRATIONS = [
   '0002_application.sql', '0003_video_duration.sql', '0004_usage_events.sql', '0005_skill_choices.sql',
   '0005_x_oauth.sql', '0006_x_read_budget.sql', '0007_video_limits.sql', '0008_signup_events.sql',
-  '0009_account_deletion.sql',
 ];
 const A = 'user-a';
 const B = 'user-b';
@@ -291,6 +290,7 @@ test('an import committed after the artifact read is removed with the account', 
       ...env,
       DB: {
         prepare: (text) => ({
+          ...env.DB.prepare(text),
           bind: (...values) => {
             const bound = env.DB.prepare(text).bind(...values);
             return {
