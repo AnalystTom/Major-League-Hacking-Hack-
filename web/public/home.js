@@ -171,7 +171,7 @@ $("[data-confirm-delete]").addEventListener("click", async (event) => {
     await api("/api/me", { method: "DELETE", body: {} });
     location.assign("/");
   } catch (err) {
-    follower?.refresh();
+    follower?.resume();
     status.textContent = err.message;
     status.dataset.tone = "error";
     button.disabled = false;

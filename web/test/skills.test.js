@@ -185,6 +185,8 @@ test("a stopped follower ignores the sign-out 401 that would send the page to /s
   release();
   for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
   assert.deepEqual(errors, []);
-  await follower.refresh();
+  follower.refresh();
+  assert.deepEqual(errors, []);
+  await follower.resume();
   assert.deepEqual(errors, [401]);
 });

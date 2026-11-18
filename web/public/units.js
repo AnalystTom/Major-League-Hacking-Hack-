@@ -118,7 +118,7 @@ export function followImports({ onUnits, onItems, onSkills, onError }) {
   let timer = null;
   let skillChecks = 0;
   let stopped = false;
-  async function refresh() {
+  async function poll() {
     clearTimeout(timer);
     try {
       const { units } = await api("/api/imports");
@@ -145,22 +145,25 @@ export function followImports({ onUnits, onItems, onSkills, onError }) {
       if (waiting) skillChecks = 0;
       else if (skillDue) skillChecks++;
       const delay = waiting ? POLL_MS : skillDue ? SKILL_WAIT_MS : null;
-      if (delay) timer = setTimeout(refresh, document.hidden ? delay * 4 : delay);
+      if (delay) timer = setTimeout(poll, document.hidden ? delay * 4 : delay);
     } catch (err) {
       if (stopped) return;
       onError?.(err);
-      if (err.status !== 401) timer = setTimeout(refresh, POLL_MS * 3);
+      if (err.status !== 401) timer = setTimeout(poll, POLL_MS * 3);
     }
   }
-  refresh();
+  poll();
   return {
     refresh() {
-      stopped = false;
-      return refresh();
+      if (!stopped) poll();
     },
     stop() {
       stopped = true;
       clearTimeout(timer);
+    },
+    resume() {
+      stopped = false;
+      return poll();
     },
   };
 }
