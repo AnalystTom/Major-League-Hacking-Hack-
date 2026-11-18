@@ -163,6 +163,26 @@ test('a ready artifact takes its attribution from the reserved unit rows', async
   } finally { s.sqlite.close(); }
 });
 
+test('a two-source ready artifact takes its URL from the first source and keeps source_ids order', async () => {
+  const s = await setup();
+  try {
+    const earlier = await s.importVideo('aaaaaaaaaaa');
+    const first = await s.importVideo('VQy50fuxI34');
+    await processUnits([earlier, first], s.options(mockFetch().impl, { digest: false }));
+    const [unitEarlier, unitFirst] = [await s.unit(earlier), await s.unit(first)];
+    const token = randomUUID();
+    for (const id of [first, earlier]) assert.equal((await s.db.query(RESERVE_DIGEST, [...UNSPENT, id, token])).rowCount, 1);
+    const prompt = await s.prompt();
+    assert.equal((await s.db.query(READY_ARTIFACT, ['Joint skill', JSON.stringify([first, earlier]), 'text', 'Evals', 'reason', '[]', prompt, token])).rowCount, 1);
+    const [row] = (await s.direct.query('SELECT source_url, sources FROM artifacts WHERE source_ids=?1', [JSON.stringify([first, earlier])])).rows;
+    assert.equal(row.source_url, unitFirst.source_url);
+    assert.deepEqual(row.sources, [
+      { url: unitFirst.source_url, title: unitFirst.title, content_type: unitFirst.content_type, retrieved_at: unitFirst.extracted_at },
+      { url: unitEarlier.source_url, title: unitEarlier.title, content_type: unitEarlier.content_type, retrieved_at: unitEarlier.extracted_at },
+    ]);
+  } finally { s.sqlite.close(); }
+});
+
 test('a new link cannot be created through the D1 bridge and leaves no unit behind', async () => {
   const s = await setup();
   try {

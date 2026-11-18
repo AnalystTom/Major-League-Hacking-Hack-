@@ -181,9 +181,10 @@ The D1 bridge accepts only the statements the container issues (`deploy/processo
 and refuses anything else with 403; `server/test/db/d1-allowlist.test.ts` fails whenever the stores send a
 statement that is not on that list, or the list holds one they no longer send.
 
-Each allowed write also checks the row it touches. A leaked `D1_BRIDGE_TOKEN` cannot create units, cannot
-write over finished units, and cannot write artifacts or exclusions without a live digest reservation. The
-limits that remain are listed under the known limitation below:
+Writes that touch a unit check that unit's row before they land. A leaked `D1_BRIDGE_TOKEN` cannot create
+units, cannot write over finished units, and cannot write artifacts or exclusions without a live digest
+reservation. Usage records and Digestion Prompt revisions are accepted as sent. The limits that remain are
+listed under the known limitation below:
 
 - Extraction results only update an existing unit that is `running`, and only to `ready` or `failed`.
 - Artifacts, failed-digest records and exclusions are stored only for units that are `ready` and hold a
@@ -203,10 +204,12 @@ A new link fails with an explicit error there, because production imports create
 shows forged writes with caller-chosen IDs, finished units or no reservation are refused.
 
 Known limitation: a holder of the D1 secret can still follow the container's own protocol. It can finish a
-running extraction without a claim token, writing its title, transcript, extraction method, status and error
-under the unit's ID. It can reserve a unit that awaits a digest and store an artifact with its own text for it,
-claim a pending skill, video or brief and settle it with its own content, register a Digestion Prompt revision,
-or add usage records. It can also read every ready unit with its transcript and each unit's importer user ID.
+running extraction without a claim token, writing its title, transcript, extraction method, extracted_at,
+status and error under the unit's ID. It can reserve a unit that awaits a digest and store an artifact with its
+own text for it, set the exclusion reason and failed-digest error text for that reserved unit (both shown to
+its importer), claim a pending skill, video or brief and settle it with its own content, register a Digestion
+Prompt revision, or add usage records. It can also read every ready unit with its transcript and each unit's
+importer user ID.
 It cannot run arbitrary SQL or read password hashes or X tokens. Media keys take their content type from the extension
 (`.mp4`, `.vtt`, `.m4a`). The three new secrets are required before the processor deploy. If
 `D1_BRIDGE_TOKEN` is missing, the processor container fails to start as a whole, including
