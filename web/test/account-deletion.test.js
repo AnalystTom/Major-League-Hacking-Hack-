@@ -133,6 +133,7 @@ function seed(sqlite) {
   insert(sqlite, 'agent_briefs', [
     { id: 'brief-a', user_id: A, skill_result_ids: ['skill-a'], input_key: 'key-a' },
     { id: 'brief-b', user_id: B, skill_result_ids: ['skill-b'], input_key: 'key-b' },
+    { id: 'brief-shared', user_id: B, skill_result_ids: ['skill-shared'], input_key: 'key-shared' },
   ]);
   insert(sqlite, 'x_connections', [
     { x_user_id: 'x-a', user_id: A, username: 'a', access_token: 'token-a', expires_at: 0 },
@@ -222,6 +223,7 @@ test('DELETE /api/me removes every artifact built from the account units and eve
       ['ingested_units', "id = 'unit-a2'"],
       ['ingested_units', "id = 'unit-shared'"],
       ['user_imports', "unit_id = 'unit-shared'"],
+      ['agent_briefs', "id = 'brief-shared'"],
     ]) {
       assert.equal(count(sqlite, `SELECT count(*) AS n FROM ${table} WHERE ${where}`), 0, `${table} still holds ${where}`);
     }
