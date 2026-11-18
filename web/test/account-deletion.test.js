@@ -176,7 +176,7 @@ const request = (method, path, { cookie, contentType = 'application/json' } = {}
   ...(method === 'DELETE' ? { body: '{}' } : {}),
 });
 
-test('DELETE /api/me removes every row the account owns and only the content no other account reaches', async () => {
+test('DELETE /api/me removes every artifact built from the account units and every row that references them', async () => {
   const { sqlite, env, deleted, sql } = database();
   try {
     seed(sqlite);
@@ -203,52 +203,56 @@ test('DELETE /api/me removes every row the account owns and only the content no 
 
     for (const [table, where] of [
       ['artifacts', "id = 'art-a'"],
+      ['artifacts', "id = 'art-mixed'"],
+      ['artifacts', "id = 'art-shared'"],
       ['video_results', "artifact_id = 'art-a'"],
+      ['video_results', "artifact_id = 'art-mixed'"],
+      ['video_results', "artifact_id = 'art-shared'"],
       ['skill_results', "artifact_id = 'art-a'"],
+      ['skill_results', "artifact_id = 'art-shared'"],
       ['action_items', "skill_result_id = 'skill-a'"],
       ['handoffs', "skill_result_id = 'skill-a'"],
       ['video_starts', "artifact_id = 'art-a'"],
       ['user_skill_choices', "artifact_id = 'art-a'"],
+      ['user_skill_choices', "artifact_id = 'art-shared'"],
       ['user_video_requests', "artifact_id = 'art-a'"],
       ['artifact_exclusions', "unit_id = 'unit-a'"],
       ['processing_starts', "unit_id = 'unit-a'"],
       ['ingested_units', "id = 'unit-a'"],
       ['ingested_units', "id = 'unit-a2'"],
+      ['ingested_units', "id = 'unit-shared'"],
+      ['user_imports', "unit_id = 'unit-shared'"],
     ]) {
       assert.equal(count(sqlite, `SELECT count(*) AS n FROM ${table} WHERE ${where}`), 0, `${table} still holds ${where}`);
     }
 
     assert.deepEqual([...deleted].sort(), [
-      'captions/art-a/1/short.vtt', 'videos/art-a/1/narration.mp3', 'videos/art-a/1/short.mp4',
+      'captions/art-a/1/short.vtt', 'captions/art-mixed/1/short.vtt', 'captions/art-shared/1/short.vtt',
+      'videos/art-a/1/narration.mp3', 'videos/art-a/1/short.mp4',
+      'videos/art-mixed/1/narration.mp3', 'videos/art-mixed/1/short.mp4',
+      'videos/art-shared/1/narration.mp3', 'videos/art-shared/1/short.mp4',
     ]);
 
     assert.deepEqual(userRowCounts(sqlite, B), {
-      sessions: 1, user_imports: 2, agent_briefs: 1, x_connections: 1, x_seen_bookmarks: 1,
-      x_oauth_attempts: 1, user_skill_choices: 2, user_video_requests: 1,
+      sessions: 1, user_imports: 1, agent_briefs: 1, x_connections: 1, x_seen_bookmarks: 1,
+      x_oauth_attempts: 1, user_skill_choices: 1, user_video_requests: 1,
     });
-    for (const artifactId of ['art-mixed', 'art-shared', 'art-b']) {
-      assert.equal(count(sqlite, 'SELECT count(*) AS n FROM artifacts WHERE id = ?', artifactId), 1, artifactId);
-    }
-    assert.deepEqual(JSON.parse(sqlite.prepare("SELECT source_ids FROM artifacts WHERE id = 'art-mixed'").get().source_ids), ['unit-b']);
-    assert.equal(sqlite.prepare("SELECT source_url FROM artifacts WHERE id = 'art-mixed'").get().source_url, 'https://x.com/b/status/3');
-    for (const unitId of ['unit-shared', 'unit-b']) {
-      assert.equal(count(sqlite, 'SELECT count(*) AS n FROM ingested_units WHERE id = ?', unitId), 1, unitId);
-    }
-    assert.equal(count(sqlite, "SELECT count(*) AS n FROM video_results WHERE id IN ('vid-shared','vid-b','vid-mixed')"), 3);
-    assert.equal(sqlite.prepare("SELECT submitted_url FROM ingested_units WHERE id = 'unit-shared'").get().submitted_url, 'https://youtu.be/shared');
-    assert.deepEqual(rowsMentioning(sqlite, 'a-share-token'), []);
-    assert.deepEqual(rowsMentioning(sqlite, 'https://x.com/a/status/'), []);
-    assert.deepEqual((await publicFeedSources(sql)).filter((item) => item.id === 'art-mixed'), [
-      { id: 'art-mixed', source_url: 'https://x.com/b/status/3' },
-    ]);
-    assert.equal(count(sqlite, "SELECT count(*) AS n FROM skill_results WHERE id IN ('skill-shared','skill-b')"), 2);
+    assert.equal(count(sqlite, 'SELECT count(*) AS n FROM artifacts'), 1);
+    assert.equal(count(sqlite, "SELECT count(*) AS n FROM artifacts WHERE id = 'art-b'"), 1);
+    assert.deepEqual(sqlite.prepare('SELECT id FROM ingested_units ORDER BY id').all().map((r) => r.id), ['unit-b']);
+    assert.equal(count(sqlite, "SELECT count(*) AS n FROM video_results WHERE id IN ('vid-b')"), 1);
+    assert.equal(count(sqlite, "SELECT count(*) AS n FROM skill_results WHERE id IN ('skill-b')"), 1);
     assert.equal(count(sqlite, "SELECT count(*) AS n FROM handoffs WHERE id IN ('handoff-b')"), 1);
     assert.equal(count(sqlite, "SELECT count(*) AS n FROM artifact_exclusions WHERE unit_id = 'unit-b'"), 1);
     assert.equal(count(sqlite, "SELECT count(*) AS n FROM processing_starts WHERE unit_id = 'unit-b'"), 1);
+    assert.deepEqual(rowsMentioning(sqlite, 'a-share-token'), []);
+    assert.deepEqual(rowsMentioning(sqlite, 'https://x.com/a/status/'), []);
+    assert.deepEqual(rowsMentioning(sqlite, 'youtu.be/shared'), []);
+    assert.deepEqual((await publicFeedSources(sql)).filter((item) => ['art-mixed', 'art-shared'].includes(item.id)), []);
 
     assert.deepEqual(await (await app.fetch(request('GET', '/api/me', { cookie: cookieA }), env, {})).json(), { user: null });
     const bImports = await (await app.fetch(request('GET', '/api/imports', { cookie: cookieB }), env, {})).json();
-    assert.equal(bImports.units.length, 2);
+    assert.equal(bImports.units.length, 1);
     assert.equal((await app.fetch(request('GET', '/api/me', { cookie: cookieB }), env, {})).status, 200);
   } finally {
     sqlite.close();
@@ -267,6 +271,7 @@ test('DELETE /api/me needs a signed-in session and a JSON body, and keeps the ac
 
     const failed = await app.fetch(request('DELETE', '/api/me', { cookie: cookieA }), env, {});
     assert.equal(failed.status, 503);
+    assert.deepEqual(await failed.json(), { error: "We couldn't delete your account right now. Please try again." });
     assert.equal(count(sqlite, 'SELECT count(*) AS n FROM users WHERE id = ?', A), 1);
     assert.equal(count(sqlite, 'SELECT count(*) AS n FROM artifacts WHERE id = ?', 'art-a'), 1);
     assert.equal(count(sqlite, 'SELECT count(*) AS n FROM sessions WHERE user_id = ?', A), 1);
@@ -275,20 +280,36 @@ test('DELETE /api/me needs a signed-in session and a JSON body, and keeps the ac
   }
 });
 
-test('an import committed after the owned-unit read is removed with the account', async () => {
-  const { sqlite, env, sql } = database();
+test('an import committed after the artifact read is removed with the account', async () => {
+  const { sqlite, env } = database();
   try {
     seed(sqlite);
     let raced = false;
-    const racingSql = (parts, ...values) => sql(parts, ...values).then((rows) => {
-      if (!raced) {
-        raced = true;
-        insert(sqlite, 'ingested_units', [{ id: 'unit-race', submitted_url: 'https://x.com/a/status/9', source_url: 'https://x.com/a/status/9' }]);
-        insert(sqlite, 'user_imports', [{ user_id: A, unit_id: 'unit-race' }]);
-      }
-      return rows;
-    });
-    await deleteAccount(env, racingSql, A);
+    const racingEnv = {
+      ...env,
+      DB: {
+        prepare: (text) => ({
+          bind: (...values) => {
+            const bound = env.DB.prepare(text).bind(...values);
+            return {
+              ...bound,
+              all: async () => {
+                const result = await bound.all();
+                if (!raced) {
+                  raced = true;
+                  insert(sqlite, 'ingested_units', [{ id: 'unit-race', submitted_url: 'https://x.com/a/status/9', source_url: 'https://x.com/a/status/9' }]);
+                  insert(sqlite, 'user_imports', [{ user_id: A, unit_id: 'unit-race' }]);
+                }
+                return result;
+              },
+            };
+          },
+        }),
+        batch: (statements) => env.DB.batch(statements),
+      },
+    };
+    await deleteAccount(racingEnv, A);
+    assert.equal(raced, true);
     assert.equal(count(sqlite, "SELECT count(*) AS n FROM ingested_units WHERE id = 'unit-race'"), 0);
     assert.deepEqual(rowsMentioning(sqlite, 'https://x.com/a/status/9'), []);
   } finally {
