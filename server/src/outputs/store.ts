@@ -97,7 +97,6 @@ export class D1OutputStore implements OutputStore {
     return rows.map(rowToArtifact);
   }
   async claim(kind: Kind, a: ReadyArtifact, limits = UNLIMITED) {
-    await this.failExhausted(kind);
     const t = TABLE[kind], token = randomUUID();
     const [claimed] = await this.db.batch([{ sql: `INSERT INTO ${t}(artifact_id,artifact_version,status,updated_at,claim_token,attempts,review_feedback)
       SELECT ?1,?2,'running',${NOW},?3,1,${kind === 'video' ? `json_object('generator_revision','${VIDEO_GENERATOR_REVISION}')` : 'NULL'}

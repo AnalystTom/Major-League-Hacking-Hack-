@@ -185,7 +185,6 @@ export class D1Store implements Store {
     await this.db.query(`UPDATE ingested_units SET status='failed',error=?1 WHERE ${EXHAUSTED('ingested_units')}`, [EXHAUSTED_CLAIM_ERROR]);
   }
   async claimPendingUnits(ids?: string[], limit = 50) {
-    await this.failExhaustedUnits();
     const { rows } = await this.db.query(`UPDATE ingested_units SET status='running',claimed_at=${NOW}
       WHERE id IN (SELECT id FROM ingested_units WHERE ${CLAIMABLE('ingested_units')}
         AND (?1 IS NULL OR id IN (SELECT value FROM json_each(?1))) ORDER BY created_at LIMIT ?2) RETURNING *`,
@@ -195,7 +194,6 @@ export class D1Store implements Store {
   async claimWithinLimits(ids: string[], limits: Limits): Promise<Claimed> {
     const token = randomUUID();
     const params = [...limitParams(limits), JSON.stringify(ids), token];
-    await this.failExhaustedUnits();
     const results = await this.db.batch([
       { sql: `INSERT INTO processing_starts(unit_id,kind,charged,batch_token)
         SELECT id,'extract',1,?4 FROM ingested_units WHERE ${CLAIMABLE('ingested_units')} AND id IN (SELECT value FROM json_each(?3))
