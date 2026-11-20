@@ -715,7 +715,7 @@ a.reel-btn { text-decoration: none; }
   .app-bar .topbar-inner { gap: 4px; flex-wrap: nowrap; min-height: calc(var(--bar) - 1px); padding: 6px 10px; }
   .app-bar .topbar-inner > * { flex: none; }
   .app-bar .topbar-inner > .status { flex: 1 1 0; min-width: 26px; }
-  .app-bar .wordmark { margin-right: auto; gap: 5px; font-size: .875rem; min-height: 0; }
+  .app-bar .wordmark { margin-right: auto; gap: 5px; font-size: .875rem; }
   .app-bar .wordmark svg { width: 20px; height: 20px; }
   .app-bar .bar-label, .app-bar .add-label { display: none; }
   .app-bar .bar-icon { display: block; }

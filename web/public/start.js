@@ -1,5 +1,3 @@
-// Sign up or sign in, then straight to /app, where the user pastes links and watches their reel.
-
 import { api } from "./api.js";
 import { connectX } from "./x-connect.js";
 
@@ -12,7 +10,6 @@ function show() {
 
 }
 
-/** Wires a form: disables its button while the request runs and shows the server's error in place. */
 function onSubmit(name, path, body) {
   const form = $(`[data-form="${name}"]`);
   const button = form.querySelector('button[type="submit"]');
@@ -47,7 +44,6 @@ $("[data-switch]").addEventListener("click", () => {
   $(`[data-form="${toLogin ? "login" : "signup"}"] input[type=email]`).focus();
 });
 
-// Already signed in: nothing to do here. #account (the landing page's Sign in link) opens the sign-in form.
 (async () => {
   try {
     const me = await api("/api/me");
