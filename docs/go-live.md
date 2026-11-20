@@ -387,6 +387,13 @@ captain has run `npm exec --prefix web -- wrangler login` (morning checklist ste
 secrets and deploy are separate ([Processor bridge secrets](#processor-bridge-secrets-required-before-the-processor-deploy))
 and this session does not change them.
 
+Before step 1, confirm these preconditions. Stop before step 1 if one of the first three is missing:
+
+- [Morning checklist](#morning-checklist-captain) step 1 is done: `wrangler login` succeeded.
+- [Morning checklist](#morning-checklist-captain) step 2 is done: the site is opened (Option A), or the Option B bypass covers `api/auth/x/callback`, `privacy` and `terms`. Otherwise the callback answers `302` to the Access login.
+- [Morning checklist](#morning-checklist-captain) step 3 is done: the X app exists with the callback registered, and the regenerated client secret is ready for the hidden prompt.
+- The captain answers whether the USD 20 is funded with auto-recharge off. This decides whether the session continues past step 6 (see step 7).
+
 1. Confirm the account:
 
    ```sh
@@ -416,11 +423,19 @@ and this session does not change them.
    npm exec --prefix web -- wrangler secret put X_CLIENT_SECRET --config web/wrangler.jsonc
    ```
 
-4. List and apply the remote D1 migrations, as in
-   [Deploy order](#deploy-order-after-merge-by-firstmate) steps 1–2. Review pending ones first:
+4. Back up and review before migrating. Follow [Deploy order](#deploy-order-after-merge-by-firstmate)
+   step 1: export the remote D1 database to a file outside the repository, and list the
+   pending migrations:
 
    ```sh
+   npm exec --prefix web -- wrangler d1 export resurface-waitlist --remote --config web/wrangler.jsonc --output <backup-file-outside-the-repository>
    npm exec --prefix web -- wrangler d1 migrations list resurface-waitlist --remote --config web/wrangler.jsonc
+   ```
+
+   Review the historical allocations as Deploy order step 1 requires. Stop if the backup did
+   not complete or the pending list holds anything other than `0007` to `0010`. Then apply:
+
+   ```sh
    npm run db:migrate:remote --prefix web
    ```
 
@@ -432,11 +447,12 @@ and this session does not change them.
 
 6. Run the [live smoke](#live-smoke): `npm run smoke:live`. While `X_READS_ENABLED` is
    `"false"`, the check "X sign-in is configured" fails by design.
-7. Stop until the captain confirms the USD 20 is funded with auto-recharge off. Then
-   merge a one-line change to `web/wrangler.jsonc` that sets `"X_READS_ENABLED": "true"`.
-8. Redeploy the web Worker from the merged revision with `npm run deploy --prefix web`,
+7. If the USD 20 funding with auto-recharge off was not confirmed at the start, stop here.
+   This is the only stopping point. Otherwise continue.
+8. Merge a one-line change to `web/wrangler.jsonc` that sets `"X_READS_ENABLED": "true"`.
+9. Redeploy the web Worker from the merged revision with `npm run deploy --prefix web`,
    then rerun `npm run smoke:live`. "X sign-in is configured" must pass.
-9. The captain does their own consent test (morning checklist step 5).
+10. The captain does their own consent test (morning checklist step 5).
 
 To turn X off again, set `X_READS_ENABLED` back to `"false"`, merge and redeploy the web Worker.
 
@@ -462,8 +478,8 @@ give it to an agent.
 4. **X client secret on the Worker.** Regenerate the client secret in the X console and
    type it only into Wrangler's hidden prompt in your own terminal, at step 3 of the
    [X go-live session](#x-go-live-session). The client ID and every other X setting are
-   already committed in `web/wrangler.jsonc`. Then tell firstmate that the USD 20 is
-   funded with auto-recharge off; X turns on only after that (session steps 7–9).
+   already committed in `web/wrangler.jsonc`. Then, at the start of the session, confirm
+   that the USD 20 is funded with auto-recharge off; X turns on only after that (session steps 7–9).
 5. **Your own X consent.** Use an ordinary browser window, not an agent's.
    1. Open `https://resurface.thomasmann2001.workers.dev/start` and choose
       **Continue with X**.
