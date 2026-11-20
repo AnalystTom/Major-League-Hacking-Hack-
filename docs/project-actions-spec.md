@@ -376,7 +376,7 @@ These replace the answered 20-question backlog. Recommended answers remain propo
 3. **Which provider is the motion/video API key for, and where is the existing Opus generation prompt?** Keep that credential separate from extraction and TTS.
 4. **Which narration voice/provider and music track?** Recommend Gemini TTS plus one licensed instrumental track; Kokoro is the open-source alternative.
 5. **Which direct Codex delivery route, if any?** Current skill export is copy/download; any future direct delivery needs a real acknowledgement. Task handoffs remain paused.
-6. **Who builds and hosts the processor, and where?** The web Worker already calls `PROCESSOR_URL`; until it exists, imports wait as `queued`. Media storage is decided: Cloudflare R2 bucket `resurface-media`, served through `/media/` (see [proceed-and-media.md](proceed-and-media.md)).
+6. **Who builds and hosts the processor, and where?** The web Worker already calls the `PROCESSOR` service binding (`PROCESSOR_URL` is only its local no-binding fallback); until it exists, imports wait as `queued`. Media storage is decided: Cloudflare R2 bucket `resurface-media`, served through `/media/` (see [proceed-and-media.md](proceed-and-media.md)).
 7. **Is rate limiting enough on sign-up?** Imports now require an account, but sign-up is open and rate-limited only per IP; each account can trigger paid extraction and rendering. Recommend adding Turnstile to sign-up before announcing the URL.
 
 ## Approval checkpoints and next work
