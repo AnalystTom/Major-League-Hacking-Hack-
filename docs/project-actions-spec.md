@@ -289,18 +289,9 @@ Details, configuration and hosting (PR #5: a Cloudflare Container that sleeps wh
 
 `/start` sends a signed-in visitor straight to `/app`. On `/app` the page polls `/api/imports`, `/api/feed?scope=mine` and `/api/skills` every 4 seconds while a unit is unsettled or a skill is being written. When a short is ready but its skill hasn't started, it checks every 20 seconds, at most 15 times. A failing `/api/skills` doesn't stop links and shorts from updating. Each link shows its title or URL, its stage, and the reason defined by the [unit progress contract](#http-api), or "Reason unknown." Ready clips go straight to the reel. The [onboarding journey](proceed-and-media.md#the-journey) describes where progress appears. During the waitlist launch, the landing page shows **Join the waitlist** for all visitors. Product onboarding remains available in the development configuration.
 
-### API Worker `resurface-api` (`server/`, Hono; runs on Node or Workers)
+### Retired API Worker `resurface-api`
 
-This service defaults to an empty shorts list; sample records live only in tests. The web page uses the web Worker's feed instead. CORS allows only `WEB_ORIGINS`.
-
-| Route | Response |
-| --- | --- |
-| `GET /health` | `{ ok: true }` |
-| `GET /api/agents` | `[{ id, name }]` for `claude`, `codex`, `cursor`, `hermes` |
-| `GET /api/shorts`, `GET /api/shorts/:id` | Empty list by default; `404` for an unknown id |
-| `GET /api/shorts/:id/export?agent=` | `{ agent, path, content }`: the file that agent reads. Skill shorts become `.claude/skills/<slug>/SKILL.md`, `.agents/skills/<slug>/SKILL.md`, `.cursor/rules/<slug>.mdc`, or `~/.hermes/skills/<slug>/SKILL.md`; rules shorts become a section of `CLAUDE.md`, `AGENTS.md`, or `.cursor/rules/project.mdc` (Hermes has no rules file, so they become skills). `400` for an unknown agent. |
-
-This is a candidate shape for workstream 3's export, not a delivery route. It writes nothing and produces no receipt.
+The standalone `resurface-api` Worker deploy target (`server/wrangler.jsonc`, `server/src/worker.ts`) was retired: nothing called it, and the web Worker serves the feed and skills. `server/` runs only on Node (local development and the processor container). The previously deployed Worker still exists on the Cloudflare account until someone with account access deletes it.
 
 ### Node ingestion backend (`server/src/ingest/`)
 
