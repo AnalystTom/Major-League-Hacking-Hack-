@@ -3,7 +3,9 @@ import { isObjectKey } from "./media.js";
 const otherImporter = `EXISTS (SELECT 1 FROM user_imports other WHERE other.unit_id = mine.unit_id AND other.user_id <> ?1)`;
 const soleUnits = `SELECT mine.unit_id FROM user_imports mine WHERE mine.user_id = ?1 AND NOT ${otherImporter}`;
 const sharedUnits = `SELECT mine.unit_id FROM user_imports mine WHERE mine.user_id = ?1 AND ${otherImporter}`;
-const doomedArtifact = (artifact) => `EXISTS (SELECT 1 FROM json_each(${artifact}.source_ids) src WHERE src.value IN (${soleUnits}))`;
+const soleSourced = (artifact) => `EXISTS (SELECT 1 FROM json_each(${artifact}.source_ids) src WHERE src.value IN (${soleUnits}))`;
+const doomedArtifact = (artifact) => `NOT EXISTS (SELECT 1 FROM json_each(${artifact}.source_ids) src WHERE src.value NOT IN (${soleUnits}))`;
+const keptMixedArtifact = (artifact) => `${soleSourced(artifact)} AND NOT ${doomedArtifact(artifact)}`;
 const doomedChild = (table) => `EXISTS (SELECT 1 FROM artifacts a
   WHERE a.id = ${table}.artifact_id AND a.version = ${table}.artifact_version AND ${doomedArtifact("a")})`;
 const doomedSkill = `SELECT s.id FROM skill_results s JOIN artifacts a ON a.id = s.artifact_id AND a.version = s.artifact_version
@@ -24,8 +26,6 @@ export async function deleteAccount(env, userId) {
 
   await env.DB.batch([
     env.DB.prepare("PRAGMA defer_foreign_keys = ON"),
-    env.DB.prepare(`DELETE FROM agent_briefs WHERE EXISTS (SELECT 1 FROM json_each(agent_briefs.skill_result_ids) ref
-      WHERE ref.value IN (${doomedSkill}))`).bind(userId),
     env.DB.prepare(`DELETE FROM handoffs WHERE skill_result_id IN (${doomedSkill})`).bind(userId),
     env.DB.prepare(`DELETE FROM skill_results WHERE ${doomedChild("skill_results")}`).bind(userId),
     env.DB.prepare(`DELETE FROM video_results WHERE ${removedVideo}`).bind(userId, removedVideoIds),
@@ -34,6 +34,10 @@ export async function deleteAccount(env, userId) {
     env.DB.prepare("UPDATE user_video_requests SET user_id = NULL, artifact_id = NULL, artifact_version = NULL WHERE user_id = ?1").bind(userId),
     env.DB.prepare(`DELETE FROM user_video_requests WHERE ${doomedChild("user_video_requests")}`).bind(userId),
     env.DB.prepare(`DELETE FROM video_rejection_releases WHERE user_id = ?1 OR ${doomedChild("video_rejection_releases")}`).bind(userId),
+    env.DB.prepare(`UPDATE artifacts SET
+      source_ids = (SELECT json_group_array(kept.value) FROM (SELECT src.value FROM json_each(artifacts.source_ids) src WHERE src.value NOT IN (${soleUnits}) ORDER BY src.key) kept),
+      source_url = (SELECT u.source_url FROM json_each(artifacts.source_ids) src JOIN ingested_units u ON u.id = src.value WHERE src.value NOT IN (${soleUnits}) ORDER BY src.key LIMIT 1)
+      WHERE ${keptMixedArtifact("artifacts")}`).bind(userId),
     env.DB.prepare(`DELETE FROM artifacts WHERE ${doomedArtifact("artifacts")}`).bind(userId),
     env.DB.prepare(`DELETE FROM artifact_exclusions WHERE unit_id IN (${soleUnits})`).bind(userId),
     env.DB.prepare(`UPDATE processing_starts SET unit_id = NULL WHERE charged = 1 AND unit_id IN (${soleUnits})`).bind(userId),
