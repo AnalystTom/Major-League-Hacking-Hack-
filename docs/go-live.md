@@ -448,8 +448,9 @@ Before step 1, confirm these preconditions. Stop before step 1 if any of the fir
    ```
 
 6. Run the [live smoke](#live-smoke): `npm run smoke:live`. While `X_READS_ENABLED` is
-   `"false"`, the check "X sign-in is configured" fails by design. Every other check must pass.
-   Any other failure stops the session before X is enabled.
+   `"false"`, the check "X sign-in is configured" fails by design, so the run exits `1`. Read the
+   PASS/FAIL lines rather than the exit code alone: the only FAIL must be "X sign-in is configured".
+   Any other FAIL stops the session before X is enabled.
 7. If the USD 20 funding with auto-recharge off was not confirmed at the start, stop here.
    This is the only stopping point. Otherwise continue.
 8. Merge the one-line change to `web/wrangler.jsonc` that sets `"X_READS_ENABLED": "true"` through
