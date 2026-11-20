@@ -109,8 +109,8 @@ Follow [the captain-operated X setup steps](x-setup-steps.md) as the source of t
    in the console and typed by the captain only into Wrangler's hidden prompt during the
    [X go-live session](#x-go-live-session).
 5. `X_READS_ENABLED` stays `"false"` until the captain confirms the USD 20 is funded
-   with auto-recharge off. Turning it on is a one-line change to `web/wrangler.jsonc`,
-   merged and deployed as the last part of that session.
+   with auto-recharge off. Turning it on is the change to `web/wrangler.jsonc` merged and
+   redeployed in steps 8 and 9 of the [X go-live session](#x-go-live-session).
 
 ## Abuse and spend caps (web Worker vars)
 
