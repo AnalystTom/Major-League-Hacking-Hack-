@@ -404,13 +404,16 @@ Before step 1, confirm these preconditions. Stop before step 1 if any of the fir
    npm exec --prefix web -- wrangler deployments list --config web/wrangler.jsonc
    ```
 
-   If `X_CLIENT_ID`, `X_CALLBACK_URL` or `X_READS_ENABLED` is listed, delete it, because
-   a name cannot be both a secret and a var. Each deletion can publish a Worker version:
+   If any of `X_CLIENT_ID`, `X_CALLBACK_URL`, `X_READS_ENABLED`, `X_DAILY_READ_REQUEST_LIMIT`
+   or `X_USER_DAILY_READ_REQUEST_LIMIT` is listed, delete it, because a name cannot be both a
+   secret and a var. Each deletion can publish a Worker version:
 
    ```sh
    npm exec --prefix web -- wrangler secret delete X_CLIENT_ID --config web/wrangler.jsonc
    npm exec --prefix web -- wrangler secret delete X_CALLBACK_URL --config web/wrangler.jsonc
    npm exec --prefix web -- wrangler secret delete X_READS_ENABLED --config web/wrangler.jsonc
+   npm exec --prefix web -- wrangler secret delete X_DAILY_READ_REQUEST_LIMIT --config web/wrangler.jsonc
+   npm exec --prefix web -- wrangler secret delete X_USER_DAILY_READ_REQUEST_LIMIT --config web/wrangler.jsonc
    ```
 
 3. The captain types the regenerated client secret at the hidden prompt. It publishes a
