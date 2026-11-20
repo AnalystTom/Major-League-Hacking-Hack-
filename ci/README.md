@@ -22,16 +22,16 @@ gate rather than a security boundary.
 
 ## Check contract
 
-| Job / step                 | Protects                                                                                                                                                                                      |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Change scope               | Docs-only changes avoid installs and suites; unknown paths run checks; schedules/manual dispatch always validate                                                                              |
-| Fast checks / format       | Prettier checks CI tooling, workflow and root package metadata; legacy product formatting is not retrofitted                                                                                  |
-| Fast checks / lint         | JavaScript parsing and correctness rules across web source, browser modules, tests, processor and CI tooling; server TypeScript uses its strict compiler                                      |
-| Fast checks / typecheck    | Strict server TypeScript contracts                                                                                                                                                            |
-| Fast checks / tests        | Server unit tests (four render integration files in the heavy job), full web and processor suites, including actual Worker asset routing through the login gate                               |
-| Fast checks / server build | Emitted server build, independently of no-emit typechecking                                                                                                                                   |
-| CI required                | Always reports success/failure, including docs-only skips; fails if scope or fast validation fails or is cancelled                                                                            |
-| Journey and worker builds  | Nightly/manual full server suite including ffmpeg renders; server build and web/processor Wrangler dry-run bundles, then isolated headless browser journey; serialized across repository runs |
+| Job / step                 | Protects                                                                                                                                                                                                                                        |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Change scope               | Docs-only changes avoid installs and suites; unknown paths run checks; schedules/manual dispatch always validate                                                                                                                                |
+| Fast checks / format       | Prettier checks CI tooling, workflow and root package metadata; legacy product formatting is not retrofitted                                                                                                                                    |
+| Fast checks / lint         | JavaScript parsing and correctness rules across web source, browser modules, tests, processor and CI tooling; server TypeScript uses its strict compiler                                                                                        |
+| Fast checks / typecheck    | Strict server TypeScript contracts                                                                                                                                                                                                              |
+| Fast checks / tests        | Server unit tests (four render integration files in the heavy job), full web and processor suites, including actual Worker asset routing through the login gate                                                                                 |
+| Fast checks / server build | Emitted server build, independently of no-emit typechecking                                                                                                                                                                                     |
+| CI required                | Always reports success/failure, including docs-only skips; fails if scope or fast validation fails or is cancelled                                                                                                                              |
+| Journey and worker builds  | Nightly/manual apt install of ffmpeg and fonts-dejavu-core, then full server suite including ffmpeg renders; server build and web/processor Wrangler dry-run bundles, then isolated headless browser journey; serialized across repository runs |
 
 The browser journey uses the existing explicitly synthetic X provider and processor
 in `web/test/fixtures/x`. It checks new-user X consent/PKCE wiring, moving scan,

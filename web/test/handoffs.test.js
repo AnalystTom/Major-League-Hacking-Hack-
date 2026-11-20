@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { requestProcessing } from "../src/processor.js";
-import { HANDOFF_REVISION, inputKey, isStuck, parseHandoff, requestHandoff, serializeBrief } from "../src/handoffs.js";
+import { requestHandoff, requestProcessing, requestVideoProcessing } from "../src/processor.js";
+import { HANDOFF_REVISION, inputKey, isStuck, parseHandoff, serializeBrief } from "../src/handoffs.js";
 
 const A = "6f1c2a52-8d0e-4f3b-9a51-0c6d2e7b9a10";
 const B = "0b6e7a10-1c2d-4e3f-8a9b-2c3d4e5f6a7b";
@@ -35,16 +35,38 @@ test("the processor is asked next to PROCESSOR_URL, with the bearer token", asyn
   assert.equal(await requestHandoff(env, A, async () => { throw new Error("down"); }), "unavailable");
 });
 
-test("with the PROCESSOR service binding, the call goes through it instead of a plain fetch", async () => {
-  let seen;
-  const PROCESSOR = { fetch: async (url, init) => { seen = { url: String(url), init }; return new Response(null, { status: 202 }); } };
-  const env = { PROCESSOR_URL: "https://resurface-processor.example.workers.dev/api/ingest/process", PROCESSOR_TOKEN: "t", PROCESSOR };
+test("the PROCESSOR service binding wakes every processor route with no PROCESSOR_URL", async () => {
+  const seen = [];
+  const PROCESSOR = { fetch: async (url, init) => { seen.push({ url: String(url), init }); return new Response(null, { status: 202 }); } };
+  const env = { PROCESSOR_TOKEN: "t", PROCESSOR };
   const fetchImpl = async () => { throw new Error("same-zone fetch is blocked (1042)"); };
-  assert.equal(await requestHandoff(env, A, fetchImpl), "requested");
-  assert.equal(seen.url, "https://resurface-processor.example.workers.dev/api/ingest/handoff");
-  assert.equal(seen.init.headers.authorization, "Bearer t");
   assert.equal(await requestProcessing(env, [A], fetchImpl), "requested");
-  assert.deepEqual(JSON.parse(seen.init.body), { unit_ids: [A] });
+  assert.equal(await requestVideoProcessing(env, fetchImpl), "requested");
+  assert.equal(await requestHandoff(env, A, fetchImpl), "requested");
+  assert.deepEqual(seen.map(({ url, init }) => [init.method ?? "GET", url, init.headers.authorization]), [
+    ["POST", "https://processor/api/ingest/process", "Bearer t"],
+    ["GET", "https://processor/health", "Bearer t"],
+    ["POST", "https://processor/api/ingest/handoff", "Bearer t"],
+  ]);
+  assert.deepEqual(JSON.parse(seen[0].init.body), { unit_ids: [A] });
+  assert.deepEqual(JSON.parse(seen[2].init.body), { brief_id: A });
+});
+
+test("the binding wins over a leftover PROCESSOR_URL, whose host would be ignored anyway", async () => {
+  const seen = [];
+  const PROCESSOR = { fetch: async (url) => { seen.push(String(url)); return new Response(null, { status: 202 }); } };
+  const env = { PROCESSOR_URL: "https://resurface-processor.example.workers.dev/somewhere/else", PROCESSOR };
+  assert.equal(await requestProcessing(env, [A]), "requested");
+  assert.deepEqual(seen, ["https://processor/api/ingest/process"]);
+});
+
+test("with no binding and no PROCESSOR_URL, nothing is sent and every request says not_configured", async () => {
+  let calls = 0;
+  const fetchImpl = async () => { calls++; return new Response(null, { status: 202 }); };
+  assert.equal(await requestProcessing({ PROCESSOR_TOKEN: "t" }, [A], fetchImpl), "not_configured");
+  assert.equal(await requestVideoProcessing({ PROCESSOR_TOKEN: "t" }, fetchImpl), "not_configured");
+  assert.equal(await requestHandoff({ PROCESSOR_TOKEN: "t" }, A, fetchImpl), "not_configured");
+  assert.equal(calls, 0);
 });
 
 test("only a ready brief carries prompts; a failed one carries its actual error", () => {

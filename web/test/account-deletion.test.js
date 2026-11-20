@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { readFileSync } from 'node:fs';
+import { applyMigrations } from './migrations.js';
 import app from '../src/index.js';
 import { connect } from '../src/db.js';
 import { createSession } from '../src/auth.js';
@@ -10,18 +10,13 @@ import { deleteAccount } from '../src/account.js';
 import { reserveVideo } from '../src/video-requests.js';
 import { createUnits } from '../src/imports.js';
 
-const MIGRATIONS = [
-  '0002_application.sql', '0003_video_duration.sql', '0004_usage_events.sql', '0005_skill_choices.sql',
-  '0005_x_oauth.sql', '0006_x_read_budget.sql', '0007_video_limits.sql', '0008_signup_events.sql',
-  '0009_video_rejection_releases.sql', '0010_anonymous_spend_ledgers.sql',
-];
 const A = 'user-a';
 const B = 'user-b';
 
 function database({ mediaDelete } = {}) {
   const sqlite = new DatabaseSync(':memory:');
   sqlite.exec('PRAGMA foreign_keys=ON');
-  for (const file of MIGRATIONS) sqlite.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url), 'utf8'));
+  applyMigrations(sqlite);
   const statement = (text, params) => ({
     bind: (...values) => statement(text, values),
     all: async () => ({ results: sqlite.prepare(text).all(...params) }),

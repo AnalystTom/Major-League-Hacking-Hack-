@@ -1,50 +1,56 @@
 import { logFailure } from "./log.js";
 
 export const PROCESSOR_BATCH = 10;
-export const processorFetch = (env, fetchImpl) => (env.PROCESSOR ? (url, init) => env.PROCESSOR.fetch(url, init) : fetchImpl);
+const BOUND_PROCESSOR_URL = "https://processor/api/ingest/process";
+const PROCESSOR_TIMEOUT_MS = 8000;
+
+function connectProcessor(env, fetchImpl = fetch) {
+  const processUrl = env.PROCESSOR ? BOUND_PROCESSOR_URL : env.PROCESSOR_URL;
+  if (!processUrl) return null;
+  const send = env.PROCESSOR ? (url, init) => env.PROCESSOR.fetch(url, init) : fetchImpl;
+  const authorization = env.PROCESSOR_TOKEN ? { authorization: `Bearer ${env.PROCESSOR_TOKEN}` } : {};
+  return {
+    processUrl,
+    get: (url) => send(url, { headers: authorization, signal: AbortSignal.timeout(PROCESSOR_TIMEOUT_MS) }),
+    post: (url, body) => send(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...authorization },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(PROCESSOR_TIMEOUT_MS),
+    }),
+  };
+}
+
+const outcome = async (where, call) => {
+  try {
+    const response = await call();
+    if (response.ok) return "requested";
+    logFailure(where, `HTTP ${response.status}`);
+    return "unavailable";
+  } catch (error) {
+    logFailure(where, error);
+    return "unavailable";
+  }
+};
 
 export async function requestProcessing(env, unitIds, fetchImpl = fetch) {
   if (unitIds.length === 0) return "not_needed";
-  if (!env.PROCESSOR_URL) return "not_configured";
+  const processor = connectProcessor(env, fetchImpl);
+  if (!processor) return "not_configured";
   const batches = [];
   for (let i = 0; i < unitIds.length; i += PROCESSOR_BATCH) batches.push(unitIds.slice(i, i + PROCESSOR_BATCH));
-  const send = processorFetch(env, fetchImpl);
-  const results = await Promise.all(batches.map(async (batch) => {
-    try {
-      const res = await send(env.PROCESSOR_URL, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          ...(env.PROCESSOR_TOKEN ? { authorization: `Bearer ${env.PROCESSOR_TOKEN}` } : {}),
-        },
-        body: JSON.stringify({ unit_ids: batch }),
-        signal: AbortSignal.timeout(8000),
-      });
-      if (!res.ok) logFailure("processor request failed", `HTTP ${res.status}`);
-      return res.ok;
-    } catch (error) {
-      logFailure("processor request failed", error);
-      return false;
-    }
-  }));
-  return results.every(Boolean) ? "requested" : "unavailable";
+  const results = await Promise.all(batches.map((batch) => outcome("processor request failed", () => processor.post(processor.processUrl, { unit_ids: batch }))));
+  return results.every((result) => result === "requested") ? "requested" : "unavailable";
 }
 
 export async function requestVideoProcessing(env, fetchImpl = fetch) {
-  if (!env.PROCESSOR_URL) return "not_configured";
-  try {
-    const url = new URL(env.PROCESSOR_URL);
-    url.pathname = "/health";
-    url.search = "";
-    const response = await processorFetch(env, fetchImpl)(url.toString(), {
-      headers: env.PROCESSOR_TOKEN ? { authorization: `Bearer ${env.PROCESSOR_TOKEN}` } : {},
-      signal: AbortSignal.timeout(8000),
-    });
-    if (response.ok) return "requested";
-    logFailure("processor video wake failed", `HTTP ${response.status}`);
-    return "unavailable";
-  } catch (error) {
-    logFailure("processor video wake failed", error);
-    return "unavailable";
-  }
+  const processor = connectProcessor(env, fetchImpl);
+  if (!processor) return "not_configured";
+  return outcome("processor video wake failed", () => processor.get(new URL("/health", processor.processUrl).toString()));
+}
+
+export async function requestHandoff(env, briefId, fetchImpl = fetch) {
+  const processor = connectProcessor(env, fetchImpl);
+  if (!processor) return "not_configured";
+  return outcome("processor handoff failed", () => processor.post(new URL("handoff", processor.processUrl).toString(), { brief_id: briefId }));
 }

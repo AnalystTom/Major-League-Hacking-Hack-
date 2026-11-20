@@ -102,6 +102,9 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npx playwright install --with-deps chromium
+      - name: Install render tools (nightly or manual)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core
       - name: Require render tools (never silently skip integration tests)
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: |

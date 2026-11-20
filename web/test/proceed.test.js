@@ -315,9 +315,9 @@ test('a current skill with no video settles the scan at skill ready while shorts
 
 test("video requests wake the output sweep without submitting imports and survive outages", async () => {
   let calls=0;
-  const env={PROCESSOR_URL:'https://processor.example/api/ingest/process?unused=1',PROCESSOR_TOKEN:'test-token',PROCESSOR:{async fetch(url,init){
+  const env={PROCESSOR_TOKEN:'test-token',PROCESSOR:{async fetch(url,init){
     calls++;
-    assert.equal(url,'https://processor.example/health');
+    assert.equal(url,'https://processor/health');
     assert.equal(init.headers.authorization,'Bearer test-token');
     assert.equal(init.body,undefined);
     return new Response(null,{status:202});
@@ -325,5 +325,5 @@ test("video requests wake the output sweep without submitting imports and surviv
   assert.equal(await requestVideoProcessing(env), 'requested');
   assert.equal(calls,1);
   assert.equal(await requestVideoProcessing({}), 'not_configured');
-  assert.equal(await requestVideoProcessing({PROCESSOR_URL:env.PROCESSOR_URL}, async()=>{throw Error('offline')}), 'unavailable');
+  assert.equal(await requestVideoProcessing({PROCESSOR_URL:'https://processor.example/api/ingest/process?unused=1'}, async()=>{throw Error('offline')}), 'unavailable');
 });
