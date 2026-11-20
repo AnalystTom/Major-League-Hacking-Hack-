@@ -2,13 +2,14 @@
 
 The same launch branch includes the scan animation from https://github.com/AnalystTom/Major-League-Hacking-Hack-/pull/55 and a new journey: **Continue with X → authorize bookmark access → extract bookmarks → scan actual processing stages → open Skills**. Email sign-in and pasted links remain available. The release configuration now enables explicitly requested videos for kept skills (`SHORTS=on`); deployment and real-provider verification remain separate release steps. See [go-live](go-live.md) for limits, gate removal and rollback.
 
-See the detailed [captain-operated setup runbook](x-setup-steps.md), including the unverified no-paste credential-transfer path and prepaid ceiling.
+See the detailed [captain-operated setup runbook](x-setup-steps.md), including the client secret step and prepaid ceiling.
 
 ## Operator setup, through sign-in
 
 The owner signs in to the [X Developer Console](https://console.x.com/) to register a confidential Web App with OAuth 2.0. Register the exact callback `https://<your-site>/api/auth/x/callback`. Configure these Worker bindings through the authenticated platform setup; never add credential fields to the product or ask a user to paste secrets:
 
-- `X_CLIENT_ID` and `X_CLIENT_SECRET`: confidential app credentials, stored as Worker secrets.
+- `X_CLIENT_ID`: public OAuth 2.0 client ID, a Worker variable.
+- `X_CLIENT_SECRET`: confidential client secret, a Worker secret.
 - `X_CALLBACK_URL`: exact callback registered with X (HTTPS in production).
 - `X_READS_ENABLED`: explicit operator cost switch; only the string `true` enables reads. Credentials alone do not enable reads. Keep off until the captain has created the app and funded the approved $20 prepaid ceiling. No credits were purchased or paid requests performed during implementation.
 - `X_DAILY_READ_REQUEST_LIMIT` (default 60) and `X_USER_DAILY_READ_REQUEST_LIMIT` (default 55): positive integer daily request budgets, reserved atomically in D1 before a provider read. Zero or invalid settings stop reads. Both reset at midnight UTC; failed reads still consume a reservation. The global limit includes OAuth identity lookups (per-browser attempt before an X identity exists) and bookmark reads; the per-user limit covers bookmark requests across reconnects and sessions. These are request limits, not a dollar ledger. The `X_PREPAID_CREDIT_CAP_USD = 20` constant documents the externally purchased ceiling; disable auto-recharge and purchase no more than $20. Promotional credits/other apps can affect actual balances, so check the console as well.
