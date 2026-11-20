@@ -16,6 +16,7 @@ test('a processor container that fails to start logs one line and still answers 
     async fetch() { throw new Error('container failed to start: D1_BRIDGE_TOKEN missing'); },
   };
   t.mock.module('@cloudflare/containers', { namedExports: { Container: class {}, getContainer: () => processor } });
+  await new Promise((resolve) => setImmediate(resolve));
   Object.defineProperty(crypto.subtle, 'timingSafeEqual', { configurable: true, value: timingSafeEqual });
   const logged = t.mock.method(console, 'error', () => {});
   const { default: worker } = await import('./src/index.js');
