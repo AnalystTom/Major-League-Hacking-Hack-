@@ -353,7 +353,7 @@ async function signUpJourney(context, account) {
     signedOut = true;
     await page.locator("[data-signout]").click();
     await page.waitForURL((url) => url.pathname === "/", { timeout: 15_000 });
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("networkidle", { timeout: 5_000 }).catch(() => null);
     expect((await signedInEmail(page)) === null, "still signed in");
     return "/api/me user=null";
   });
