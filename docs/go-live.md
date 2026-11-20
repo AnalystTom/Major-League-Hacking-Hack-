@@ -104,10 +104,9 @@ Follow [the captain-operated X setup steps](x-setup-steps.md) as the source of t
 3. Confirm current rates in the signed-in console. Only under the separate funding
    authorization, purchase the approved USD 20 once, leave auto-recharge off, and
    check balance/spending controls as described in that runbook.
-4. The app exists. Its OAuth 2.0 client ID is public and committed as `X_CLIENT_ID` in
-   the `vars` of `web/wrangler.jsonc`, with `X_CALLBACK_URL`, both X read limits and
-   `X_READS_ENABLED="false"`. The client secret is regenerated in the console and typed
-   by the captain only into Wrangler's hidden prompt during the
+4. The app exists. Its public OAuth 2.0 client ID and the other X settings are committed in
+   the `vars` of `web/wrangler.jsonc`, the single source. The client secret is regenerated
+   in the console and typed by the captain only into Wrangler's hidden prompt during the
    [X go-live session](#x-go-live-session).
 5. `X_READS_ENABLED` stays `"false"` until the captain confirms the USD 20 is funded
    with auto-recharge off. Turning it on is a one-line change to `web/wrangler.jsonc`,
@@ -450,8 +449,11 @@ Before step 1, confirm these preconditions. Stop before step 1 if any of the fir
    Any other failure stops the session before X is enabled.
 7. If the USD 20 funding with auto-recharge off was not confirmed at the start, stop here.
    This is the only stopping point. Otherwise continue.
-8. Merge a one-line change to `web/wrangler.jsonc` that sets `"X_READS_ENABLED": "true"`,
-   then fast-forward the local copy to it (`git pull --ff-only`) and confirm CI is green on that commit.
+8. Merge the one-line change to `web/wrangler.jsonc` that sets `"X_READS_ENABLED": "true"` through
+   the normal path: a firstmate worker opens a PR and merges it once CI is green, under the standing
+   Resurface merge authority. Never push directly to `main`. Then fast-forward the local copy to
+   `origin/main` (`git pull --ff-only`) and re-check the precondition: HEAD equals `origin/main`,
+   the tree is clean, and CI is green on that commit.
 9. Redeploy the web Worker from the merged revision with `npm run deploy --prefix web`,
    then rerun `npm run smoke:live`. Every check must pass, including "X sign-in is configured".
 10. The captain does their own consent test (morning checklist step 5).
