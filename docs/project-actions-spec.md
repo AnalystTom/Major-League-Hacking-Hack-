@@ -234,7 +234,7 @@ Static assets serve everything except `/api/*` and `/media/*`: the landing page,
 | `POST /api/auth/login` | none | `{ email, password }` → `200 { user, imports }` and session cookie. Unknown email and wrong password both get `401`. |
 | `POST /api/auth/logout` | none | Ends the session and clears the cookie. |
 | `GET /api/me` | optional session | Signed in: `{ user, imports }`; signed out: `{ user: null }`. |
-| `DELETE /api/me` | session | Permanently deletes the account, its saved links and imports, every skill and video built from any of its links (including ones shared with other users, whose video requests on those are refunded), agent briefs citing them, the X connection and its media, then clears the cookie: `{ deleted: true }`. Global spend-cap counts are kept with the user link removed. `503` if the deletion batch fails. |
+| `DELETE /api/me` | session | Permanently deletes the account, its imports, skill choices, video rejection releases and agent briefs, and the X connection. A unit no other user imported is deleted with every skill, video, R2 media object and agent brief built from it; a unit another user also imported stays for them, with the submitted URL reset to its canonical source URL. Then clears the cookie: `{ deleted: true }`. Global spend-cap counts are kept with the user link removed. `503` if the deletion batch fails. |
 | `POST /api/imports` | session | `{ links: string[] \| string, company?: honeypot }` → `201 { units, processor, invalid }`. |
 | `GET /api/imports` | session | `{ units }`: the user's imports, newest first, with exact duplicate sources hidden. |
 | `GET /api/feed?scope=mine` | session | `{ items }`: ready shorts built from the user's links, as in the [feed read contract](#feed-read-contract). |
