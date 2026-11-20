@@ -4,6 +4,7 @@ import { requestProcessing } from './processor.js';
 import { rateLimit, requestIp } from './rate-limit.js';
 import { importCapResponse, importsLeft, refundSignup, reserveSignup, signupsPaused } from './limits.js';
 import { readBodyText } from './body.js';
+import { logFailure } from './log.js';
 
 const enc = new TextEncoder();
 const b64 = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)));
@@ -125,7 +126,8 @@ async function callback(request, env, sql, user) {
       WHERE x_connections.user_id=excluded.user_id`;
     const session = await createSession(sql, userId);
     return redirect('/app?import=x', [clear, sessionCookie(session, undefined, cookieSecure(request.url))]);
-  } catch {
+  } catch (error) {
+    logFailure('x sign-in callback failed', error);
     return xFailure(user, 'failed', [clear]);
   }
 }
@@ -220,7 +222,8 @@ async function importBookmarks(request, env, sql, user) {
       WHERE user_id=${user.id} AND lease_token=${lease}`;
     const processor = await requestProcessing(env, units.filter(u => u.linked).map(u => u.id));
     return json({ complete, read: count, imported: fresh.length, capped, processor, units: await readUnits(sql, units.map(u => u.id), await userUnitIds(sql, user.id)) });
-  } catch {
+  } catch (error) {
+    logFailure('x bookmark import failed', error);
     const message = 'X bookmarks could not be imported. Your saved links are safe; try again later.';
     await sql`UPDATE x_connections SET import_state='failed',error=${message} WHERE user_id=${user.id} AND lease_token=${lease} AND import_state!='complete'`;
     return json({ error: message }, 502);
@@ -234,7 +237,7 @@ async function disconnect(request, env, sql, user) {
   await sql`UPDATE x_connections SET access_token=NULL,refresh_token=NULL,expires_at=0,lease_until=0,lease_token=NULL,import_state='disconnected',error=NULL WHERE user_id=${user.id}`;
   if (row?.access_token && xAvailable(env)) {
     for (const type of ['access_token', 'refresh_token']) {
-      if (row[type]) try { await provider(env, '/2/oauth2/revoke', { method: 'POST', headers: { authorization: clientAuth(env), 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: await unseal(env, row[type]), token_type_hint: type }).toString() }); } catch {}
+      if (row[type]) try { await provider(env, '/2/oauth2/revoke', { method: 'POST', headers: { authorization: clientAuth(env), 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: await unseal(env, row[type]), token_type_hint: type }).toString() }); } catch (error) { logFailure(`x ${type} revoke failed`, error); }
     }
   }
   return json({ disconnected: true });

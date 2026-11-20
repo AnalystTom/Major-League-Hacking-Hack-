@@ -17,6 +17,7 @@ import { readSkills } from "./skills.js";
 import { requestProcessing, requestVideoProcessing } from "./processor.js";
 import { readBodyText } from "./body.js";
 import { withSecurityHeaders } from "./security-headers.js";
+import { logFailure } from "./log.js";
 
 const json = (data, status = 200, headers = {}) =>
   new Response(JSON.stringify(data), {
@@ -125,7 +126,7 @@ async function api(request, env, url, sql) {
     try {
       await deleteAccount(env, user.id);
     } catch (err) {
-      console.error("account deletion failed", err);
+      logFailure("account deletion failed", err);
       return json({ error: "We couldn't delete your account right now. Please try again." }, 503);
     }
     return json({ deleted: true }, 200, { "set-cookie": sessionCookie("", 0, cookieSecure(request.url)) });
@@ -185,7 +186,8 @@ async function route(request, env) {
       const user = await currentUser(sql, request);
       if (!(await canReadMedia(sql, key, user ? await userUnitIds(sql, user.id) : []))) return json({ error: "Not found." }, 404);
       return serveMedia(request, env, key);
-    } catch {
+    } catch (error) {
+      logFailure("media request failed", error);
       return json({ error: UNAVAILABLE }, 503);
     }
   }
@@ -197,7 +199,7 @@ async function route(request, env) {
       const response = await api(request, env, url, sql);
       return response instanceof Response ? response : json({ error: "Not found." }, 404);
     } catch (err) {
-      console.error("api request failed", url.pathname, err);
+      logFailure(`api request failed ${url.pathname}`, err);
       return json({ error: UNAVAILABLE }, 503);
     }
   }

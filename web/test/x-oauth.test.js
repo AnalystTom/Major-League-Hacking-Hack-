@@ -367,3 +367,28 @@ test('unknown X paths return JSON 404 and wrong methods return 405 with Allow, n
     assert.equal(t.calls.length,0);
   } finally {t.db.close();}
 });
+
+const secretsIn = line => ['fixture-code','fixture-user-token','fixture-refresh-token','fixture-secret'].filter(secret => JSON.stringify(line).includes(secret));
+
+test('X callback, bookmark import and token revocation failures each write one log line without secrets',async(c)=>{
+  const t=setup();try {
+    const logged=c.mock.method(console,'error',()=>{});
+    const original=t.env.X_PROVIDER.fetch;
+    t.env.X_PROVIDER.fetch=async(input,options)=>{ if (new URL(input).pathname==='/2/users/me') throw new Error('identity lookup reset'); return original(input,options); };
+    assert.equal((await t.finish(await t.begin())).headers.get('location'),'/start?x=failed');
+    assert.deepEqual(logged.mock.calls.map(call=>call.arguments),[['x sign-in callback failed','identity lookup reset']]);
+
+    t.env.X_PROVIDER.fetch=original;
+    const cookie=(await t.finish(await t.begin())).headers.get('set-cookie').match(/rs_session=[^;, ]+/)[0];
+    t.env.X_PROVIDER.fetch=async(input,options)=>new URL(input).pathname.endsWith('/bookmarks')?Response.json({meta:{result_count:5},data:[]}):original(input,options);
+    logged.mock.resetCalls();
+    assert.equal((await t.call('/api/x/bookmarks',cookie,'POST')).status,502);
+    assert.deepEqual(logged.mock.calls.map(call=>call.arguments),[['x bookmark import failed','Invalid bookmarks response']]);
+
+    t.env.X_PROVIDER.fetch=async(input,options)=>{ if (new URL(input).pathname.endsWith('/revoke')) throw new Error('revoke endpoint unreachable'); return original(input,options); };
+    logged.mock.resetCalls();
+    assert.deepEqual(await (await t.call('/api/x/disconnect',cookie,'POST')).json(),{disconnected:true});
+    assert.deepEqual(logged.mock.calls.map(call=>call.arguments),[['x access_token revoke failed','revoke endpoint unreachable'],['x refresh_token revoke failed','revoke endpoint unreachable']]);
+    assert.deepEqual(logged.mock.calls.flatMap(call=>secretsIn(call.arguments)),[]);
+  } finally {t.db.close();}
+});

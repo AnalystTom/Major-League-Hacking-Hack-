@@ -1,6 +1,7 @@
 import { database } from "./database.js";
 import { media } from "./media.js";
 import { tts } from "./tts.js";
+import { logFailure } from "./log.js";
 import { Container, getContainer } from "@cloudflare/containers";
 
 const ENV_NAMES = [
@@ -137,7 +138,10 @@ export default {
       }
     }
     const reply = processor.fetch(forward)
-      .catch(() => new Response("The processor didn't start.", { status: 502 }));
+      .catch((error) => {
+        logFailure("processor container start failed", error);
+        return new Response("The processor didn't start.", { status: 502 });
+      });
     ctx.waitUntil(reply);
     const late = new Promise((resolve) => setTimeout(() => resolve(null), ANSWER_WITHIN_MS));
     return (await Promise.race([reply, late])) ?? Response.json({ accepted: true, starting: true }, { status: 202 });
