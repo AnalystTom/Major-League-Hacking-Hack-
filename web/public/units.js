@@ -137,7 +137,7 @@ export const SKILL_WAIT_CHECKS = 15;
 export function followImports({ onUnits, onItems, onSkills, onError }) {
   let timer = null;
   let skillChecks = 0;
-  let run = {};
+  let run = new AbortController();
   const isCurrent = (token) => token === run;
   function schedule(token, delay) {
     clearTimeout(timer);
@@ -145,17 +145,18 @@ export function followImports({ onUnits, onItems, onSkills, onError }) {
   }
   async function poll(token) {
     clearTimeout(timer);
+    const get = (path) => api(path, { signal: token.signal });
     try {
-      const { units } = await api("/api/imports");
-      const { items } = await api("/api/feed?scope=mine");
+      const { units } = await get("/api/imports");
+      const { items } = await get("/api/feed?scope=mine");
       let skills = [];
       let video = null;
       let skillsError = null;
       if (onSkills) {
         try {
-          ({ skills, video = null } = await api("/api/skills"));
+          ({ skills, video = null } = await get("/api/skills"));
         } catch (err) {
-          if (err.status === 401) throw err;
+          if (err.status === 401 || token.signal.aborted) throw err;
           skillsError = err;
         }
       }
@@ -183,11 +184,12 @@ export function followImports({ onUnits, onItems, onSkills, onError }) {
       if (run) poll(run);
     },
     stop() {
+      run?.abort();
       run = null;
       clearTimeout(timer);
     },
     resume() {
-      run = {};
+      run = new AbortController();
       return poll(run);
     },
   };

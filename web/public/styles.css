@@ -669,6 +669,10 @@ a.reel-btn { text-decoration: none; }
   color: var(--on-night); background: transparent; border: 1px solid rgba(255, 255, 255, .22);
 }
 .topbar-pill:hover { border-color: var(--on-night); }
+.bar-icon {
+  display: none; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
 .topbar-pill b { min-width: 1.5em; padding: 0 7px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: .75rem; text-align: center; }
 
 .skills-sheet {
@@ -700,27 +704,30 @@ a.reel-btn { text-decoration: none; }
 
 @media (max-width: 640px) {
   .app-page { --bar: 57px; }
-  .app-page:has(.topbar-pill:not([hidden])) { --bar: 111px; }
   .stage { padding: 0; }
   .app-page .reel { --h: calc(100svh - var(--bar)); width: 100vw; }
   .stage:has([data-first]:not([hidden])) { padding: 16px; }
   .app-page .reel-track { border-radius: 0; }
   .app-page .reel-counter { display: none; }
-  .app-bar .btn-small { padding: 9px 12px; }
-  .app-bar .add-label { display: none; }
   .add-open span[aria-hidden] { font-size: 1.25rem; line-height: .8; }
-  .status > summary { max-width: 34vw; overflow: hidden; text-overflow: ellipsis; }
+  .status > summary { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 44px; }
   .status-panel { position: fixed; left: 12px; right: 12px; top: calc(var(--bar) + 6px); width: auto; }
-  .app-bar .wordmark { display: none; }
-  .app-bar .topbar-inner { justify-content: flex-end; flex-wrap: wrap; min-height: calc(var(--bar) - 1px); }
+  .app-bar .topbar-inner { gap: 4px; flex-wrap: nowrap; min-height: calc(var(--bar) - 1px); padding: 6px 10px; }
+  .app-bar .topbar-inner > * { flex: none; }
+  .app-bar .topbar-inner > .status { flex: 1 1 0; min-width: 26px; }
+  .app-bar .wordmark { margin-right: auto; gap: 5px; font-size: .875rem; }
+  .app-bar .wordmark svg { width: 20px; height: 20px; }
+  .app-bar .bar-label, .app-bar .add-label { display: none; }
+  .app-bar .bar-icon { display: block; }
+  .app-bar .btn-small, .app-bar .topbar-pill { min-width: 36px; min-height: 44px; padding: 0 5px; font-size: .75rem; }
+  .app-bar .topbar-pill { gap: 3px; }
+  .app-bar .topbar-pill b { min-width: 1.25em; padding: 0 4px; }
   .topbar-tasks { display: none; }
-  .topbar-pill { padding: 6px 10px; font-size: .8125rem; }
-  .status > summary { padding: 6px 10px; font-size: .8125rem; }
-  .app-bar .topbar-inner { padding-block: 6px; }
+  .status > summary { padding: 0 6px; font-size: .75rem; }
 }
 
 @media (max-width: 640px) {
-  .btn-small, .status > summary, .topnav-signin, .wordmark, .watch-link a, .footer a, .onboard-switch .linkish { display: inline-flex; align-items: center; min-height: 44px; }
+  .btn-small, .topnav-signin, .wordmark, .watch-link a, .footer a, .onboard-switch .linkish { display: inline-flex; align-items: center; min-height: 44px; }
   .topbar-pill { min-height: 44px; }
   .btn-small, .topbar-pill { justify-content: center; }
   .add-open { min-width: 44px; }
