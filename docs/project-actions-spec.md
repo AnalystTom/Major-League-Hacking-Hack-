@@ -289,7 +289,9 @@ Details, configuration and hosting (PR #5: a Cloudflare Container that sleeps wh
 
 `/start` sends a signed-in visitor straight to `/app`. On `/app` the page polls `/api/imports`, `/api/feed?scope=mine` and `/api/skills` every 4 seconds while a unit is unsettled or a skill is being written. When a short is ready but its skill hasn't started, it checks every 20 seconds, at most 15 times. A failing `/api/skills` doesn't stop links and shorts from updating. Each link shows its title or URL, its stage, and the reason defined by the [unit progress contract](#http-api), or "Reason unknown." Ready clips go straight to the reel. The [onboarding journey](proceed-and-media.md#the-journey) describes where progress appears. During the waitlist launch, the landing page shows **Join the waitlist** for all visitors. Product onboarding remains available in the development configuration.
 
-### API Worker `resurface-api` (`server/`, Hono; runs on Node or Workers)
+### Node API `resurface-api` (`server/`, Hono; runs on Node)
+
+The `resurface-api` Worker deploy target was retired; the routes below ship only from the Node server, and the web Worker serves the feed and skills. The previously deployed Worker still exists on the Cloudflare account until someone with account access deletes it.
 
 This service defaults to an empty shorts list; sample records live only in tests. The web page uses the web Worker's feed instead. CORS allows only `WEB_ORIGINS`.
 
