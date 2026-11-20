@@ -6,7 +6,7 @@ dev. The processor's hosting is PR #5. Shorts reach production only when that's 
 
 ## The journey
 
-1. **Sign up** at `/start`: email and password, nothing else (`users`, `sessions`; `db/migrations/002_accounts.sql`).
+1. **Sign up** at `/start`: email and password, nothing else (`users`, `sessions`; `web/migrations/0002_application.sql`).
    Signing up or in goes straight to `/app`.
 2. **Paste links** on `/app`. A new account lands on the reel's 9:16 frame with the paste box in it, focused.
    Up to 20 YouTube videos, 100 X post links (`x.com/<user>/status/<id>`, stored with `content_type = 'x_post'`) and 20 public Substack posts (`<publication>.substack.com/p/<slug>`, stored with `content_type = 'substack_post'`) become `ingested_units`, linked to the user in `user_imports`. Source-reading providers, the optional X key and Article preview limits are documented in the [ingestion README](../server/src/ingest/README.md).
@@ -50,8 +50,8 @@ See [go-live](go-live.md) for the one-video-per-account policy, atomic 20/day vi
 ceiling, cost estimate, deployment order and rollback.
 
 Node, in `server/src`. `POST /api/ingest/process` takes `{ "unit_ids": [...] }` with
-`Authorization: Bearer <INGEST_TOKEN>`, replies `202`, and works in the background. The web Worker calls it with
-`PROCESSOR_URL` and `PROCESSOR_TOKEN` (equal to `INGEST_TOKEN`). Timed sweeps pick up anything a request missed.
+`Authorization: Bearer <INGEST_TOKEN>`, replies `202`, and works in the background. The web Worker calls it through its
+`PROCESSOR` service binding with `PROCESSOR_TOKEN` (equal to `INGEST_TOKEN`). Timed sweeps pick up anything a request missed.
 
 1. **Extract** (`ingest/`): claim pending units, read each source with its [configured provider](../server/src/ingest/README.md), then `ready` with the
    evidence, or `failed` with the actual error. A unit that's already `ready` isn't read again.
@@ -137,7 +137,7 @@ media storage is unavailable. Optional render settings: `GEMINI_TTS_MODEL`,
 `GEMINI_TTS_VOICE`, `RENDER_FONT`. Renders need `ffmpeg` and `ffprobe` on the host.
 
 **Hosting** is PR #5: a Cloudflare Container behind a `resurface-processor` Worker that sleeps when idle, to stay
-around $5–10 a month. It isn't deployed. It needs Workers Paid and a Workers Builds connection.
+around $5–10 a month. It needs Workers Paid, and its deploy builds the container image with Docker on the deploying machine.
 
 ## Storage choice: Cloudflare R2
 
@@ -155,13 +155,14 @@ Apply `web/migrations/` to the D1 binding with `npm run db:migrate:local --prefi
 `npm run db:migrate:remote --prefix web`. The same D1 database holds the waitlist and application records.
 See [D1 migration and cutover](applying-migration.md) for preserving existing TigerData records.
 
-The web Worker needs its D1 `DB` binding, R2 `MEDIA` binding, `PROCESSOR_URL` and `PROCESSOR_TOKEN`.
+The web Worker needs its D1 `DB` binding, R2 `MEDIA` binding, `PROCESSOR` service binding and `PROCESSOR_TOKEN`.
 For the processor's D1 connection, see [Processor connection](applying-migration.md#processor-connection).
 Its R2 binding and media configuration are described [above](#the-processor).
 
 For local development, run `npm run dev --prefix web` after applying local migrations. A standalone
 Node processor uses the same D1 bridge; configure the D1, media and TTS variables and provider keys in `server/.env`
-from `server/.env.example`, and point the web Worker's `PROCESSOR_URL` at its processing route.
+from `server/.env.example`, and, since a local web Worker has no `PROCESSOR` binding, point its `PROCESSOR_URL` at that processor's
+`/api/ingest/process` route.
 Use isolated test databases and accounts. When no processor is configured, imported links remain queued
 and the page reports that state; no simulated clips or processing records are created.
 

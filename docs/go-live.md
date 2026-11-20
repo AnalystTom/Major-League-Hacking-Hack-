@@ -14,8 +14,10 @@ in this repository, chat, screenshots or command arguments.
 for request admission. The web refuses new video requests while its `SHORTS` is off, and
 the processor skips rendering while its own is off. Keep both configs in sync.
 
-Each account has **one lifetime video slot**, recorded by the primary key on
-`user_video_requests.user_id`. Choose **Make my video** on one ready skill; it also
+Each account has **one lifetime video slot**, recorded by the unique index on
+`user_video_requests.user_id`. Since migration `0010` that column is nullable: a deleted
+account's row stays with a `NULL` user id, so its spend still counts toward the daily and
+monthly ceilings. Choose **Make my video** on one ready skill; it also
 keeps that skill. The server rejects a second selection, even with parallel requests,
 a new session or a different artifact version. Duplicate submissions for the same
 selection are idempotent. Retries work on that same video; a failure does not create
@@ -143,20 +145,25 @@ npm exec --prefix deploy/processor -- wrangler deployments list --config deploy/
    choices, processing ledger and X tables are shared by both Workers. Apply `0007_video_limits.sql`, `0008_signup_events.sql` and `0009_video_rejection_releases.sql` before deploying either Worker: they add the lifetime reservations, video-start ledger and per-account rejection releases. Back up and review historical allocations first. The migration retains existing media and can reduce multiple old request flags to the single preserved allocation, and failed videos do not count as an allocation. Then apply `0010_anonymous_spend_ledgers.sql` (after `0009`) before deploying either Worker: it makes `user_id` nullable on the spend ledgers so deleted accounts' spend keeps counting.
 2. Apply reviewed pending migrations before either code release:
    `npm run db:migrate:remote --prefix web`. Preserve all existing data.
-3. Deploy the web Worker: `npm run deploy --prefix web`. `wrangler deploy` replaces
-   dashboard-set plain-text variables with the `vars` in `web/wrangler.jsonc`, which
-   does not declare `X_CALLBACK_URL` or `X_READS_ENABLED`; secrets survive. Before the
+3. Deploy the web Worker: `npm run deploy --prefix web`. `wrangler deploy` wipes every
+   plain-text variable that is not declared in the `vars` of `web/wrangler.jsonc`,
+   including any set in the dashboard; secrets survive. The ones that matter are
+   `X_CALLBACK_URL` and `X_READS_ENABLED`, plus `X_DAILY_READ_REQUEST_LIMIT` and
+   `X_USER_DAILY_READ_REQUEST_LIMIT` if you changed them from their defaults. Before the
    first deploy, run `npm exec --prefix web -- wrangler secret list --config web/wrangler.jsonc`
-   and check where those two X values live. If they are dashboard variables, the deploy
+   and check where those values live. If they are dashboard variables, the deploy
    switches X sign-in off: store them as secrets or add them to `vars` (a name that
-   exists as a secret cannot also be a var). Then run `npm run smoke:live` (see
+   exists as a secret cannot also be a var). The processor needs no variable: the web
+   Worker wakes it through the `PROCESSOR` service binding, and `PROCESSOR_URL` is
+   used only by a local web Worker with no binding. Then run `npm run smoke:live` (see
    [Live smoke](#live-smoke)). Before the site is opened, the public-access checks
    fail by design, and the rest of the journey needs `SMOKE_ACCESS_CLIENT_*` or
    `SMOKE_GATE_*`. After it is opened, every check must pass. A half-configured
    in-app gate answers `503`.
 4. Deploy the processor last, after its bridge secrets are set ([Processor bridge secrets](#processor-bridge-secrets-required-before-the-processor-deploy)).
-   Run `npm run deploy --prefix deploy/processor`. A local image build needs Docker;
-   alternatively use the existing authorized Workers Builds path. Do not enable a second deployment mechanism. The processor applies
+   Run `npm run deploy --prefix deploy/processor` on a machine where the deploying user
+   can run Docker: `wrangler` builds the container image locally and needs Docker even
+   for `--dry-run`. Do not enable a second deployment mechanism. The processor applies
    changed settings on the next request when idle; busy work finishes first.
    Authenticated `/settings-status` reports matching `sent`, `held` and
    `started_with` hashes once new settings have reached the running container.
@@ -326,7 +333,18 @@ its credentials on X's redirect. To revert, delete the bypass application.
 
 `npm run smoke:live` runs `ci/live-smoke.js`, the repeatable new-user check, against
 `https://resurface.thomasmann2001.workers.dev`. It uses a fresh headless Chromium context
-and makes no X request, paid call or email. It checks:
+and makes no X request, paid call or email. It needs Playwright's headless Chromium, so
+install it once first:
+
+```sh
+npx playwright install --only-shell chromium
+```
+
+Run the install under Node 22 (what CI uses) or Node 24. Under Node 26, Playwright
+1.56.1 finished the download and then stalled with no progress. If your default `node`
+is newer, run the same command with a Node 24 binary from your version manager.
+
+It checks:
 
 - `/privacy` and `/terms` are public;
 - the X callback reaches the app;

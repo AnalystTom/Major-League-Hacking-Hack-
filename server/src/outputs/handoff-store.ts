@@ -1,4 +1,4 @@
-// agent_briefs (db/migrations/005_agent_briefs.sql): the web Worker creates a pending row for the skills a user picked,
+// agent_briefs (web/migrations/0002_application.sql): the web Worker creates a pending row for the skills a user picked,
 // the processor claims it, writes the refined brief and every agent's prompt, or the actual error.
 
 import { randomUUID } from "node:crypto";
