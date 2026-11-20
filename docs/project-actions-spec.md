@@ -291,7 +291,7 @@ Details, configuration and hosting (PR #5: a Cloudflare Container that sleeps wh
 
 ### Node API `resurface-api` (`server/`, Hono; runs on Node)
 
-The `resurface-api` Worker deploy target was retired; the routes below ship only from the Node server, and the web Worker serves the feed and skills.
+The `resurface-api` Worker deploy target was retired; the routes below ship only from the Node server, and the web Worker serves the feed and skills. The previously deployed Worker still exists on the Cloudflare account until someone with account access deletes it.
 
 This service defaults to an empty shorts list; sample records live only in tests. The web page uses the web Worker's feed instead. CORS allows only `WEB_ORIGINS`.
 
