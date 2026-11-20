@@ -230,6 +230,7 @@ container from starting.
 3. Verify: authenticated `/settings-status` shows matching `sent`, `held` and `started_with` hashes,
    and a sweep writes to D1 and R2 through the bridges (watch the processor logs for `D1 batch failed`,
    `R2 put failed`, and `D1 query failed (HTTP 403)` from the container, which means the bridge refused a statement).
+   A container that fails to start logs `processor container start failed` from the processor Worker.
 4. Retire the old shared token by rotating `INGEST_TOKEN` to a new value. Set the same new value as the
    web Worker's `PROCESSOR_TOKEN` (`wrangler secret put PROCESSOR_TOKEN --config web/wrangler.jsonc`) and
    the processor's `INGEST_TOKEN`, so the old value opens nothing.
