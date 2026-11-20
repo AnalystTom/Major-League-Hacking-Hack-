@@ -367,3 +367,54 @@ test("an unknown address shows the not-found page", async ({ page }) => {
     page.getByRole("link", { name: "Home", exact: true }),
   ).toHaveAttribute("href", "/");
 });
+
+test("the /available links appear only when the public catalogue has content", async ({
+  page,
+}, info) => {
+  const response = await page.request.post("/api/auth/signup", {
+    data: {
+      email: `catalogue-${Date.now()}@example.test`,
+      password: "isolated-fixture-password",
+    },
+  });
+  expect(response.status(), await response.text()).toBe(201);
+  const isPublicCatalogue = (url) =>
+    url.searchParams.get("scope") === "public" &&
+    ["/api/feed", "/api/skills"].includes(url.pathname);
+  for (const [state, catalogue, visible] of [
+    ["empty", { items: [], skills: [] }, false],
+    ["non-empty", { items: [], skills: [{ id: "public-skill" }] }, true],
+  ]) {
+    await page.unroute(isPublicCatalogue);
+    await page.route(isPublicCatalogue, (route) =>
+      route.fulfill({
+        json: new URL(route.request().url()).pathname.endsWith("/feed")
+          ? { items: catalogue.items }
+          : { skills: catalogue.skills },
+      }),
+    );
+    for (const [path, name] of [
+      ["/app", "View available reels & Skills"],
+      ["/no-such-page", "Public reels & skills"],
+    ]) {
+      const checked = page.waitForResponse((r) =>
+        r.url().endsWith("/api/skills?scope=public"),
+      );
+      await page.goto(path);
+      await checked;
+      const link = page.getByRole("link", { name });
+      if (visible) {
+        await expect(link).toBeVisible();
+        await expect(link).toHaveAttribute("href", "/available");
+      } else {
+        await expect(link).toBeHidden();
+      }
+      const shot = info.outputPath(`${state}${path.replaceAll("/", "-")}.png`);
+      await page.screenshot({ path: shot, fullPage: true });
+      await info.attach(`${state} catalogue ${path}`, {
+        path: shot,
+        contentType: "image/png",
+      });
+    }
+  }
+});

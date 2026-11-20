@@ -19,7 +19,7 @@ Built at AI Engineer NYC 2026.
 - **Shorts**: release configuration enables video generation (`SHORTS=on`) for one explicitly requested video per account, from a kept skill. The global render-start cap is 20/day (400/month). Deployment and a real-short check are still required before calling this live. See the [processor flow](docs/proceed-and-media.md#the-processor).
 - **Keep**: choose which generated skills to keep; videos remain opt-in.
 - **Skills**: concise source-grounded SKILL.md files for your coding agent; see the [skill contract](docs/project-actions-spec.md#workflow-3-processed-skill-and-codex-use).
-- **Private reels**: sign in for your personal reel, or choose **View available reels & Skills** to browse the public catalogue at `/available`.
+- **Private reels**: sign in for your personal reel, or browse the public catalogue at `/available`; signed-in pages show **View available reels & Skills** once public reels or skills exist.
 - **Source checking**: before installing, Resurface pulls the linked repo, release notes, and open issues so outdated tips (such as a deprecated flag) don't ship.
 - **Reviewable installs**: skills, rules, and `AGENTS.md` sections land in your repo as a reviewable diff, each linked back to its original post or video.
 

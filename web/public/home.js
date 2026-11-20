@@ -1,4 +1,5 @@
 import { api } from "./api.js";
+import { showCatalogueLinks } from "./catalogue-links.js";
 import { connectX } from "./x-connect.js";
 import { createReel } from "./reel.js";
 import { createSkills } from "./skills.js";
@@ -187,6 +188,7 @@ $("[data-confirm-delete]").addEventListener("click", async (event) => {
     return;
   }
   if (!me.user) return location.assign("/start");
+  showCatalogueLinks(document);
 
   let shown = false;
   const reveal = () => {

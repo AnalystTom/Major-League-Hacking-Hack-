@@ -18,8 +18,8 @@ dev. The processor's hosting is PR #5. Shorts reach production only when that's 
    with the paste box.
 5. **Skills** open as a sheet over the reel, from the top-bar button or a short's **View skill** link at its
    skill card. Choose which skills to keep and, optionally, request videos for them; copy or download a kept skill for the selected agent. Tasks and Send to agent are unavailable.
-6. **View available reels & Skills** opens `/available` without requiring sign-in. The landing page links to
-   this catalogue instead of displaying sample shorts. Access rules live in the [HTTP contract](project-actions-spec.md#http-api).
+6. **View available reels & Skills** opens `/available` without requiring sign-in. Signed-in pages and the not-found page show
+   the link only while the public catalogue has reels or skills. Access rules live in the [HTTP contract](project-actions-spec.md#http-api).
 
 There is no project or setup step. Output eligibility follows the [feed contract](project-actions-spec.md#feed-read-contract).
 Signed-in visitors see "Open your feed" on the landing page.
