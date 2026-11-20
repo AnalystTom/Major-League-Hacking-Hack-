@@ -1,3 +1,5 @@
+import { logFailure } from "./log.js";
+
 export const PROCESSOR_BATCH = 10;
 const BOUND_PROCESSOR_URL = "https://processor/api/ingest/process";
 const PROCESSOR_TIMEOUT_MS = 8000;
@@ -19,10 +21,14 @@ function connectProcessor(env, fetchImpl = fetch) {
   };
 }
 
-const outcome = async (call) => {
+const outcome = async (where, call) => {
   try {
-    return (await call()).ok ? "requested" : "unavailable";
-  } catch {
+    const response = await call();
+    if (response.ok) return "requested";
+    logFailure(where, `HTTP ${response.status}`);
+    return "unavailable";
+  } catch (error) {
+    logFailure(where, error);
     return "unavailable";
   }
 };
@@ -33,18 +39,18 @@ export async function requestProcessing(env, unitIds, fetchImpl = fetch) {
   if (!processor) return "not_configured";
   const batches = [];
   for (let i = 0; i < unitIds.length; i += PROCESSOR_BATCH) batches.push(unitIds.slice(i, i + PROCESSOR_BATCH));
-  const results = await Promise.all(batches.map((batch) => outcome(() => processor.post(processor.processUrl, { unit_ids: batch }))));
+  const results = await Promise.all(batches.map((batch) => outcome("processor request failed", () => processor.post(processor.processUrl, { unit_ids: batch }))));
   return results.every((result) => result === "requested") ? "requested" : "unavailable";
 }
 
 export async function requestVideoProcessing(env, fetchImpl = fetch) {
   const processor = connectProcessor(env, fetchImpl);
   if (!processor) return "not_configured";
-  return outcome(() => processor.get(new URL("/health", processor.processUrl).toString()));
+  return outcome("processor video wake failed", () => processor.get(new URL("/health", processor.processUrl).toString()));
 }
 
 export async function requestHandoff(env, briefId, fetchImpl = fetch) {
   const processor = connectProcessor(env, fetchImpl);
   if (!processor) return "not_configured";
-  return outcome(() => processor.post(new URL("handoff", processor.processUrl).toString(), { brief_id: briefId }));
+  return outcome("processor handoff failed", () => processor.post(new URL("handoff", processor.processUrl).toString(), { brief_id: briefId }));
 }

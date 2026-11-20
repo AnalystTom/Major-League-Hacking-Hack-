@@ -16,3 +16,10 @@ test('processor narration bridge runs Aura-2 for valid text and rejects the rest
   assert.equal((await tts(post({ text: 'hi' }), {})).status, 503);
   assert.equal((await tts(post({ text: 'hi' }), { AI: { run() { throw new Error('down'); } } })).status, 502);
 });
+
+test('processor narration bridge logs a failed Workers AI call once and answers 502', async (t) => {
+  const logged = t.mock.method(console, 'error', () => {});
+  const response = await tts(new Request('http://processor/internal/tts', { method: 'POST', body: JSON.stringify({ text: 'Run code review first.' }) }), { AI: { run() { throw new Error('AI offline'); } } });
+  assert.equal(response.status, 502);
+  assert.deepEqual(logged.mock.calls.map((call) => call.arguments), [['Workers AI TTS failed', 'AI offline']]);
+});

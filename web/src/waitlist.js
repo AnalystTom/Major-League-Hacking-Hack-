@@ -2,6 +2,7 @@ import { readBodyText } from "./body.js";
 import { rateLimit, requestIp } from "./rate-limit.js";
 import { parseSignup } from "./signup.js";
 import { withSecurityHeaders } from "./security-headers.js";
+import { logFailure } from "./log.js";
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -45,8 +46,8 @@ async function route(request, env) {
   if (url.pathname === "/api/waitlist") {
     try {
       return await joinWaitlist(request, env);
-    } catch {
-      console.error("waitlist insert failed");
+    } catch (error) {
+      logFailure("waitlist insert failed", error);
       return json({ error: "The waitlist is unavailable right now. Try again in a minute." }, 503);
     }
   }

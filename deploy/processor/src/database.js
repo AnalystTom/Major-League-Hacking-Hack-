@@ -1,3 +1,4 @@
+import { logFailure } from './log.js';
 import { ALLOWED_D1_STATEMENTS } from './d1-allowlist.js';
 
 const validParams = (params) => Array.isArray(params) && params.length <= 100 &&
@@ -21,7 +22,7 @@ export async function database(request, env) {
     const results = await env.DB.batch(statements.map((s) => env.DB.prepare(s.sql).bind(...(s.params ?? []))));
     return Response.json({ results });
   } catch (e) {
-    console.error('D1 batch failed', e.message);
+    logFailure('D1 batch failed', e);
     return Response.json({ error: 'D1 batch failed' }, { status: 500 });
   }
 }

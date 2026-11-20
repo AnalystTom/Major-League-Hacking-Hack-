@@ -1,3 +1,5 @@
+import { logFailure } from './log.js';
+
 const KEY = /^(videos|captions|audio)\/[\w-]+\/\d+\/(?:[\w-]+\/)?[\w.-]+$/;
 const MAX_BYTES = 50_000_000;
 const CONTENT_TYPES = new Map([['mp4', 'video/mp4'], ['vtt', 'text/vtt; charset=utf-8'], ['m4a', 'audio/mp4']]);
@@ -11,7 +13,7 @@ export async function media(request, env) {
       await env.MEDIA.delete(key);
       return Response.json({ deleted: true });
     } catch (e) {
-      console.error('R2 delete failed', e.message);
+      logFailure('R2 delete failed', e);
       return Response.json({ error: 'R2 delete failed' }, { status: 500 });
     }
   }
@@ -23,7 +25,7 @@ export async function media(request, env) {
     await env.MEDIA.put(key, request.body, { httpMetadata: { contentType } });
     return Response.json({ size: (await env.MEDIA.head(key))?.size ?? 0 });
   } catch (e) {
-    console.error('R2 put failed', e.message);
+    logFailure('R2 put failed', e);
     return Response.json({ error: 'R2 put failed' }, { status: 500 });
   }
 }

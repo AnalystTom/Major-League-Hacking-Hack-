@@ -368,3 +368,93 @@ test('unknown X paths return JSON 404 and wrong methods return 405 with Allow, n
     assert.equal(t.calls.length,0);
   } finally {t.db.close();}
 });
+
+const secretsIn = line => ['fixture-code','fixture-user-token','fixture-refresh-token','fixture-secret'].filter(secret => JSON.stringify(line).includes(secret));
+
+test('X callback, bookmark import and token revocation failures each write one log line without secrets',async(c)=>{
+  const t=setup();try {
+    const logged=c.mock.method(console,'error',()=>{});
+    const original=t.env.X_PROVIDER.fetch;
+    t.env.X_PROVIDER.fetch=async(input,options)=>{ if (new URL(input).pathname==='/2/users/me') throw new Error('identity lookup reset'); return original(input,options); };
+    assert.equal((await t.finish(await t.begin())).headers.get('location'),'/start?x=failed');
+    assert.deepEqual(logged.mock.calls.map(call=>call.arguments),[['x sign-in callback failed','identity lookup reset']]);
+
+    t.env.X_PROVIDER.fetch=original;
+    const cookie=(await t.finish(await t.begin())).headers.get('set-cookie').match(/rs_session=[^;, ]+/)[0];
+    t.env.X_PROVIDER.fetch=async(input,options)=>new URL(input).pathname.endsWith('/bookmarks')?Response.json({meta:{result_count:5},data:[]}):original(input,options);
+    logged.mock.resetCalls();
+    assert.equal((await t.call('/api/x/bookmarks',cookie,'POST')).status,502);
+    assert.deepEqual(logged.mock.calls.map(call=>call.arguments),[['x bookmark import failed','Invalid bookmarks response']]);
+
+    t.env.X_PROVIDER.fetch=async(input,options)=>{ if (new URL(input).pathname.endsWith('/revoke')) throw new Error('revoke endpoint unreachable'); return original(input,options); };
+    logged.mock.resetCalls();
+    assert.deepEqual(await (await t.call('/api/x/disconnect',cookie,'POST')).json(),{disconnected:true});
+    assert.deepEqual(logged.mock.calls.map(call=>call.arguments),[['x access_token revoke failed','revoke endpoint unreachable'],['x refresh_token revoke failed','revoke endpoint unreachable']]);
+    assert.deepEqual(logged.mock.calls.flatMap(call=>secretsIn(call.arguments)),[]);
+  } finally {t.db.close();}
+});
+
+test('a non-2xx X token exchange logs its HTTP status once and never the provider body',async(c)=>{
+  const t=setup();try {
+    const logged=c.mock.method(console,'error',()=>{});
+    t.env.X_PROVIDER.fetch=async()=>new Response('fixture-body-secret',{status:500});
+    assert.equal((await t.finish(await t.begin())).headers.get('location'),'/start?x=failed');
+    assert.deepEqual(logged.mock.calls.map(call=>call.arguments),[['x token exchange failed','HTTP 500']]);
+    assert.ok(!JSON.stringify(logged.mock.calls).includes('fixture-body-secret'));
+  } finally {t.db.close();}
+});
+
+test('a non-2xx X identity lookup logs its HTTP status once and never the provider body',async(c)=>{
+  const t=setup();try {
+    const logged=c.mock.method(console,'error',()=>{});
+    const original=t.env.X_PROVIDER.fetch;
+    t.env.X_PROVIDER.fetch=async(input,options)=>new URL(input).pathname==='/2/users/me'?new Response('fixture-body-secret',{status:503}):original(input,options);
+    assert.equal((await t.finish(await t.begin())).headers.get('location'),'/start?x=failed');
+    assert.deepEqual(logged.mock.calls.map(call=>call.arguments),[['x identity lookup failed','HTTP 503']]);
+    assert.ok(!JSON.stringify(logged.mock.calls).includes('fixture-body-secret'));
+  } finally {t.db.close();}
+});
+
+test('a non-2xx X bookmark read logs its HTTP status once and never the provider body',async(c)=>{
+  const t=setup();try {
+    const cookie=(await t.finish(await t.begin())).headers.get('set-cookie').match(/rs_session=[^;, ]+/)[0];
+    const logged=c.mock.method(console,'error',()=>{});
+    t.env.X_PROVIDER.fetch=async(input,options)=>new URL(input).pathname.endsWith('/bookmarks')?new Response('fixture-body-secret',{status:500}):(new URL(input).pathname.endsWith('/revoke')?Response.json({revoked:true}):Response.json({}));
+    assert.equal((await t.call('/api/x/bookmarks',cookie,'POST')).status,502);
+    assert.deepEqual(logged.mock.calls.map(call=>call.arguments),[['x bookmark read failed','HTTP 500']]);
+    assert.ok(!JSON.stringify(logged.mock.calls).includes('fixture-body-secret'));
+  } finally {t.db.close();}
+});
+
+test('a non-2xx X revocation logs its HTTP status once per token and never the provider body',async(c)=>{
+  const t=setup();try {
+    const cookie=(await t.finish(await t.begin())).headers.get('set-cookie').match(/rs_session=[^;, ]+/)[0];
+    const logged=c.mock.method(console,'error',()=>{});
+    t.env.X_PROVIDER.fetch=async()=>new Response('fixture-body-secret',{status:400});
+    assert.deepEqual(await (await t.call('/api/x/disconnect',cookie,'POST')).json(),{disconnected:true});
+    assert.deepEqual(logged.mock.calls.map(call=>call.arguments),[['x access_token revoke failed','HTTP 400'],['x refresh_token revoke failed','HTTP 400']]);
+    assert.ok(!JSON.stringify(logged.mock.calls).includes('fixture-body-secret'));
+  } finally {t.db.close();}
+});
+
+test('a 200 X token answer without the granted scopes logs one fixed reason and never the token',async(c)=>{
+  const t=setup();try {
+    const logged=c.mock.method(console,'error',()=>{});
+    const original=t.env.X_PROVIDER.fetch;
+    t.env.X_PROVIDER.fetch=async(input,options)=>new URL(input).pathname.endsWith('/token')?Response.json({access_token:'fixture-shape-token',expires_in:7200,scope:'tweet.read'}):original(input,options);
+    assert.equal((await t.finish(await t.begin())).headers.get('location'),'/start?x=failed');
+    assert.deepEqual(logged.mock.calls.map(call=>call.arguments),[['x sign-in callback failed','unexpected token response shape']]);
+    assert.ok(!JSON.stringify(logged.mock.calls).includes('fixture-shape-token'));
+  } finally {t.db.close();}
+});
+
+test('a 200 X identity answer with an invalid id logs one fixed reason and never the username',async(c)=>{
+  const t=setup();try {
+    const logged=c.mock.method(console,'error',()=>{});
+    const original=t.env.X_PROVIDER.fetch;
+    t.env.X_PROVIDER.fetch=async(input,options)=>new URL(input).pathname==='/2/users/me'?Response.json({data:{id:'not-a-number',username:'fixture_shape_user'}}):original(input,options);
+    assert.equal((await t.finish(await t.begin())).headers.get('location'),'/start?x=failed');
+    assert.deepEqual(logged.mock.calls.map(call=>call.arguments),[['x sign-in callback failed','unexpected identity response shape']]);
+    assert.ok(!JSON.stringify(logged.mock.calls).includes('fixture_shape_user'));
+  } finally {t.db.close();}
+});
