@@ -80,11 +80,17 @@ test("describeUnit never shows a raw provider error", () => {
   }
   const receipt = { judge: "short-judge-v1", passed: false, captions_burned: true, scores: { grounding: 4, clarity: 4, usefulness: 4, visuals: 4, subtitles: 2 }, reasons: ["Subtitles overlap the lesson title.", "The final caption is clipped. ".repeat(8)] };
   const rejected = `Quality judge rejected: ${JSON.stringify(receipt)}`;
-  for (const attempts of [1, 3]) {
-    const result = describeUnit({ ...unit, status: "ready", artifacts: [{ ingestion_status: "ready", video: { status: "failed", error: rejected, attempts } }] });
-    assert.match(result.error, /^Quality check: Subtitles overlap the lesson title\./);
-    assert.ok(result.error.length <= 185);
-  }
+  const skill = { status: "ready", review_feedback: JSON.stringify({ prompt_revision: SKILL_PROMPT_REVISION }) };
+  const judged = (attempts) => describeUnit({ ...unit, status: "ready", artifacts: [{ ingestion_status: "ready", skill, video: { status: "failed", error: rejected, attempts } }] });
+  assert.deepEqual(
+    [judged(1).stage, judged(1).error, judged(1).skill_ready],
+    ["render_retrying", "The short hit a snag and is being tried again.", true],
+  );
+  assert.deepEqual(
+    [judged(3).stage, judged(3).error, judged(3).skill_ready],
+    ["render_failed", "The short couldn't be finished.", true],
+  );
+  for (const attempts of [1, 3]) assert.doesNotMatch(JSON.stringify(judged(attempts)), /Quality|judge|Subtitles|caption/);
 });
 
 test("describeUnit reports the furthest real stage", () => {

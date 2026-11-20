@@ -35,6 +35,26 @@ export function settledNote(note, units) {
     : note;
 }
 
+export function firstScreenCopy(units) {
+  if (units.length === 0) return {
+    title: "Paste your first links",
+    lede: "Each YouTube video, X post or Substack post becomes a skill your coding agent can read, from the part worth keeping.",
+  };
+  if (units.some((u) => !u.settled)) return {
+    title: "Reading your links",
+    lede: "Your first skill shows up here as soon as it's ready. You can leave; processing carries on.",
+  };
+  if (units.some((u) => u.stage === "limited")) return {
+    title: "Your links are in the queue",
+    lede: "Resurface processes a limited number of links each day. These start on their own when there's room; you can leave.",
+  };
+  if (units.some((u) => u.skill_ready)) return {
+    title: "Your skills are ready",
+    lede: "Open Skills above to copy or download what you want to use.",
+  };
+  return { title: "Nothing from these links yet", lede: "Each link below says what happened. Try other links." };
+}
+
 const OPENABLE = /^https:\/\/(?:www\.youtube\.com\/watch\?v=[\w-]{11}|x\.com\/i\/status\/\d{1,19}|[a-z0-9-]+\.substack\.com\/p\/[\w-]+)$/;
 
 const PHASE = {
