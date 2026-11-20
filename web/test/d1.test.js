@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
+import { applyMigrations, readMigration } from './migrations.js';
 import app from '../src/index.js';
 import { connect } from '../src/db.js';
 import { readFeed } from '../src/feed.js';
@@ -13,12 +14,7 @@ import { SKILL_PROMPT_REVISION } from '../src/skill-policy.js';
 function database() {
   const sqlite=new DatabaseSync(':memory:');
   sqlite.exec('PRAGMA foreign_keys=ON');
-  sqlite.exec(readFileSync(new URL('../migrations/0002_application.sql',import.meta.url),'utf8'));
-  sqlite.exec(readFileSync(new URL('../migrations/0003_video_duration.sql',import.meta.url),'utf8'));
-  sqlite.exec(readFileSync(new URL('../migrations/0005_skill_choices.sql',import.meta.url),'utf8'));
-  sqlite.exec(readFileSync(new URL('../migrations/0007_video_limits.sql',import.meta.url),'utf8'));
-  sqlite.exec(readFileSync(new URL('../migrations/0008_signup_events.sql',import.meta.url),'utf8'));
-  sqlite.exec(readFileSync(new URL('../migrations/0009_video_rejection_releases.sql',import.meta.url),'utf8'));
+  applyMigrations(sqlite);
   const env={SHORTS:'on',USER_DAILY_IMPORT_LIMIT:'1000',SIGNUP_IP_DAILY_LIMIT:'1000',AUTH_LIMITER:{async limit(){return {success:true}}},IMPORT_LIMITER:{async limit(){return {success:true}}},DB:{prepare(sql){return {bind(...params){return {async all(){return {results:sqlite.prepare(sql).all(...params)}}}}}}}};
   return {sqlite,env,sql:connect(env)};
 }
@@ -343,7 +339,6 @@ test('skill choices are account-scoped, atomic, idempotent and default to skills
     assert.equal(kept.skills[0].kept,true);
     assert.equal((await call('/api/skills/choices',{...body,generateVideos:true},cookie)).status,200);
     assert.deepEqual((await sql`SELECT video_requested FROM user_skill_choices ORDER BY kept DESC`).map(r=>r.video_requested),[1,0]);
-    // Sharing the source gives the second account an independent review, not the first account's discard.
     const otherUser=await (await call('/api/me',null,otherCookie)).json();
     await sql`INSERT INTO user_imports(user_id,unit_id) SELECT ${otherUser.user.id},unit_id FROM user_imports WHERE user_id=${user.id}`;
     assert.equal((await (await call('/api/skills',null,otherCookie)).json()).skills.length,2);
@@ -466,7 +461,7 @@ test('migration preserves historical ready videos and assigns only one lifetime 
       await sql`INSERT INTO user_skill_choices(user_id,artifact_id,artifact_version,kept,video_requested) VALUES(${a.user.id},${id},1,1,1)`;
       await sql`INSERT INTO video_results(artifact_id,artifact_version,status,attempts,media_ref,caption_ref,narration_ref,duration_seconds,review_status,review_feedback) VALUES(${id},1,'ready',0,${`r2:videos/history-${i}/short.mp4`},'r2:captions/history.vtt','audio',25,'approved',${JSON.stringify({judge:'short-judge-v1',passed:true,captions_burned:true})})`;
     }
-    sqlite.exec(readFileSync(new URL('../migrations/0007_video_limits.sql',import.meta.url),'utf8'));
+    sqlite.exec(readMigration('0007_video_limits.sql'));
     const [slot]=await sql`SELECT * FROM user_video_requests`;
     assert.ok(slot);
     assert.equal((await sql`SELECT * FROM user_video_requests`).length,1);

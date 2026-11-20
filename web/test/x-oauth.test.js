@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
+import { applyMigrations } from './migrations.js';
 import app from '../src/index.js';
 import { X_PREPAID_CREDIT_CAP_USD } from '../src/x-oauth.js';
 assert.equal(X_PREPAID_CREDIT_CAP_USD,20);
@@ -10,7 +11,7 @@ const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/x/${name}.js
 function setup(gate = false) {
   const db = new DatabaseSync(':memory:');
   db.exec('PRAGMA foreign_keys=ON');
-  for (const file of ['0002_application.sql','0003_video_duration.sql','0005_x_oauth.sql','0006_x_read_budget.sql','0008_signup_events.sql']) db.exec(readFileSync(new URL(`../migrations/${file}`, import.meta.url),'utf8'));
+  applyMigrations(db);
   const calls = [];
   const allow={async limit(){return {success:true}}};
   const env = { USER_DAILY_IMPORT_LIMIT:'1000',SIGNUP_IP_DAILY_LIMIT:'1000',AUTH_LIMITER:allow,IMPORT_LIMITER:allow,X_CLIENT_ID:'fixture-client',X_CLIENT_SECRET:'fixture-secret',X_CALLBACK_URL:'http://localhost/api/auth/x/callback',X_READS_ENABLED:'true',
