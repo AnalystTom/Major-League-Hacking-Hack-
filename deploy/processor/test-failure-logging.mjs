@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { timingSafeEqual } from 'node:crypto';
+import { logFailure } from './src/log.js';
+
+test('a parse error logs its name only so a token fragment in the body never reaches the log', (t) => {
+  const logged = t.mock.method(console, 'error', () => {});
+  logFailure('token renewal failed', new SyntaxError('Unexpected token in JSON at position 5: {"refresh_token":"fixture-leak-token"'));
+  assert.deepEqual(logged.mock.calls.map((call) => call.arguments), [['token renewal failed', 'SyntaxError']]);
+  assert.ok(!JSON.stringify(logged.mock.calls).includes('fixture-leak-token'));
+});
 
 test('a processor container that fails to start logs one line and still answers 502', async (t) => {
   const processor = {
