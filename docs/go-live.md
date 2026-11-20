@@ -277,9 +277,10 @@ than the site's Basic challenge. Close the verification context afterward.
   carry prior secret bindings. Before launch it must still challenge; after launch
   do not accidentally restore the gate unless the captain authorizes re-closing.
 - If the captain authorizes re-closing after launch, restore **both** gate secrets
-  through signed-in Cloudflare secret management using the approved no-paste path;
-  never put values in a file or command argument. Verify a fresh unauthenticated
-  request challenges with 401. One secret alone returns 503.
+  by running `wrangler secret put` for each gate secret and typing the value at
+  Wrangler's hidden prompt; never put values in a file or command argument.
+  Verify a fresh unauthenticated request challenges with 401. One secret alone
+  returns 503.
 - Do not reverse data migrations or delete media to roll back application code.
   If a previous version is schema-incompatible, pause and prepare a forward fix.
   X reads remain disabled unless separately authorized; disabling X reads is
