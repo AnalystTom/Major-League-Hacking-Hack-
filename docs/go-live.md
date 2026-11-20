@@ -283,8 +283,9 @@ than the site's Basic challenge. Close the verification context afterward.
   returns 503.
 - Do not reverse data migrations or delete media to roll back application code.
   If a previous version is schema-incompatible, pause and prepare a forward fix.
-  X reads remain disabled unless separately authorized; disabling X reads is
-  independent of pausing videos or controlling the site gate.
+  X reads remain disabled unless separately authorized. To turn them off, set
+  `X_READS_ENABLED` back to `"false"` in `web/wrangler.jsonc`, merge, and redeploy the
+  web Worker. This is independent of pausing videos or controlling the site gate.
 
 ## Open the public product flow (Cloudflare Access)
 
@@ -453,7 +454,7 @@ Before step 1, confirm these preconditions. Stop before step 1 if any of the fir
    PASS/FAIL lines rather than the exit code alone: the only FAIL must be "X sign-in is configured".
    Any other FAIL stops the session before X is enabled.
 7. If the USD 20 funding with auto-recharge off was not confirmed at the start, stop here.
-   This is the only stopping point. Otherwise continue.
+   This is the only funding stop. The stops in steps 4 and 6 still apply. Otherwise continue.
 8. Merge the one-line change to `web/wrangler.jsonc` that sets `"X_READS_ENABLED": "true"` through
    the normal path: a firstmate worker opens a PR and merges it once CI is green, under the standing
    Resurface merge authority. Never push directly to `main`. Then fast-forward the local copy to
@@ -463,7 +464,7 @@ Before step 1, confirm these preconditions. Stop before step 1 if any of the fir
    then rerun `npm run smoke:live`. Every check must pass, including "X sign-in is configured".
 10. The captain does their own consent test (morning checklist step 5).
 
-To turn X off again, set `X_READS_ENABLED` back to `"false"`, merge and redeploy the web Worker.
+To turn X off again, see [Rollback](#rollback).
 
 ## Morning checklist (captain)
 
