@@ -1,15 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
-import { readFileSync } from "node:fs";
+import { applyMigrations, readMigration } from "./migrations.js";
 
-const sql = (f) => readFileSync(new URL(`../migrations/${f}`, import.meta.url), "utf8");
-
-// Builds the pre-0007 schema, seeds one user per video history, then runs 0007's backfill.
 function backfill(users) {
   const db = new DatabaseSync(":memory:");
   db.exec("PRAGMA foreign_keys=ON");
-  for (const f of ["0002_application.sql", "0003_video_duration.sql", "0005_skill_choices.sql"]) db.exec(sql(f));
+  applyMigrations(db, { before: "0007_video_limits.sql" });
   let n = 0;
   for (const [name, videos] of Object.entries(users)) {
     db.prepare("INSERT INTO users(id,email,password_hash) VALUES(?,?,'x')").run(name, `${name.toLowerCase()}@example.test`);
@@ -26,7 +23,7 @@ function backfill(users) {
       }
     }
   }
-  db.exec(sql("0007_video_limits.sql"));
+  db.exec(readMigration("0007_video_limits.sql"));
   return {
     db,
     slots: Object.fromEntries(db.prepare("SELECT user_id,artifact_id FROM user_video_requests").all().map((r) => [r.user_id, r.artifact_id])),
@@ -45,11 +42,9 @@ test("0007 backfill: a failed video does not use the slot; ready, running and qu
     none: [],
   });
   assert.deepEqual(Object.keys(slots).sort(), ["failedThenReady", "queued", "ready", "readyThenFailed", "running"]);
-  // The ready video wins over the failed one regardless of order.
   for (const u of ["failedThenReady", "readyThenFailed"]) {
     assert.equal(db.prepare("SELECT v.status FROM video_results v WHERE v.artifact_id=?").get(slots[u]).status, "ready");
   }
-  // A failed-only user's request flag is cleared so they can ask for their one video again.
   for (const u of ["onlyFailed", "failedRetrying"]) {
     assert.equal(db.prepare("SELECT count(*) c FROM user_skill_choices WHERE user_id=? AND video_requested=1").get(u).c, 0);
   }

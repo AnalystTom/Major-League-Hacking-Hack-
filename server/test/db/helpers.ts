@@ -1,9 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
-import { readFileSync } from 'node:fs';
+import { applyMigrations } from '../../../web/test/migrations.js';
 import { D1Database, decodeRow, type Database, type Statement } from '../../src/db.js';
 import { database as processorBridge } from '../../../deploy/processor/src/database.js';
-
-const MIGRATIONS = ['0002_application', '0003_video_duration', '0005_skill_choices', '0007_video_limits', '0004_usage_events', '0009_video_rejection_releases'];
 
 function run(sqlite: DatabaseSync, s: Statement) {
   const query = sqlite.prepare(s.sql);
@@ -21,7 +19,7 @@ function inTransaction<T>(sqlite: DatabaseSync, work: () => T): T {
 export function testDatabase() {
   const sqlite = new DatabaseSync(':memory:');
   sqlite.exec('PRAGMA foreign_keys=ON');
-  for (const name of MIGRATIONS) sqlite.exec(readFileSync(new URL(`../../../web/migrations/${name}.sql`, import.meta.url),'utf8'));
+  applyMigrations(sqlite);
   const execute = (s: Statement) => {
     const { rows, changes } = run(sqlite, s);
     return { rows: rows.map((r) => decodeRow(r)), rowCount: changes };

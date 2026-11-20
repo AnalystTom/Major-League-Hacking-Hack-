@@ -1,15 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
-import { readFileSync } from "node:fs";
+import { applyMigrations } from "./migrations.js";
 import app from "../src/index.js";
 
 function setup(vars = {}) {
   const db = new DatabaseSync(":memory:");
   db.exec("PRAGMA foreign_keys=ON");
-  for (const f of ["0002_application.sql", "0003_video_duration.sql", "0005_skill_choices.sql", "0007_video_limits.sql", "0008_signup_events.sql"]) {
-    db.exec(readFileSync(new URL(`../migrations/${f}`, import.meta.url), "utf8"));
-  }
+  applyMigrations(db);
   const allow = { async limit() { return { success: true }; } };
   const env = { AUTH_LIMITER: allow, IMPORT_LIMITER: allow, DB: { prepare: (q) => ({ bind: (...p) => ({ async all() { return { results: db.prepare(q).all(...p) }; } }) }) }, ...vars };
   const post = (path, body, { ip = "192.0.2.1", cookie = "" } = {}) => app.fetch(new Request(`https://resurface.test${path}`, {
@@ -30,10 +28,8 @@ test("signup is capped per IP per UTC day with a clear 429, and another IP is un
   assert.equal((await full.json()).error, "Sign-ups are full for today. Try again tomorrow.");
   assert.ok(Number(full.headers.get("retry-after")) >= 1 && Number(full.headers.get("retry-after")) <= 86400);
   assert.equal((await t.signup(4, "192.0.2.2")).status, 201);
-  // Only a hash is stored, never the address.
   const rows = t.db.prepare("SELECT ip_hash FROM signup_events").all();
   assert.ok(rows.every((r) => /^[0-9a-f]{64}$/.test(r.ip_hash) && !r.ip_hash.includes("192")));
-  // A new UTC day resets the count.
   t.db.exec("UPDATE signup_events SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 day')");
   assert.equal((await t.signup(5, "192.0.2.1")).status, 201);
 });
