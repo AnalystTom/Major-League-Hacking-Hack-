@@ -61,6 +61,6 @@ $("[data-switch]").addEventListener("click", () => {
     $("[data-email-fallback]").open = !state.available || location.hash === "#signin";
     $('[data-step="account"]').dataset.xUnavailable = String(!state.available);
     $("#start-title").textContent = state.available ? "Bring your bookmarks back" : "Create your account";
-  } });
+  } }).checked;
   if (location.hash === "#signin") $("[data-switch]").click();
 })();

@@ -144,14 +144,54 @@ $("[data-open-add]").addEventListener("click", () => {
 $("[data-close-add]").addEventListener("click", () => sheet.close());
 sheet.addEventListener("close", () => render(units, items));
 
+let shown = false;
+function reveal() {
+  if (shown) return;
+  shown = true;
+  $("[data-loading]").hidden = true;
+  $("[data-home-body]").hidden = false;
+}
+let erroring = false;
+function showError(err) {
+  const message = `${err.message} Retrying…`;
+  erroring = true;
+  if (!shown) $("[data-loading]").textContent = `Couldn't load your shorts. ${message}`;
+  else if ($("[data-status]").hidden) Object.assign($("[data-first-note]"), { textContent: message }).dataset.tone = "error";
+  else $("[data-run-note]").textContent = message;
+}
+function clearError() {
+  if (!erroring) return;
+  erroring = false;
+  $("[data-first-note]").textContent = "";
+  if ($("[data-run-note]").textContent.endsWith("Retrying…")) $("[data-run-note]").textContent = "";
+}
+
 let leaving = false;
+let xConnection = null;
+function startFollowing() {
+  if (leaving) return;
+  follower = followImports({
+    onUnits: (u) => { units = u; },
+    onItems: (i) => { items = i; render(units, items); reveal(); clearError(); },
+    onSkills: showSkills,
+    onError: (err) => (err.status === 401 ? location.assign("/start") : showError(err)),
+  });
+  xConnection = connectX(form.querySelector("[data-x-connect]"), {
+    onImported: () => follower.refresh(),
+    onError: err => { $("[data-first-note]").textContent = err.message; },
+    onReady: state => { form.querySelector("[data-paste-fallback]").open = !state.available; },
+  });
+}
 function stopFollowing() {
   leaving = true;
   follower?.stop();
+  xConnection?.stop();
 }
 function resumeFollowing() {
   leaving = false;
-  follower?.resume();
+  if (!follower) return startFollowing();
+  follower.resume();
+  xConnection.resume();
 }
 
 $("[data-signout]").addEventListener("click", async () => {
@@ -191,42 +231,10 @@ $("[data-confirm-delete]").addEventListener("click", async (event) => {
   if (!me.user) return location.assign("/start");
   showCatalogueLinks(document);
 
-  let shown = false;
-  const reveal = () => {
-    if (shown) return;
-    shown = true;
-    $("[data-loading]").hidden = true;
-    $("[data-home-body]").hidden = false;
-  };
   if (me.imports === 0) {
     render([], []);
     reveal();
     if (form.querySelector("[data-paste-fallback]").open) form.querySelector("textarea").focus({ preventScroll: true });
   }
-  let erroring = false;
-  const showError = (err) => {
-    const message = `${err.message} Retrying…`;
-    erroring = true;
-    if (!shown) $("[data-loading]").textContent = `Couldn't load your shorts. ${message}`;
-    else if ($("[data-status]").hidden) Object.assign($("[data-first-note]"), { textContent: message }).dataset.tone = "error";
-    else $("[data-run-note]").textContent = message;
-  };
-  const clearError = () => {
-    if (!erroring) return;
-    erroring = false;
-    $("[data-first-note]").textContent = "";
-    if ($("[data-run-note]").textContent.endsWith("Retrying…")) $("[data-run-note]").textContent = "";
-  };
-  if (leaving) return;
-  follower = followImports({
-    onUnits: (u) => { units = u; },
-    onItems: (i) => { items = i; render(units, items); reveal(); clearError(); },
-    onSkills: showSkills,
-    onError: (err) => (err.status === 401 ? location.assign("/start") : showError(err)),
-  });
-  connectX(form.querySelector("[data-x-connect]"), {
-    onImported: () => follower.refresh(),
-    onError: err => { $("[data-first-note]").textContent = err.message; },
-    onReady: state => { form.querySelector("[data-paste-fallback]").open = !state.available; },
-  });
+  startFollowing();
 })();

@@ -214,17 +214,12 @@ async function openOnSite(page, path) {
 
 async function openFallback(scope, fallback) {
   await scope
-    .locator("[data-x-connect][data-x-checked]")
+    .locator("[data-x-note]")
+    .filter({ hasNotText: "Checking X connection…" })
     .waitFor({ state: "attached", timeout: 15_000 });
   const details = scope.locator(fallback);
   if ((await details.getAttribute("open")) === null)
     await details.locator("summary").click();
-}
-
-async function accountAction(page, selector) {
-  const toggle = page.locator(".account-toggle");
-  if (await toggle.isVisible()) await toggle.click();
-  await page.locator(selector).click();
 }
 
 async function appBarLayout(page) {
@@ -234,9 +229,9 @@ async function appBarLayout(page) {
       .filter((el) => el.getClientRects().length)
       .map((el) => el.getBoundingClientRect());
     const tops = shown.map((r) => r.top);
-    const home = bar.querySelector('a.wordmark[href="/"]');
+    const name = bar.querySelector('a.wordmark[href="/"] .wordmark-name');
     return {
-      home: Boolean(home?.getClientRects().length),
+      home: Boolean(name?.getClientRects().length),
       rowSpread: Math.max(...tops) - Math.min(...tops),
       shortest: Math.min(...shown.map((r) => r.height)),
       overflow: document.documentElement.scrollWidth - window.innerWidth,
@@ -331,7 +326,7 @@ async function signUpJourney(context, account) {
   });
   await check("app bar keeps the home link on one row", async () => {
     const bar = await appBarLayout(page);
-    expect(bar.home, "Resurface home link is hidden");
+    expect(bar.home, "Resurface home link name is hidden");
     expect(
       bar.rowSpread < bar.shortest,
       `app bar wraps: items start ${bar.rowSpread}px apart`,
@@ -341,7 +336,7 @@ async function signUpJourney(context, account) {
   });
   await check("sign out ends the session", async () => {
     signedOut = true;
-    await accountAction(page, "[data-signout]");
+    await page.locator("[data-signout]").click();
     await page.waitForURL((url) => url.pathname === "/", { timeout: 15_000 });
     await page.waitForLoadState("networkidle");
     expect((await signedInEmail(page)) === null, "still signed in");
