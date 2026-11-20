@@ -4,8 +4,9 @@ Shorts are enabled in source configuration. Firstmate deploys merged changes and
 the single authorized real-short check. The captain authorized opening the public
 product flow (sign-in, X login, bookmark import, skills) on 2026-11-17; the
 [morning checklist](#morning-checklist-captain) lists what only the captain can do.
-X stays unavailable until its secrets and variables are set. No credentials belong
-in this repository, chat, screenshots or command arguments.
+X stays off until `X_CLIENT_SECRET` is a Worker secret and `X_READS_ENABLED` is
+`"true"` in `web/wrangler.jsonc`; see [X go-live session](#x-go-live-session). No
+secrets belong in this repository, chat, screenshots or command arguments.
 
 ## Shorts and cost controls
 
@@ -103,14 +104,13 @@ Follow [the captain-operated X setup steps](x-setup-steps.md) as the source of t
 3. Confirm current rates in the signed-in console. Only under the separate funding
    authorization, purchase the approved USD 20 once, leave auto-recharge off, and
    check balance/spending controls as described in that runbook.
-4. Sign in to Cloudflare via Wrangler OAuth. Confidential app credentials must reach
-   Worker secrets through the separately authorized in-memory transfer described in
-   the runbook; never ask the captain to paste a key or secret. That transfer helper
-   is not implemented or verified. If it cannot be arranged, leave X disabled and
-   use email sign-in/pasted links. Do not claim login-only bootstrap already works.
-5. Keep `X_READS_ENABLED` absent/false until callback, secrets, migrations and budget
-   checks are complete. Test X only under separate authorization; keep the site gate
-   on and authenticate before starting OAuth so the browser can return through it.
+4. The app exists. Its public OAuth 2.0 client ID and the other X settings are committed in
+   the `vars` of `web/wrangler.jsonc`, the single source. The client secret is regenerated
+   in the console and typed by the captain only into Wrangler's hidden prompt during the
+   [X go-live session](#x-go-live-session).
+5. `X_READS_ENABLED` stays `"false"` until the captain confirms the USD 20 is funded
+   with auto-recharge off. Turning it on is the change to `web/wrangler.jsonc` merged and
+   redeployed in steps 8 and 9 of the [X go-live session](#x-go-live-session).
 
 ## Abuse and spend caps (web Worker vars)
 
@@ -145,15 +145,11 @@ npm exec --prefix deploy/processor -- wrangler deployments list --config deploy/
    choices, processing ledger and X tables are shared by both Workers. Apply `0007_video_limits.sql`, `0008_signup_events.sql` and `0009_video_rejection_releases.sql` before deploying either Worker: they add the lifetime reservations, video-start ledger and per-account rejection releases. Back up and review historical allocations first. The migration retains existing media and can reduce multiple old request flags to the single preserved allocation, and failed videos do not count as an allocation. Then apply `0010_anonymous_spend_ledgers.sql` (after `0009`) before deploying either Worker: it makes `user_id` nullable on the spend ledgers so deleted accounts' spend keeps counting.
 2. Apply reviewed pending migrations before either code release:
    `npm run db:migrate:remote --prefix web`. Preserve all existing data.
-3. Deploy the web Worker: `npm run deploy --prefix web`. `wrangler deploy` wipes every
-   plain-text variable that is not declared in the `vars` of `web/wrangler.jsonc`,
-   including any set in the dashboard; secrets survive. The ones that matter are
-   `X_CALLBACK_URL` and `X_READS_ENABLED`, plus `X_DAILY_READ_REQUEST_LIMIT` and
-   `X_USER_DAILY_READ_REQUEST_LIMIT` if you changed them from their defaults. Before the
-   first deploy, run `npm exec --prefix web -- wrangler secret list --config web/wrangler.jsonc`
-   and check where those values live. If they are dashboard variables, the deploy
-   switches X sign-in off: store them as secrets or add them to `vars` (a name that
-   exists as a secret cannot also be a var). The processor needs no variable: the web
+3. Deploy the web Worker: `npm run deploy --prefix web`. `wrangler deploy` replaces every
+   plain-text variable with the `vars` of `web/wrangler.jsonc`, including any set in the
+   dashboard; secrets survive. The X settings are committed there, so every deploy keeps them. A name cannot be both a secret and
+   a var: the [X go-live session](#x-go-live-session) deletes any of them found in
+   `wrangler secret list` before the first deploy. The processor needs no variable: the web
    Worker wakes it through the `PROCESSOR` service binding, and `PROCESSOR_URL` is
    used only by a local web Worker with no binding. Then run `npm run smoke:live` (see
    [Live smoke](#live-smoke)). Before the site is opened, the public-access checks
@@ -281,13 +277,15 @@ than the site's Basic challenge. Close the verification context afterward.
   carry prior secret bindings. Before launch it must still challenge; after launch
   do not accidentally restore the gate unless the captain authorizes re-closing.
 - If the captain authorizes re-closing after launch, restore **both** gate secrets
-  through signed-in Cloudflare secret management using the approved no-paste path;
-  never put values in a file or command argument. Verify a fresh unauthenticated
-  request challenges with 401. One secret alone returns 503.
+  by running `wrangler secret put` for each gate secret and typing the value at
+  Wrangler's hidden prompt; never put values in a file or command argument.
+  Verify a fresh unauthenticated request challenges with 401. One secret alone
+  returns 503.
 - Do not reverse data migrations or delete media to roll back application code.
   If a previous version is schema-incompatible, pause and prepare a forward fix.
-  X reads remain disabled unless separately authorized; disabling X reads is
-  independent of pausing videos or controlling the site gate.
+  X reads remain disabled unless separately authorized. To turn them off, set
+  `X_READS_ENABLED` back to `"false"` in `web/wrangler.jsonc`, merge, and redeploy the
+  web Worker. This is independent of pausing videos or controlling the site gate.
 
 ## Open the public product flow (Cloudflare Access)
 
@@ -378,6 +376,96 @@ run anonymously, so they keep reporting the gate state truthfully. For local pro
 `SMOKE_BASE_URL=http://127.0.0.1:28757 SMOKE_IMPORT_URL=https://x.com/i/status/1234567890123456789 npm run smoke:live`.
 The fixture's X provider and processor are synthetic, so this run costs nothing.
 
+## X go-live session
+
+Run once, in one terminal session on this machine, from the repository root, after the
+captain has run `npm exec --prefix web -- wrangler login` (morning checklist step 1).
+The X settings are committed in the `vars` of `web/wrangler.jsonc`, the single source;
+`X_CLIENT_SECRET` is the only X secret. The processor's
+secrets and deploy are separate ([Processor bridge secrets](#processor-bridge-secrets-required-before-the-processor-deploy))
+and this session does not change them.
+
+Before step 1, confirm these preconditions. Stop before step 1 if any of the first four is missing:
+
+- [Morning checklist](#morning-checklist-captain) step 1 is done: `wrangler login` succeeded.
+- [Morning checklist](#morning-checklist-captain) step 2 is done: the site is opened (Option A), or the Option B bypass covers `api/auth/x/callback`, `privacy` and `terms`. Otherwise the callback answers `302` to the Access login.
+- [Morning checklist](#morning-checklist-captain) step 3 is done: the X app exists with the callback registered, and the regenerated client secret is ready for the hidden prompt.
+- The local copy is exactly `origin/main` (`git fetch origin`; `git rev-parse HEAD` equals `git rev-parse origin/main`), the tree is clean (`git status --porcelain` prints nothing), and CI on that commit is green (`gh run list --commit <sha>`).
+- The captain answers whether the USD 20 is funded with auto-recharge off. This decides whether the session continues past step 6 (see step 7).
+
+1. Confirm the account:
+
+   ```sh
+   npm exec --prefix web -- wrangler whoami
+   ```
+
+2. List the web Worker's secrets, and record the current version:
+
+   ```sh
+   npm exec --prefix web -- wrangler secret list --config web/wrangler.jsonc
+   npm exec --prefix web -- wrangler deployments list --config web/wrangler.jsonc
+   ```
+
+   If any of `X_CLIENT_ID`, `X_CALLBACK_URL`, `X_READS_ENABLED`, `X_DAILY_READ_REQUEST_LIMIT`
+   or `X_USER_DAILY_READ_REQUEST_LIMIT` is listed, delete it, because a name cannot be both a
+   secret and a var. Each deletion can publish a Worker version:
+
+   ```sh
+   npm exec --prefix web -- wrangler secret delete X_CLIENT_ID --config web/wrangler.jsonc
+   npm exec --prefix web -- wrangler secret delete X_CALLBACK_URL --config web/wrangler.jsonc
+   npm exec --prefix web -- wrangler secret delete X_READS_ENABLED --config web/wrangler.jsonc
+   npm exec --prefix web -- wrangler secret delete X_DAILY_READ_REQUEST_LIMIT --config web/wrangler.jsonc
+   npm exec --prefix web -- wrangler secret delete X_USER_DAILY_READ_REQUEST_LIMIT --config web/wrangler.jsonc
+   ```
+
+3. The captain types the regenerated client secret at the hidden prompt. It publishes a
+   new Worker version:
+
+   ```sh
+   npm exec --prefix web -- wrangler secret put X_CLIENT_SECRET --config web/wrangler.jsonc
+   ```
+
+4. Back up and review before migrating. Follow [Deploy order](#deploy-order-after-merge-by-firstmate)
+   step 1: export the remote D1 database to a file outside the repository, and list the
+   pending migrations:
+
+   ```sh
+   npm exec --prefix web -- wrangler d1 export resurface-waitlist --remote --config web/wrangler.jsonc --output <backup-file-outside-the-repository>
+   npm exec --prefix web -- wrangler d1 migrations list resurface-waitlist --remote --config web/wrangler.jsonc
+   ```
+
+   Review the historical allocations as Deploy order step 1 requires. Stop if the backup did
+   not complete or the review finds something unexpected. Then apply every pending migration
+   in filename order, including `0005` and `0006` if they are pending. Stop only if a pending
+   name is not a file in `web/migrations` on the merged revision:
+
+   ```sh
+   npm run db:migrate:remote --prefix web
+   ```
+
+5. Deploy the web Worker:
+
+   ```sh
+   npm run deploy --prefix web
+   ```
+
+6. Run the [live smoke](#live-smoke): `npm run smoke:live`. While `X_READS_ENABLED` is
+   `"false"`, the check "X sign-in is configured" fails by design, so the run exits `1`. Read the
+   PASS/FAIL lines rather than the exit code alone: the only FAIL must be "X sign-in is configured".
+   Any other FAIL stops the session before X is enabled.
+7. If the USD 20 funding with auto-recharge off was not confirmed at the start, stop here.
+   This is the only funding stop. The stops in steps 4 and 6 still apply. Otherwise continue.
+8. Merge the one-line change to `web/wrangler.jsonc` that sets `"X_READS_ENABLED": "true"` through
+   the normal path: a firstmate worker opens a PR and merges it once CI is green, under the standing
+   Resurface merge authority. Never push directly to `main`. Then fast-forward the local copy to
+   `origin/main` (`git pull --ff-only`) and re-check the precondition: HEAD equals `origin/main`,
+   the tree is clean, and CI is green on that commit.
+9. Redeploy the web Worker from the merged revision with `npm run deploy --prefix web`,
+   then rerun `npm run smoke:live`. Every check must pass, including "X sign-in is configured".
+10. The captain does their own consent test (morning checklist step 5).
+
+To turn X off again, see [Rollback](#rollback).
+
 ## Morning checklist (captain)
 
 Only the captain can do these steps. Never paste a password, key or secret into chat or
@@ -397,16 +485,11 @@ give it to an agent.
    `/privacy` and `/terms` URLs, request the scopes
    `tweet.read users.read bookmark.read offline.access`, and fund the approved USD 20
    once with auto-recharge off.
-4. **X credentials on the Worker.** `X_CLIENT_ID` and `X_CLIENT_SECRET` must become
-   secrets on the `resurface` Worker. The no-paste transfer helper in
-   x-setup-steps.md §3 is not built. The remaining path that keeps the values away from
-   any agent is for you to type them into Wrangler's hidden prompt in your own terminal:
-   `npm exec --prefix web -- wrangler secret put X_CLIENT_ID --config web/wrangler.jsonc`.
-   Repeat for `X_CLIENT_SECRET`. Each `secret put` publishes a new Worker version.
-   Then tell firstmate that the USD 20 is funded. The worker sets the non-secret
-   `X_CALLBACK_URL` and the cost switch `X_READS_ENABLED=true` so that they survive
-   deploys (see Deploy order step 3). It then confirms with the smoke check
-   "X sign-in is configured".
+4. **X client secret on the Worker.** Regenerate the client secret in the X console and
+   type it only into Wrangler's hidden prompt in your own terminal, at step 3 of the
+   [X go-live session](#x-go-live-session). The client ID and every other X setting are
+   already committed in `web/wrangler.jsonc`. Then, at the start of the session, confirm
+   that the USD 20 is funded with auto-recharge off; X turns on only after that (session steps 7–9).
 5. **Your own X consent.** Use an ordinary browser window, not an agent's.
    1. Open `https://resurface.thomasmann2001.workers.dev/start` and choose
       **Continue with X**.

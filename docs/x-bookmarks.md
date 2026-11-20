@@ -2,16 +2,15 @@
 
 The same launch branch includes the scan animation from https://github.com/AnalystTom/Major-League-Hacking-Hack-/pull/55 and a new journey: **Continue with X → authorize bookmark access → extract bookmarks → scan actual processing stages → open Skills**. Email sign-in and pasted links remain available. The release configuration now enables explicitly requested videos for kept skills (`SHORTS=on`); deployment and real-provider verification remain separate release steps. See [go-live](go-live.md) for limits, gate removal and rollback.
 
-See the detailed [captain-operated setup runbook](x-setup-steps.md), including the unverified no-paste credential-transfer path and prepaid ceiling.
+See the detailed [captain-operated setup runbook](x-setup-steps.md), including the client secret step and prepaid ceiling.
 
 ## Operator setup, through sign-in
 
-The owner signs in to the [X Developer Console](https://console.x.com/) to register a confidential Web App with OAuth 2.0. Register the exact callback `https://<your-site>/api/auth/x/callback`. Configure these Worker bindings through the authenticated platform setup; never add credential fields to the product or ask a user to paste secrets:
+The owner signs in to the [X Developer Console](https://console.x.com/) to register a confidential Web App with OAuth 2.0. Register the exact callback `https://<your-site>/api/auth/x/callback`. The X settings are committed in the `vars` of [`web/wrangler.jsonc`](../web/wrangler.jsonc). The client secret is typed only into Wrangler's hidden prompt during the [X go-live session](go-live.md#x-go-live-session). Never add credential fields to the product or ask a user to paste secrets.
 
-- `X_CLIENT_ID` and `X_CLIENT_SECRET`: confidential app credentials, stored as Worker secrets.
-- `X_CALLBACK_URL`: exact callback registered with X (HTTPS in production).
-- `X_READS_ENABLED`: explicit operator cost switch; only the string `true` enables reads. Credentials alone do not enable reads. Keep off until the captain has created the app and funded the approved $20 prepaid ceiling. No credits were purchased or paid requests performed during implementation.
-- `X_DAILY_READ_REQUEST_LIMIT` (default 60) and `X_USER_DAILY_READ_REQUEST_LIMIT` (default 55): positive integer daily request budgets, reserved atomically in D1 before a provider read. Zero or invalid settings stop reads. Both reset at midnight UTC; failed reads still consume a reservation. The global limit includes OAuth identity lookups (per-browser attempt before an X identity exists) and bookmark reads; the per-user limit covers bookmark requests across reconnects and sessions. These are request limits, not a dollar ledger. The `X_PREPAID_CREDIT_CAP_USD = 20` constant documents the externally purchased ceiling; disable auto-recharge and purchase no more than $20. Promotional credits/other apps can affect actual balances, so check the console as well.
+`X_READS_ENABLED` is an explicit operator cost switch: only the string `true` enables reads, and credentials alone do not. Keep it off until the captain confirms the approved $20 prepaid ceiling is funded with auto-recharge off. No credits were purchased or paid requests performed during implementation.
+
+The two X read limits are positive integer daily request budgets, reserved atomically in D1 before a provider read. Zero or invalid settings stop reads. Both reset at midnight UTC; failed reads still consume a reservation. The global limit includes OAuth identity lookups (per-browser attempt before an X identity exists) and bookmark reads; the per-user limit covers bookmark requests across reconnects and sessions. These are request limits, not a dollar ledger. The `X_PREPAID_CREDIT_CAP_USD = 20` constant documents the externally purchased ceiling; disable auto-recharge and purchase no more than $20. Promotional credits/other apps can affect actual balances, so check the console as well.
 
 Apply migrations `web/migrations/0005_x_oauth.sql` and `0006_x_read_budget.sql` with the project's normal migration process before enabling the flow. Missing configuration or a disabled cost switch hides the X sign-in button, leaving the working email/paste fallback. A sign-in attempt that comes back with a reason (such as `unavailable`) shows that reason in the X note. The default deployment configuration does not enable X traffic.
 
