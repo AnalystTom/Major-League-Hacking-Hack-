@@ -40,7 +40,7 @@ Individual pasted X, YouTube, and Substack links. Automatic Watch Later import a
 | --- | --- |
 | `web/` | Landing site and waitlist (Cloudflare Worker + D1) |
 | `server/` | API server (Hono, Postgres) with ingest and handoff CLIs |
-| `db/` | Database migrations |
+| `db/` | Retired PostgreSQL migrations, kept as history; the D1 schema is `web/migrations/` |
 | `deploy/` | Deployment assets, including the processor |
 | `docs/` | Specs and notes |
 

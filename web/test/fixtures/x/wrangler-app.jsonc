@@ -7,8 +7,7 @@
   "vars": {
     "X_CLIENT_ID":"fixture-client", "X_CLIENT_SECRET":"fixture-secret-not-a-real-credential",
     "X_CALLBACK_URL":"http://127.0.0.1:28757/api/auth/x/callback", "X_READS_ENABLED":"true",
-    "X_TEST_AUTHORIZE_URL":"http://127.0.0.1:28757/fixture/authorize",
-    "PROCESSOR_URL":"https://fixture/api/ingest/process", "SHORTS":"on"
+    "X_TEST_AUTHORIZE_URL":"http://127.0.0.1:28757/fixture/authorize", "SHORTS":"on"
   },
   "services":[{"binding":"X_PROVIDER","service":"resurface-x-fixture"},{"binding":"PROCESSOR","service":"resurface-x-fixture"}],
   "ratelimits":[

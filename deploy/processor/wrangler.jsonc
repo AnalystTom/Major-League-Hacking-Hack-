@@ -3,8 +3,8 @@
   "name": "resurface-processor",
   "main": "src/index.js",
   "compatibility_date": "2026-09-01",
-  // Needs the Workers Paid plan. Workers Builds builds the image on push to main, so no local Docker;
-  // a `wrangler deploy` from a laptop needs Docker running.
+  // Needs the Workers Paid plan. `wrangler deploy` builds the image locally, so the deploying user must be able
+  // to run Docker, even for `--dry-run`.
   // Half a vCPU and 4 GiB for ffmpeg renders; one instance, since the sweeps assume a single processor.
   // It runs only while there is work (see src/index.js), so it is billed by the minute, not all month.
   "containers": [
@@ -45,7 +45,6 @@
   },
   // Secrets, set once with `npx wrangler secret put <NAME>`: GEMINI_API_KEY, OPENAI_API_KEY, TWITTERAPI_IO_KEY (X posts), NIMBLE_API_KEY (Substack posts), INGEST_TOKEN,
   // D1_BRIDGE_TOKEN, MEDIA_UPLOAD_TOKEN, TTS_BRIDGE_TOKEN.
-  // Then point the web Worker at it: PROCESSOR_URL=https://resurface-processor.<subdomain>.workers.dev/api/ingest/process
   "d1_databases": [{ "binding": "DB", "database_name": "resurface-waitlist",
     "database_id": "89d777a6-eb11-4feb-9484-6f555a3ba96e", "migrations_dir": "../../web/migrations" }],
   // Rendered shorts go to this bucket through the Worker (src/media.js), so the processor needs no R2 API token.

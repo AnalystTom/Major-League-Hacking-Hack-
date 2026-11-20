@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-// Mirrors db/migrations/001_shared_schema.sql (the canonical shared schema).
 export type ProcessingStatus = "pending" | "running" | "ready" | "failed";
 
 export const EvidenceItem = z.object({
@@ -12,7 +11,6 @@ export const EvidenceItem = z.object({
 });
 export type EvidenceItem = z.infer<typeof EvidenceItem>;
 
-/** Raw model output; the model's own source_url is only used to detect identity mismatches. */
 export const ModelExtraction = z.object({
   source_url: z.string(),
   content_accessed: z.boolean(),
@@ -23,7 +21,6 @@ export type ModelExtraction = z.infer<typeof ModelExtraction>;
 
 export type ContentType = "youtube_video" | "x_post" | "substack_post";
 
-/** A numbered chunk of a text source; digests cite it by `index`. */
 export interface TextSection { index: number; text: string }
 export type VideoTranscript = { overview?: string; preview_only?: boolean; window: [number, number]; evidence_items: EvidenceItem[] };
 export type TextTranscript = { overview?: string; sections: TextSection[] };
@@ -35,19 +32,15 @@ export interface IngestedUnit {
   sourceUrl: string;
   startSeconds: number | null;
   title: string | null;
-  /** What kind of source this is; absent means a YouTube video. Stored in ingested_units.content_type. */
   contentType?: ContentType;
-  /** Validated segments (video; X posts sit at second 0) or numbered text sections (Substack); stored in ingested_units.transcript. */
   transcript: VideoTranscript | TextTranscript | null;
   extractionMethod: string | null;
   extractedAt: Date | null;
   status: ProcessingStatus;
   error: string | null;
-  /** Items dropped by validation, kept for review (not stored in the DB). */
   rejectedItems?: { item: EvidenceItem; reason: string }[];
 }
 
-// Membership in the supplied units is checked by validateDigest, so any non-empty string is accepted here.
 const Uuid = z.string().min(1);
 
 export const DigestArtifact = z.object({
@@ -55,7 +48,6 @@ export const DigestArtifact = z.object({
   source_ids: z.array(Uuid).min(1),
   category: z.string().min(1),
   processed_text: z.string().min(1),
-  // Video evidence cites a time range; Substack evidence cites a section number. validateDigest checks the right one per unit.
   evidence: z.array(z.object({
     source_id: Uuid, passage: z.string(),
     start_seconds: z.number().int().optional(), end_seconds: z.number().int().optional(), section: z.number().int().nonnegative().optional(),
@@ -64,7 +56,6 @@ export const DigestArtifact = z.object({
 });
 export type DigestArtifact = z.infer<typeof DigestArtifact>;
 
-/** An artifact as stored (mirrors the artifacts table). */
 export interface StoredArtifact extends DigestArtifact {
   id: string;
   version: number;

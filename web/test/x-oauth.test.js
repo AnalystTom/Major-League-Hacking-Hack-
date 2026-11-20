@@ -197,7 +197,7 @@ test('refresh uses one-post pages, stops at first known in bookmark order, and n
   const signed=await t.finish(await t.begin());const cookie=signed.headers.get('set-cookie').match(/rs_session=[^;, ]+/)[0];
   await t.call('/api/x/bookmarks',cookie,'POST');await t.call('/api/x/bookmarks',cookie,'POST');
   const seen=t.db.prepare('SELECT last_seen_id FROM x_connections').get().last_seen_id;
-  const requests=[],processed=[];t.env.PROCESSOR_URL='https://fixture/api/ingest/process';
+  const requests=[],processed=[];
   t.env.PROCESSOR={async fetch(req,opts){processed.push(JSON.parse(opts.body).unit_ids);return Response.json({accepted:true});}};
   t.env.X_PROVIDER.fetch=async(input)=>{
    const url=new URL(input);requests.push(url);

@@ -72,7 +72,6 @@ test('cached X reads from an older extractor are replaced on submit, then the cu
     const [old]=await sql`INSERT INTO ingested_units(submitted_url,source_url,content_type,status,transcript,extraction_method)
       VALUES(${source},${source},'x_post','ready',${JSON.stringify(staleTranscript)},'twitterapi.io:tweets') RETURNING id`;
     const requests=[];
-    env.PROCESSOR_URL='https://processor/api/ingest/process';
     env.PROCESSOR={async fetch(url,init){requests.push(JSON.parse(init.body).unit_ids);return Response.json({accepted:true});}};
     const submit=async()=>{
       const response=await call('/api/imports',{links:[`https://x.com/pfernan95dev/status/${post.id_str}`]},cookie);
@@ -164,7 +163,6 @@ test('processor outages do not block saved progress, ready shorts or new imports
     await sql`INSERT INTO video_results(artifact_id,artifact_version,status,media_ref,caption_ref,narration_ref,duration_seconds)
       VALUES(${artifact.id},1,'ready','r2:videos/outage/1/short.mp4','r2:captions/outage/1/short.vtt','r2:audio/outage/1/narration.m4a',30)`;
     await sql`UPDATE video_results SET review_status='approved',review_feedback=${JSON.stringify({judge:'short-judge-v1',passed:true,captions_burned:true})}`;
-    env.PROCESSOR_URL='https://processor/api/ingest/process';
     env.PROCESSOR_TOKEN='test-token';
     const videos=['VQy50fuxI34','V-EDrhIhHzQ','dQw4w9WgXcQ'];
     for (const [i,status] of [401,502,null].entries()) {
@@ -188,7 +186,7 @@ test('processor outages do not block saved progress, ready shorts or new imports
       const queued=await response.json();
       assert.equal(queued.processor,'unavailable');
       assert.deepEqual([queued.units[0].stage,queued.units[0].settled],['queued',false]);
-      assert.deepEqual(calls,[{url:env.PROCESSOR_URL,method:'POST'}]);
+      assert.deepEqual(calls,[{url:'https://processor/api/ingest/process',method:'POST'}]);
       assert.equal((await sql`SELECT count(*) AS n FROM user_imports WHERE unit_id=${queued.units[0].id}`)[0].n,1);
     }
   }finally{sqlite.close();}

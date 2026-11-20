@@ -1,54 +1,50 @@
-// Hands new units to the processing service (Gemini extraction -> Digestion Prompt -> Opus script ->
-// narration/music/render -> R2 upload). The service writes its progress back to D1 itself.
-
-// The processor accepts at most 10 unit ids per request, so larger imports go out in batches.
 export const PROCESSOR_BATCH = 10;
+const BOUND_PROCESSOR_URL = "https://processor/api/ingest/process";
+const PROCESSOR_TIMEOUT_MS = 8000;
 
-// A Worker can't fetch() another Worker on the same workers.dev zone (Cloudflare error 1042), so in production the
-// call goes through the PROCESSOR service binding. The URL's path still picks the route; its host is ignored.
-export const processorFetch = (env, fetchImpl) => (env.PROCESSOR ? (url, init) => env.PROCESSOR.fetch(url, init) : fetchImpl);
-
-/**
- * POSTs { unit_ids } to PROCESSOR_URL with the PROCESSOR_TOKEN bearer. Returns what actually happened:
- * "requested" (every batch 2xx), "unavailable" (any error or non-2xx; the sweep picks up what was missed),
- * or "not_configured". Never throws.
- */
-export async function requestProcessing(env, unitIds, fetchImpl = fetch) {
-  if (unitIds.length === 0) return "not_needed";
-  if (!env.PROCESSOR_URL) return "not_configured";
-  const batches = [];
-  for (let i = 0; i < unitIds.length; i += PROCESSOR_BATCH) batches.push(unitIds.slice(i, i + PROCESSOR_BATCH));
-  const send = processorFetch(env, fetchImpl);
-  const results = await Promise.all(batches.map(async (batch) => {
-    try {
-      const res = await send(env.PROCESSOR_URL, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          ...(env.PROCESSOR_TOKEN ? { authorization: `Bearer ${env.PROCESSOR_TOKEN}` } : {}),
-        },
-        body: JSON.stringify({ unit_ids: batch }),
-        signal: AbortSignal.timeout(8000),
-      });
-      return res.ok;
-    } catch {
-      return false;
-    }
-  }));
-  return results.every(Boolean) ? "requested" : "unavailable";
+function connectProcessor(env, fetchImpl = fetch) {
+  const processUrl = env.PROCESSOR ? BOUND_PROCESSOR_URL : env.PROCESSOR_URL;
+  if (!processUrl) return null;
+  const send = env.PROCESSOR ? (url, init) => env.PROCESSOR.fetch(url, init) : fetchImpl;
+  const authorization = env.PROCESSOR_TOKEN ? { authorization: `Bearer ${env.PROCESSOR_TOKEN}` } : {};
+  return {
+    processUrl,
+    get: (url) => send(url, { headers: authorization, signal: AbortSignal.timeout(PROCESSOR_TIMEOUT_MS) }),
+    post: (url, body) => send(url, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...authorization },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(PROCESSOR_TIMEOUT_MS),
+    }),
+  };
 }
 
-/** Wake the output sweep without importing or digesting any source again. */
-export async function requestVideoProcessing(env, fetchImpl = fetch) {
-  if (!env.PROCESSOR_URL) return "not_configured";
+const outcome = async (call) => {
   try {
-    const url = new URL(env.PROCESSOR_URL);
-    url.pathname = "/health";
-    url.search = "";
-    const response = await processorFetch(env, fetchImpl)(url.toString(), {
-      headers: env.PROCESSOR_TOKEN ? { authorization: `Bearer ${env.PROCESSOR_TOKEN}` } : {},
-      signal: AbortSignal.timeout(8000),
-    });
-    return response.ok ? "requested" : "unavailable";
-  } catch { return "unavailable"; }
+    return (await call()).ok ? "requested" : "unavailable";
+  } catch {
+    return "unavailable";
+  }
+};
+
+export async function requestProcessing(env, unitIds, fetchImpl = fetch) {
+  if (unitIds.length === 0) return "not_needed";
+  const processor = connectProcessor(env, fetchImpl);
+  if (!processor) return "not_configured";
+  const batches = [];
+  for (let i = 0; i < unitIds.length; i += PROCESSOR_BATCH) batches.push(unitIds.slice(i, i + PROCESSOR_BATCH));
+  const results = await Promise.all(batches.map((batch) => outcome(() => processor.post(processor.processUrl, { unit_ids: batch }))));
+  return results.every((result) => result === "requested") ? "requested" : "unavailable";
+}
+
+export async function requestVideoProcessing(env, fetchImpl = fetch) {
+  const processor = connectProcessor(env, fetchImpl);
+  if (!processor) return "not_configured";
+  return outcome(() => processor.get(new URL("/health", processor.processUrl).toString()));
+}
+
+export async function requestHandoff(env, briefId, fetchImpl = fetch) {
+  const processor = connectProcessor(env, fetchImpl);
+  if (!processor) return "not_configured";
+  return outcome(() => processor.post(new URL("handoff", processor.processUrl).toString(), { brief_id: briefId }));
 }
