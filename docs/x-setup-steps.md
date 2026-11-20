@@ -26,16 +26,11 @@ The client ID is public and is committed as `X_CLIENT_ID` in the `vars` of `web/
 
 ## 4. Bindings and release order
 
-The production Worker is `resurface`. Every value except `X_CLIENT_SECRET` is committed in the `vars` of `web/wrangler.jsonc`, so each `wrangler deploy` keeps it:
+The production Worker is `resurface`. The X settings and the other plain values are committed in the `vars` of `web/wrangler.jsonc`, the single source, so each `wrangler deploy` keeps them. `X_READS_ENABLED` stays `false` until the captain confirms the USD 20 funding; only the literal `true` enables the integration.
 
 | Name | Type | Value / purpose |
 | --- | --- | --- |
-| `X_CLIENT_ID` | Worker variable | Public OAuth 2.0 client ID of this app |
 | `X_CLIENT_SECRET` | Worker secret | Confidential OAuth 2.0 client secret of this app; also encrypts tokens. Set only through Wrangler's hidden prompt |
-| `X_CALLBACK_URL` | Worker variable | `https://resurface.thomasmann2001.workers.dev/api/auth/x/callback` |
-| `X_READS_ENABLED` | Worker variable | `false`; only literal `true` enables the integration. Set to `true` only after the captain confirms the USD 20 funding |
-| `X_DAILY_READ_REQUEST_LIMIT` | Worker variable | `60` requests/day across the app; a lower valid integer constrains launch usage |
-| `X_USER_DAILY_READ_REQUEST_LIMIT` | Worker variable | `55` bookmark requests/day per Resurface account; persists across reconnects/sessions |
 | `DB` | Existing D1 binding | Existing application database; apply migrations 0005 and 0006 through the authorized release process |
 | `AUTH_LIMITER`, `IMPORT_LIMITER` | Existing rate-limit bindings | Existing sign-in/import short-window limits; daily D1 budget is additional |
 | `PROCESSOR` / existing processor config | Existing service binding | Existing processing path; release config uses `SHORTS=on` with explicit video opt-in; see [go-live](go-live.md) |

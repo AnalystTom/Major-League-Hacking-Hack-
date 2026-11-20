@@ -148,9 +148,7 @@ npm exec --prefix deploy/processor -- wrangler deployments list --config deploy/
    `npm run db:migrate:remote --prefix web`. Preserve all existing data.
 3. Deploy the web Worker: `npm run deploy --prefix web`. `wrangler deploy` replaces every
    plain-text variable with the `vars` of `web/wrangler.jsonc`, including any set in the
-   dashboard; secrets survive. The X settings (`X_CLIENT_ID`, `X_CALLBACK_URL`,
-   `X_DAILY_READ_REQUEST_LIMIT`, `X_USER_DAILY_READ_REQUEST_LIMIT`, `X_READS_ENABLED`)
-   are committed there, so every deploy keeps them. A name cannot be both a secret and
+   dashboard; secrets survive. The X settings are committed there, so every deploy keeps them. A name cannot be both a secret and
    a var: the [X go-live session](#x-go-live-session) deletes any of them found in
    `wrangler secret list` before the first deploy. The processor needs no variable: the web
    Worker wakes it through the `PROCESSOR` service binding, and `PROCESSOR_URL` is
@@ -381,17 +379,17 @@ The fixture's X provider and processor are synthetic, so this run costs nothing.
 
 Run once, in one terminal session on this machine, from the repository root, after the
 captain has run `npm exec --prefix web -- wrangler login` (morning checklist step 1).
-`X_CLIENT_ID`, `X_CALLBACK_URL`, `X_DAILY_READ_REQUEST_LIMIT=60`,
-`X_USER_DAILY_READ_REQUEST_LIMIT=55` and `X_READS_ENABLED="false"` are committed in the
-`vars` of `web/wrangler.jsonc`. Only `X_CLIENT_SECRET` is a secret. The processor's
+The X settings are committed in the `vars` of `web/wrangler.jsonc`, the single source;
+`X_CLIENT_SECRET` is the only X secret. The processor's
 secrets and deploy are separate ([Processor bridge secrets](#processor-bridge-secrets-required-before-the-processor-deploy))
 and this session does not change them.
 
-Before step 1, confirm these preconditions. Stop before step 1 if one of the first three is missing:
+Before step 1, confirm these preconditions. Stop before step 1 if any of the first four is missing:
 
 - [Morning checklist](#morning-checklist-captain) step 1 is done: `wrangler login` succeeded.
 - [Morning checklist](#morning-checklist-captain) step 2 is done: the site is opened (Option A), or the Option B bypass covers `api/auth/x/callback`, `privacy` and `terms`. Otherwise the callback answers `302` to the Access login.
 - [Morning checklist](#morning-checklist-captain) step 3 is done: the X app exists with the callback registered, and the regenerated client secret is ready for the hidden prompt.
+- The local copy is exactly `origin/main` (`git fetch origin`; `git rev-parse HEAD` equals `git rev-parse origin/main`), the tree is clean (`git status --porcelain` prints nothing), and CI on that commit is green (`gh run list --commit <sha>`).
 - The captain answers whether the USD 20 is funded with auto-recharge off. This decides whether the session continues past step 6 (see step 7).
 
 1. Confirm the account:
@@ -433,7 +431,9 @@ Before step 1, confirm these preconditions. Stop before step 1 if one of the fir
    ```
 
    Review the historical allocations as Deploy order step 1 requires. Stop if the backup did
-   not complete or the pending list holds anything other than `0007` to `0010`. Then apply:
+   not complete or the review finds something unexpected. Then apply every pending migration
+   in filename order, including `0005` and `0006` if they are pending. Stop only if a pending
+   name is not a file in `web/migrations` on the merged revision:
 
    ```sh
    npm run db:migrate:remote --prefix web
@@ -446,12 +446,14 @@ Before step 1, confirm these preconditions. Stop before step 1 if one of the fir
    ```
 
 6. Run the [live smoke](#live-smoke): `npm run smoke:live`. While `X_READS_ENABLED` is
-   `"false"`, the check "X sign-in is configured" fails by design.
+   `"false"`, the check "X sign-in is configured" fails by design. Every other check must pass.
+   Any other failure stops the session before X is enabled.
 7. If the USD 20 funding with auto-recharge off was not confirmed at the start, stop here.
    This is the only stopping point. Otherwise continue.
-8. Merge a one-line change to `web/wrangler.jsonc` that sets `"X_READS_ENABLED": "true"`.
+8. Merge a one-line change to `web/wrangler.jsonc` that sets `"X_READS_ENABLED": "true"`,
+   then fast-forward the local copy to it (`git pull --ff-only`) and confirm CI is green on that commit.
 9. Redeploy the web Worker from the merged revision with `npm run deploy --prefix web`,
-   then rerun `npm run smoke:live`. "X sign-in is configured" must pass.
+   then rerun `npm run smoke:live`. Every check must pass, including "X sign-in is configured".
 10. The captain does their own consent test (morning checklist step 5).
 
 To turn X off again, set `X_READS_ENABLED` back to `"false"`, merge and redeploy the web Worker.
