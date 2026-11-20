@@ -342,8 +342,7 @@ npx playwright install --only-shell chromium
 
 Run the install under Node 22 (what CI uses) or Node 24. Under Node 26, Playwright
 1.56.1 finished the download and then stalled with no progress. If your default `node`
-is newer, run the same command with a Node 24 binary, for example
-`~/.local/share/mise/installs/node/24.22.3/bin/node node_modules/playwright/cli.js install --only-shell chromium`.
+is newer, run the same command with a Node 24 binary from your version manager.
 
 It checks:
 
