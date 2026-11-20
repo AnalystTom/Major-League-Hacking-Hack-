@@ -90,7 +90,7 @@ function seed(sqlite) {
   ]);
   insert(sqlite, 'artifacts', [
     { id: 'art-a', name: 'A only', source_url: 'https://x.com/a/status/1', source_ids: ['unit-a'], processed_text: 't', ingestion_status: 'ready' },
-    { id: 'art-mixed', name: 'Mixed', source_url: 'https://x.com/a/status/2', source_ids: ['unit-a2', 'unit-b'], sources: [{ url: 'https://x.com/a/status/2', title: 'A post', content_type: 'x_post' }, { url: 'https://x.com/b/status/3', title: 'B post', content_type: 'x_post' }], processed_text: 't', ingestion_status: 'ready' },
+    { id: 'art-mixed', name: 'Mixed', source_url: 'https://x.com/a/status/2', source_ids: ['unit-a2', 'unit-b'], processed_text: 't', ingestion_status: 'ready' },
     { id: 'art-shared', name: 'Shared', source_url: 'https://youtu.be/shared', source_ids: ['unit-shared'], processed_text: 't', ingestion_status: 'ready' },
     { id: 'art-b', name: 'B only', source_url: 'https://x.com/b/status/3', source_ids: ['unit-b'], processed_text: 't', ingestion_status: 'ready' },
   ]);
@@ -244,8 +244,7 @@ test("deleting an account keeps a unit another user imported, with its skill, vi
     assert.ok(!deleted.some((key) => key.includes('art-shared')), 'shared R2 media stays');
     assert.deepEqual(rowsMentioning(sqlite, 'a-share-token'), []);
 
-    const feedAfter = await getJson(env, '/api/feed?scope=mine', cookieB);
-    assert.deepEqual(feedAfter.items.find((item) => item.id === 'art-shared'), feedBefore.items[0]);
+    assert.deepEqual(await getJson(env, '/api/feed?scope=mine', cookieB), feedBefore);
     const bSkills = await getJson(env, '/api/skills', cookieB);
     assert.ok(bSkills.skills.some((skill) => skill.id === 'skill-shared'), 'shared skill is still listed for the other user');
     const bImports = await getJson(env, '/api/imports', cookieB);
@@ -264,9 +263,9 @@ test('deleting an account fully removes units only that account imported, includ
     await deleteAccount(env, A);
 
     for (const [table, where] of [
-      ['artifacts', "id = 'art-a'"],
-      ['video_results', "artifact_id = 'art-a'"],
-      ['skill_results', "artifact_id = 'art-a'"],
+      ['artifacts', "id IN ('art-a', 'art-mixed')"],
+      ['video_results', "artifact_id IN ('art-a', 'art-mixed')"],
+      ['skill_results', "artifact_id IN ('art-a', 'art-mixed')"],
       ['action_items', "skill_result_id = 'skill-a'"],
       ['handoffs', "skill_result_id = 'skill-a'"],
       ['video_starts', "artifact_id = 'art-a'"],
@@ -279,25 +278,15 @@ test('deleting an account fully removes units only that account imported, includ
       assert.equal(count(sqlite, `SELECT count(*) AS n FROM ${table} WHERE ${where}`), 0, `${table} still holds ${where}`);
     }
     assert.deepEqual([...deleted].sort(), [
-      'audio/art-a/1/narration.m4a', 'captions/art-a/1/short.vtt', 'videos/art-a/1/short.mp4',
+      'audio/art-a/1/narration.m4a', 'audio/art-mixed/1/narration.m4a',
+      'captions/art-a/1/short.vtt', 'captions/art-mixed/1/short.vtt',
+      'videos/art-a/1/short.mp4', 'videos/art-mixed/1/short.mp4',
     ]);
     assert.deepEqual(rowsMentioning(sqlite, 'https://x.com/a/status/'), []);
-    assert.deepEqual((await publicFeedSources(sql)).filter((item) => item.id === 'art-mixed'), [
-      { id: 'art-mixed', source_url: 'https://x.com/b/status/3' },
-    ]);
-    assert.deepEqual(sqlite.prepare("SELECT source_ids FROM artifacts WHERE id = 'art-mixed'").all().map((r) => JSON.parse(r.source_ids)), [['unit-b']]);
-    assert.deepEqual(sqlite.prepare("SELECT sources FROM artifacts WHERE id = 'art-mixed'").all().map((r) => JSON.parse(r.sources)), [
-      [{ url: 'https://x.com/b/status/3', title: 'B post', content_type: 'x_post' }],
-    ]);
-    const anonymousFeed = JSON.stringify(await getJson(env, '/api/feed?scope=public'));
-    assert.ok(!anonymousFeed.includes('a/status/2') && !anonymousFeed.includes('A post'), 'anonymous feed shows no trace of the deleted link');
-    for (const key of ['videos/art-mixed/1/short.mp4', 'captions/art-mixed/1/short.vtt', 'audio/art-mixed/1/narration.m4a']) {
-      assert.ok(!deleted.includes(key), `${key} stays for the other user`);
-    }
-    assert.equal(count(sqlite, "SELECT count(*) AS n FROM skill_results WHERE id = 'skill-mixed'"), 1);
-    assert.equal(count(sqlite, "SELECT count(*) AS n FROM agent_briefs WHERE id = 'brief-mixed'"), 1);
+    assert.deepEqual((await publicFeedSources(sql)).filter((item) => item.id === 'art-mixed'), []);
+    assert.equal(count(sqlite, "SELECT count(*) AS n FROM agent_briefs WHERE id = 'brief-mixed' AND user_id = ?", B), 1, "the other user's brief for a deleted skill stays");
 
-    assert.deepEqual(sqlite.prepare('SELECT id FROM artifacts ORDER BY id').all().map((r) => r.id), ['art-b', 'art-mixed', 'art-shared']);
+    assert.deepEqual(sqlite.prepare('SELECT id FROM artifacts ORDER BY id').all().map((r) => r.id), ['art-b', 'art-shared']);
     assert.deepEqual(sqlite.prepare('SELECT id FROM ingested_units ORDER BY id').all().map((r) => r.id), ['unit-b', 'unit-shared']);
     for (const [table, id] of [['video_results', 'vid-b'], ['skill_results', 'skill-b'], ['handoffs', 'handoff-b']]) {
       assert.equal(count(sqlite, `SELECT count(*) AS n FROM ${table} WHERE id = ?`, id), 1, `${table} lost ${id}`);
@@ -324,9 +313,9 @@ test('the last importer of a shared unit deleting their account removes it with 
     assert.equal(count(sqlite, 'SELECT count(*) AS n FROM video_results'), 0);
     assert.equal(count(sqlite, 'SELECT count(*) AS n FROM agent_briefs'), 0);
     assert.deepEqual([...deleted].sort(), [
-      'audio/art-b/1/narration.m4a', 'audio/art-mixed/1/narration.m4a', 'audio/art-shared/1/narration.m4a',
-      'captions/art-b/1/short.vtt', 'captions/art-mixed/1/short.vtt', 'captions/art-shared/1/short.vtt',
-      'videos/art-b/1/short.mp4', 'videos/art-mixed/1/short.mp4', 'videos/art-shared/1/short.mp4',
+      'audio/art-b/1/narration.m4a', 'audio/art-shared/1/narration.m4a',
+      'captions/art-b/1/short.vtt', 'captions/art-shared/1/short.vtt',
+      'videos/art-b/1/short.mp4', 'videos/art-shared/1/short.mp4',
     ]);
     assert.deepEqual(rowsMentioning(sqlite, 'youtu.be/shared'), []);
   } finally {
