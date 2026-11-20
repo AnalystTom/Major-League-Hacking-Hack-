@@ -710,7 +710,6 @@ a.reel-btn { text-decoration: none; }
   .app-page .reel-track { border-radius: 0; }
   .app-page .reel-counter { display: none; }
   .add-open span[aria-hidden] { font-size: 1.25rem; line-height: .8; }
-  .status { min-width: 0; }
   .status > summary { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 44px; }
   .status-panel { position: fixed; left: 12px; right: 12px; top: calc(var(--bar) + 6px); width: auto; }
   .app-bar .topbar-inner { gap: 4px; flex-wrap: nowrap; min-height: calc(var(--bar) - 1px); padding: 6px 10px; }
