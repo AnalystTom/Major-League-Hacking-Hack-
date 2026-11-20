@@ -19,6 +19,7 @@ export async function connectX(root, { onImported, onReady, onError } = {}) {
     <button class="linkish" type="button" data-x-retry hidden>Retry bookmark import</button>
     <button class="linkish" type="button" data-x-disconnect hidden>Disconnect X</button>`;
   const $ = sel => root.querySelector(sel);
+  const ready = (state) => { onReady?.(state); root.dataset.xChecked = 'true'; };
   const note = $('[data-x-note]'), start = $('[data-x-start]'), retry = $('[data-x-retry]'), disconnect = $('[data-x-disconnect]'), refresh = $('[data-x-refresh]');
   let importing = false, cancelled = false;
   async function importPages(startRefresh = false) {
@@ -56,7 +57,7 @@ export async function connectX(root, { onImported, onReady, onError } = {}) {
   try {
     const state = await api('/api/x');
     const error = ERRORS[new URLSearchParams(location.search).get('x')];
-    onReady?.(state);
+    ready(state);
     if (!state.available) { note.textContent = error ?? ''; note.hidden = !error; disconnect.hidden = !state.connected; return state; }
     start.hidden = false;
     note.textContent = error ?? 'Sign in to import your newest 50 X bookmarks.';
@@ -67,5 +68,5 @@ export async function connectX(root, { onImported, onReady, onError } = {}) {
       if (onImported && state.state === 'pending' && !state.expired) await importPages();
     }
     return state;
-  } catch (err) { note.textContent = err.message; onReady?.({ available: false }); return { available: false }; }
+  } catch (err) { note.textContent = err.message; ready({ available: false }); return { available: false }; }
 }

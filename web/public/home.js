@@ -144,8 +144,18 @@ $("[data-open-add]").addEventListener("click", () => {
 $("[data-close-add]").addEventListener("click", () => sheet.close());
 sheet.addEventListener("close", () => render(units, items));
 
-$("[data-signout]").addEventListener("click", async () => {
+let leaving = false;
+function stopFollowing() {
+  leaving = true;
   follower?.stop();
+}
+function resumeFollowing() {
+  leaving = false;
+  follower?.resume();
+}
+
+$("[data-signout]").addEventListener("click", async () => {
+  stopFollowing();
   await api("/api/auth/logout", { method: "POST", body: {} }).catch(() => {});
   location.assign("/");
 });
@@ -158,12 +168,12 @@ $("[data-confirm-delete]").addEventListener("click", async (event) => {
   const status = $("[data-delete-status]");
   button.disabled = true;
   status.textContent = "";
-  follower?.stop();
+  stopFollowing();
   try {
     await api("/api/me", { method: "DELETE", body: {} });
     location.assign("/");
   } catch (err) {
-    follower?.resume();
+    resumeFollowing();
     status.textContent = err.message;
     status.dataset.tone = "error";
     button.disabled = false;
@@ -207,6 +217,7 @@ $("[data-confirm-delete]").addEventListener("click", async (event) => {
     $("[data-first-note]").textContent = "";
     if ($("[data-run-note]").textContent.endsWith("Retrying…")) $("[data-run-note]").textContent = "";
   };
+  if (leaving) return;
   follower = followImports({
     onUnits: (u) => { units = u; },
     onItems: (i) => { items = i; render(units, items); reveal(); clearError(); },

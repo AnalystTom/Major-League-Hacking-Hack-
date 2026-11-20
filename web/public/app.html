@@ -17,7 +17,7 @@
     <div class="topbar-inner">
       <a class="wordmark" href="/" aria-label="Resurface home">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10 9.5l4.5 2.5-4.5 2.5z"/></svg>
-        Resurface
+        <span class="wordmark-name">Resurface</span>
       </a>
       <details class="status" data-status hidden>
         <summary data-status-summary></summary>
@@ -28,9 +28,14 @@
       </details>
       <button type="button" class="topbar-pill" data-open-skills="skills" hidden>Skills <b data-count="skills"></b></button>
       <button type="button" class="btn btn-small add-open" data-open-add aria-label="Add links" hidden><span aria-hidden="true">+</span><span class="add-label">Add links</span></button>
-      <a class="topbar-pill" href="/available" data-catalogue-link hidden>View available reels &amp; Skills</a>
-      <button type="button" class="btn btn-small btn-quiet-top" data-signout>Sign out</button>
-      <button type="button" class="btn btn-small btn-quiet-top" data-open-delete>Delete account</button>
+      <button type="button" class="topbar-pill account-toggle" popovertarget="account-menu" aria-label="Account menu">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+      <div class="account-menu" id="account-menu" popover>
+        <a class="topbar-pill" href="/available" data-catalogue-link hidden>View available reels &amp; Skills</a>
+        <button type="button" class="btn btn-small btn-quiet-top" data-signout>Sign out</button>
+        <button type="button" class="btn btn-small btn-quiet-top" data-open-delete>Delete account</button>
+      </div>
     </div>
   </header>
 

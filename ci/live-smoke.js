@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { chromium, request } from "@playwright/test";
+import { chromium, devices, request } from "@playwright/test";
 
 const env = process.env;
 const LIVE_SITE = "https://resurface.thomasmann2001.workers.dev";
@@ -27,6 +27,10 @@ const evidence = resolve(
 const importLink = env.SMOKE_IMPORT_URL;
 const importTimeout = Number(env.SMOKE_IMPORT_TIMEOUT_MS ?? 600_000);
 const loadXConsent = env.SMOKE_LOAD_X_CONSENT === "1";
+const device = env.SMOKE_DEVICE
+  ? devices[env.SMOKE_DEVICE]
+  : { viewport: { width: 1280, height: 900 } };
+if (!device) throw new Error(`Unknown SMOKE_DEVICE "${env.SMOKE_DEVICE}"`);
 
 const operatorHeaders =
   env.SMOKE_ACCESS_CLIENT_ID && env.SMOKE_ACCESS_CLIENT_SECRET
@@ -208,6 +212,38 @@ async function openOnSite(page, path) {
   expect(landed.origin === base, `redirected to ${landed.origin}`);
 }
 
+async function openFallback(scope, fallback) {
+  await scope
+    .locator("[data-x-connect][data-x-checked]")
+    .waitFor({ state: "attached", timeout: 15_000 });
+  const details = scope.locator(fallback);
+  if ((await details.getAttribute("open")) === null)
+    await details.locator("summary").click();
+}
+
+async function accountAction(page, selector) {
+  const toggle = page.locator(".account-toggle");
+  if (await toggle.isVisible()) await toggle.click();
+  await page.locator(selector).click();
+}
+
+async function appBarLayout(page) {
+  return page.evaluate(() => {
+    const bar = document.querySelector(".app-bar .topbar-inner");
+    const shown = [...bar.children]
+      .filter((el) => el.getClientRects().length)
+      .map((el) => el.getBoundingClientRect());
+    const tops = shown.map((r) => r.top);
+    const home = bar.querySelector('a.wordmark[href="/"]');
+    return {
+      home: Boolean(home?.getClientRects().length),
+      rowSpread: Math.max(...tops) - Math.min(...tops),
+      shortest: Math.min(...shown.map((r) => r.height)),
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+    };
+  });
+}
+
 async function signedInEmail(page) {
   const me = await appGet(page, "/api/me");
   return (await me.json()).user?.email ?? null;
@@ -252,14 +288,20 @@ async function xConsentJourney(context) {
 async function signUpJourney(context, account) {
   const page = await context.newPage();
   const errors = [];
+  let signedOut = false;
   page.on("pageerror", (error) => errors.push(error.message));
+  page.on("response", (response) => {
+    const url = new URL(response.url());
+    if (signedOut && url.origin === base && response.status() === 401)
+      errors.push(`401 after sign out: ${url.pathname}${url.search}`);
+  });
   page.on("console", (message) => {
     if (/Content Security Policy/i.test(message.text()))
       errors.push(message.text());
   });
   const signedUp = await check("new user signs up with email", async () => {
     await openOnSite(page, "/start");
-    await page.locator("[data-email-fallback] summary").click();
+    await openFallback(page, "[data-email-fallback]");
     const form = page.locator('[data-form="signup"]');
     await form.getByLabel("Email").fill(account.email);
     await form.getByLabel("Password").fill(account.password);
@@ -287,9 +329,21 @@ async function signUpJourney(context, account) {
       .waitFor();
     return `"${await page.locator("[data-first-title]").textContent()}"`;
   });
+  await check("app bar keeps the home link on one row", async () => {
+    const bar = await appBarLayout(page);
+    expect(bar.home, "Resurface home link is hidden");
+    expect(
+      bar.rowSpread < bar.shortest,
+      `app bar wraps: items start ${bar.rowSpread}px apart`,
+    );
+    expect(bar.overflow === 0, `page overflows by ${bar.overflow}px`);
+    return `spread=${bar.rowSpread}px overflow=0`;
+  });
   await check("sign out ends the session", async () => {
-    await page.locator("[data-signout]").click();
+    signedOut = true;
+    await accountAction(page, "[data-signout]");
     await page.waitForURL((url) => url.pathname === "/", { timeout: 15_000 });
+    await page.waitForLoadState("networkidle");
     expect((await signedInEmail(page)) === null, "still signed in");
     return "/api/me user=null";
   });
@@ -301,6 +355,7 @@ async function signUpJourney(context, account) {
     await form.getByLabel("Password").fill(account.password);
     await form.getByRole("button", { name: "Sign in" }).click();
     await page.waitForURL(/\/app$/, { timeout: 30_000 });
+    signedOut = false;
     expect(
       (await signedInEmail(page)) === account.email,
       "signed-in user is not the account",
@@ -309,7 +364,7 @@ async function signUpJourney(context, account) {
   });
   if (importLink) await importJourney(page);
   await check(
-    "no page errors or CSP violations during the journey",
+    "no page errors, CSP violations or post-sign-out 401s",
     async () => {
       expect(errors.length === 0, errors.join(" | "));
       return "0";
@@ -326,8 +381,7 @@ async function readySkills(page) {
 async function importJourney(page) {
   const imported = await check("pasted link is imported", async () => {
     const form = page.locator("[data-add]:visible");
-    if (!(await form.locator("[data-paste-fallback]").getAttribute("open")))
-      await form.locator("[data-paste-fallback] summary").click();
+    await openFallback(form, "[data-paste-fallback]");
     await form.locator("textarea").fill(importLink);
     const response = page.waitForResponse(
       (r) =>
@@ -396,6 +450,7 @@ async function main() {
   await mkdir(evidence, { recursive: true });
   console.log(`Resurface smoke against ${base}`);
   console.log(`Evidence: ${evidence}`);
+  console.log(`Device: ${env.SMOKE_DEVICE ?? "Desktop 1280x900"}`);
   const anonymous = await request.newContext({ baseURL: base });
   const operator = await request.newContext({
     baseURL: base,
@@ -404,8 +459,8 @@ async function main() {
   });
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
+    ...device,
     baseURL: base,
-    viewport: { width: 1280, height: 900 },
     httpCredentials: operatorCredentials,
   });
   await siteOnlyAccess(context);

@@ -1,8 +1,7 @@
-// Same-origin JSON calls. Errors carry the server's message and status so pages can say what happened.
-
-export async function api(path, { method = "GET", body } = {}) {
+export async function api(path, { method = "GET", body, signal } = {}) {
   const res = await fetch(path, {
     method,
+    signal,
     headers: body === undefined ? {} : { "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
     credentials: "same-origin",
