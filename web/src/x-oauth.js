@@ -94,12 +94,18 @@ async function callback(request, env, sql, user) {
     if (!(await reserveRead(env, sql, user?.id ?? `auth:${attempt.browser_hash}`))) return xFailure(user, 'budget', [clear]);
     const tokenResponse = await provider(env, '/2/oauth2/token', { method: 'POST', headers: { authorization: clientAuth(env), 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: callbackUrl(env), code_verifier: attempt.verifier }).toString() });
-    if (!tokenResponse.ok) return xFailure(user, 'failed', [clear]);
+    if (!tokenResponse.ok) {
+      logFailure('x token exchange failed', `HTTP ${tokenResponse.status}`);
+      return xFailure(user, 'failed', [clear]);
+    }
     const token = await tokenResponse.json();
     if (typeof token.access_token !== 'string' || token.access_token.length > 8000 || !Number.isFinite(token.expires_in) || token.expires_in <= 0 ||
         !SCOPES.split(' ').every(s => String(token.scope ?? '').split(' ').includes(s))) return xFailure(user, 'failed', [clear]);
     const identityResponse = await provider(env, '/2/users/me', { headers: { authorization: `Bearer ${token.access_token}` } });
-    if (!identityResponse.ok) return xFailure(user, 'failed', [clear]);
+    if (!identityResponse.ok) {
+      logFailure('x identity lookup failed', `HTTP ${identityResponse.status}`);
+      return xFailure(user, 'failed', [clear]);
+    }
     const { data } = await identityResponse.json();
     if (!/^\d{1,19}$/.test(data?.id) || !/^[A-Za-z0-9_]{1,15}$/.test(data?.username)) return xFailure(user, 'failed', [clear]);
     const [linked] = await sql`SELECT user_id FROM x_connections WHERE x_user_id=${data.id}`;
@@ -189,6 +195,7 @@ async function importBookmarks(request, env, sql, user) {
     if (row.cursor) params.set('pagination_token', row.cursor);
     const response = await provider(env, `/2/users/${row.x_user_id}/bookmarks?${params}`, { headers: { authorization: `Bearer ${access}` } });
     if (!response.ok) {
+      logFailure('x bookmark read failed', `HTTP ${response.status}`);
       const message = response.status === 429 ? 'X has reached its read limit. Try importing again later.' : response.status === 401 ? 'Your X connection expired. Reconnect to continue.' : 'X bookmarks could not be read. Paste links or try again later.';
       await sql`UPDATE x_connections SET import_state='failed',error=${message} WHERE user_id=${user.id} AND lease_token=${lease}`;
       return json({ error: message }, response.status === 429 ? 429 : 502);
@@ -237,7 +244,10 @@ async function disconnect(request, env, sql, user) {
   await sql`UPDATE x_connections SET access_token=NULL,refresh_token=NULL,expires_at=0,lease_until=0,lease_token=NULL,import_state='disconnected',error=NULL WHERE user_id=${user.id}`;
   if (row?.access_token && xAvailable(env)) {
     for (const type of ['access_token', 'refresh_token']) {
-      if (row[type]) try { await provider(env, '/2/oauth2/revoke', { method: 'POST', headers: { authorization: clientAuth(env), 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: await unseal(env, row[type]), token_type_hint: type }).toString() }); } catch (error) { logFailure(`x ${type} revoke failed`, error); }
+      if (row[type]) try {
+        const response = await provider(env, '/2/oauth2/revoke', { method: 'POST', headers: { authorization: clientAuth(env), 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ token: await unseal(env, row[type]), token_type_hint: type }).toString() });
+        if (!response.ok) logFailure(`x ${type} revoke failed`, `HTTP ${response.status}`);
+      } catch (error) { logFailure(`x ${type} revoke failed`, error); }
     }
   }
   return json({ disconnected: true });
