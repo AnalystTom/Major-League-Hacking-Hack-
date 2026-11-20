@@ -3,7 +3,7 @@ import { showCatalogueLinks } from "./catalogue-links.js";
 import { connectX } from "./x-connect.js";
 import { createReel } from "./reel.js";
 import { createSkills } from "./skills.js";
-import { FAILED_STAGES, followImports, PROCESSOR, renderUnits, settledNote } from "./units.js";
+import { FAILED_STAGES, firstScreenCopy, followImports, PROCESSOR, renderUnits, settledNote } from "./units.js";
 
 const $ = (sel) => document.querySelector(sel);
 const reel = createReel($("[data-reel]"));
@@ -55,16 +55,7 @@ function render(units, items) {
   }
 
   const waiting = units.some((u) => !u.settled);
-  const limited = !waiting && units.some((u) => u.stage === "limited");
-  const skillsReady = units.some(u => u.stage === "skill_ready");
-  const title = units.length === 0 ? "Paste your first links" : waiting ? "Reading your links" : limited ? "Your links are in the queue" : skillsReady ? "Your skills are ready" : "Nothing from these links yet";
-  const lede = units.length === 0
-    ? "Each YouTube video, X post or Substack post becomes a skill your coding agent can read, from the part worth keeping."
-    : waiting
-      ? "Your first skill shows up here as soon as it's ready. You can leave; processing carries on."
-      : limited
-        ? "Resurface processes a limited number of links each day. These start on their own when there's room; you can leave."
-        : skillsReady ? "Open Skills above to copy or download what you want to use." : "Each link below says what happened. Try other links.";
+  const { title, lede } = firstScreenCopy(units);
   $("[data-first-title]").textContent = title;
   $("[data-first-lede]").textContent = lede;
   const list = $("[data-first-units]");

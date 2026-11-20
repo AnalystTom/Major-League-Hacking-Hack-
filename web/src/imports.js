@@ -163,9 +163,7 @@ export async function readUnits(sql, ids, visible = ids) {
 export const MAX_OUTPUT_ATTEMPTS = 3;
 export const willRetry = (r) => r?.status === "failed" && Number.isInteger(r.attempts) && r.attempts < MAX_OUTPUT_ATTEMPTS;
 
-// Provider and tool failures (an HTTP status, a JSON body, a key name, an ffmpeg exit) are for the logs, not for people.
-const TECHNICAL = /HTTP \d{3}|[{}]|_KEY\b|\bAPI\b|JSON|token|Gemini|OpenAI|twitterapi|Nimble|ffmpeg|chromium|exit(?:ed)? \d|\bgpt-|Digestion/i;
-// Known provider failures with a short, safe reason a person can act on (the raw text stays in the logs).
+const TECHNICAL = /^Quality judge|HTTP \d{3}|[{}]|_KEY\b|\bAPI\b|JSON|token|Gemini|OpenAI|twitterapi|Nimble|ffmpeg|chromium|exit(?:ed)? \d|\bgpt-|Digestion/i;
 const KNOWN_REASONS = [
   [/NIMBLE_API_KEY is not configured/, "Reading Substack posts isn't switched on yet, so this one can't be read. Try again later."],
   [/^Nimble /, "Couldn't read this Substack post right now. Try again later."],
@@ -177,28 +175,13 @@ export const PLAIN_FAILURE = {
   render_retrying: "The short hit a snag and is being tried again.",
 };
 
-/**
- * The reason a person sees: the stored one when it is already plain, otherwise a short sentence for the stage.
- * Not-selected reasons are written by the digest for people, so they are never replaced.
- */
 export function plainReason(error, stage) {
-  if (stage !== "not_selected" && error?.startsWith("Quality judge rejected: ")) {
-    try {
-      const receipt = JSON.parse(error.slice("Quality judge rejected: ".length));
-      if (receipt.judge === "short-judge-v1" && receipt.passed === false && Array.isArray(receipt.reasons)) {
-        const reason = receipt.reasons.filter((r) => typeof r === "string").join(" ").replace(/\s+/g, " ").trim().slice(0, 170);
-        if (reason) return `Quality check: ${reason}`;
-      }
-    } catch {}
-  }
   if (stage === "failed") for (const [pattern, reason] of KNOWN_REASONS) if (error && pattern.test(error)) return reason;
   return stage !== "not_selected" && error && (error.length > 200 || TECHNICAL.test(error)) ? PLAIN_FAILURE[stage] ?? PLAIN_FAILURE.failed : error;
 }
 
-/**
- * Collapses a unit's records into the one stage the page shows. `settled` means nothing more will
- * happen automatically: a failure, an exclusion, or a ready clip.
- */
+const hasReadySkill = (artifact) => artifact.ingestion_status === "ready" && skillStatus(artifact.skill?.status, artifact.skill?.review_feedback) === "ready";
+
 export function describeUnit(row, now = new Date()) {
   const base = {
     id: row.id,
@@ -207,11 +190,10 @@ export function describeUnit(row, now = new Date()) {
     title: row.title ?? null,
     content_type: row.content_type ?? "youtube_video",
     preview_only: row.preview_only === 1 || row.preview_only === true,
+    skill_ready: (row.artifacts ?? []).some(hasReadySkill),
   };
   const at = (stage, settled, error = null) => ({ ...base, stage, settled, error: plainReason(error, stage) });
 
-  // Held back by the processor's daily or monthly limit (before reading it, or before digesting a video that's
-  // already read): nothing happens before then, so it's settled.
   const until = row.deferred_until ? new Date(row.deferred_until) : null;
   const limited = () => at("limited", true, `Resurface has reached its processing limit for now. This link starts after ${until.toISOString().slice(0, 16).replace("T", " ")} UTC.`);
   const held = until !== null && until > now;
@@ -226,13 +208,11 @@ export function describeUnit(row, now = new Date()) {
     return held ? limited() : at("digesting", false);
   }
 
-  // A unit can feed several artifacts; report the one furthest along.
   const stages = artifacts.map((a) => {
     const v = a.video;
     if (a.ingestion_status === "failed") return at("failed", true, a.error ?? null);
     if (a.ingestion_status !== "ready") return at("digesting", false);
-    // A ready skill is the result; a video row still pending or running must not keep the card on "rendering".
-    if (skillStatus(a.skill?.status, a.skill?.review_feedback) === "ready" && (!v || v.status === "pending" || v.status === "running")) return at("skill_ready", true);
+    if (hasReadySkill(a) && (!v || v.status === "pending" || v.status === "running")) return at("skill_ready", true);
     if (!v || v.status === "pending" || v.status === "running") return at("rendering", false);
     if (willRetry(v)) return at("render_retrying", false, v.error ?? null);
     if (v.status === "failed") return at("render_failed", true, v.error ?? null);

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { PROCESSOR, settledNote, unitScanState } from "../public/units.js";
+import { firstScreenCopy, PROCESSOR, settledNote, unitScanState } from "../public/units.js";
 
 test("the scan follows backend stages without estimating completion", () => {
   assert.deepEqual(unitScanState({ stage: "queued", settled: false }), {
@@ -32,4 +32,14 @@ test("completed imports clear only transient processing copy, including the X re
     assert.equal(settledNote(PROCESSOR.requested, units), "");
     assert.equal(settledNote(PROCESSOR.unavailable, units), PROCESSOR.unavailable);
   }
+});
+
+test("the first screen counts a ready skill as a result even when its short failed", () => {
+  const skillWithoutShort = { stage: "render_failed", settled: true, skill_ready: true };
+  assert.equal(firstScreenCopy([skillWithoutShort]).title, "Your skills are ready");
+  assert.equal(firstScreenCopy([{ stage: "skill_ready", settled: true, skill_ready: true }]).title, "Your skills are ready");
+  assert.equal(firstScreenCopy([{ stage: "render_failed", settled: true, skill_ready: false }]).title, "Nothing from these links yet");
+  assert.equal(firstScreenCopy([{ stage: "failed", settled: true, skill_ready: false }, skillWithoutShort]).title, "Your skills are ready");
+  assert.equal(firstScreenCopy([skillWithoutShort, { stage: "digesting", settled: false, skill_ready: false }]).title, "Reading your links");
+  assert.equal(firstScreenCopy([]).title, "Paste your first links");
 });
