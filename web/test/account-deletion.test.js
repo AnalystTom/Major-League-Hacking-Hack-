@@ -90,7 +90,7 @@ function seed(sqlite) {
   ]);
   insert(sqlite, 'artifacts', [
     { id: 'art-a', name: 'A only', source_url: 'https://x.com/a/status/1', source_ids: ['unit-a'], processed_text: 't', ingestion_status: 'ready' },
-    { id: 'art-mixed', name: 'Mixed', source_url: 'https://x.com/a/status/2', source_ids: ['unit-a2', 'unit-b'], processed_text: 't', ingestion_status: 'ready' },
+    { id: 'art-mixed', name: 'Mixed', source_url: 'https://x.com/a/status/2', source_ids: ['unit-a2', 'unit-b'], sources: [{ url: 'https://x.com/a/status/2', title: 'A post', content_type: 'x_post' }, { url: 'https://x.com/b/status/3', title: 'B post', content_type: 'x_post' }], processed_text: 't', ingestion_status: 'ready' },
     { id: 'art-shared', name: 'Shared', source_url: 'https://youtu.be/shared', source_ids: ['unit-shared'], processed_text: 't', ingestion_status: 'ready' },
     { id: 'art-b', name: 'B only', source_url: 'https://x.com/b/status/3', source_ids: ['unit-b'], processed_text: 't', ingestion_status: 'ready' },
   ]);
@@ -286,6 +286,11 @@ test('deleting an account fully removes units only that account imported, includ
       { id: 'art-mixed', source_url: 'https://x.com/b/status/3' },
     ]);
     assert.deepEqual(sqlite.prepare("SELECT source_ids FROM artifacts WHERE id = 'art-mixed'").all().map((r) => JSON.parse(r.source_ids)), [['unit-b']]);
+    assert.deepEqual(sqlite.prepare("SELECT sources FROM artifacts WHERE id = 'art-mixed'").all().map((r) => JSON.parse(r.sources)), [
+      [{ url: 'https://x.com/b/status/3', title: 'B post', content_type: 'x_post' }],
+    ]);
+    const anonymousFeed = JSON.stringify(await getJson(env, '/api/feed?scope=public'));
+    assert.ok(!anonymousFeed.includes('a/status/2') && !anonymousFeed.includes('A post'), 'anonymous feed shows no trace of the deleted link');
     for (const key of ['videos/art-mixed/1/short.mp4', 'captions/art-mixed/1/short.vtt', 'audio/art-mixed/1/narration.m4a']) {
       assert.ok(!deleted.includes(key), `${key} stays for the other user`);
     }

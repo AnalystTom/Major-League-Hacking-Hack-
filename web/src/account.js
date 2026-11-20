@@ -36,6 +36,8 @@ export async function deleteAccount(env, userId) {
     env.DB.prepare(`DELETE FROM video_rejection_releases WHERE user_id = ?1 OR ${doomedChild("video_rejection_releases")}`).bind(userId),
     env.DB.prepare(`UPDATE artifacts SET
       source_ids = (SELECT json_group_array(kept.value) FROM (SELECT src.value FROM json_each(artifacts.source_ids) src WHERE src.value NOT IN (${soleUnits}) ORDER BY src.key) kept),
+      sources = (SELECT json_group_array(json(kept.value)) FROM (SELECT s.value, s.key FROM json_each(artifacts.sources) s ORDER BY s.key) kept
+        WHERE json_extract(artifacts.source_ids, '$[' || kept.key || ']') NOT IN (${soleUnits})),
       source_url = (SELECT u.source_url FROM json_each(artifacts.source_ids) src JOIN ingested_units u ON u.id = src.value WHERE src.value NOT IN (${soleUnits}) ORDER BY src.key LIMIT 1)
       WHERE ${keptMixedArtifact("artifacts")}`).bind(userId),
     env.DB.prepare(`DELETE FROM artifacts WHERE ${doomedArtifact("artifacts")}`).bind(userId),
