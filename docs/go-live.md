@@ -353,7 +353,7 @@ It checks:
 - X sign-in is configured;
 - **Continue with X** issues a PKCE S256 authorization to `https://x.com/i/oauth2/authorize`,
   with the live callback and the `tweet.read users.read bookmark.read offline.access` scopes;
-- the signed-in app bar keeps the Resurface home link, with its name, and every bar item on one row, with no horizontal overflow;
+- the signed-in app bar keeps the Resurface home link, with its name, and every bar item on one row, with no horizontal overflow. After an imported skill exists, Skills and Add are also visible on that row;
 - a new user can sign up, sign out and sign back in with email, with no page errors,
   CSP violations or `401` responses after sign-out.
 

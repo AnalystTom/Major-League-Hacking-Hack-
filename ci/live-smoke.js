@@ -230,6 +230,15 @@ async function openFallback(scope, fallback) {
     await details.locator("summary").click();
 }
 
+function expectBarFits(bar) {
+  expect(bar.home, "Resurface home link name is hidden");
+  expect(
+    bar.rowSpread < bar.shortest,
+    `app bar wraps: items start ${bar.rowSpread}px apart`,
+  );
+  expect(bar.overflow === 0, `page overflows by ${bar.overflow}px`);
+}
+
 async function appBarLayout(page) {
   return page.evaluate(() => {
     const bar = document.querySelector(".app-bar .topbar-inner");
@@ -237,9 +246,13 @@ async function appBarLayout(page) {
       .filter((el) => el.getClientRects().length)
       .map((el) => el.getBoundingClientRect());
     const tops = shown.map((r) => r.top);
-    const name = bar.querySelector('a.wordmark[href="/"] .wordmark-name');
+    const visible = (selector) =>
+      Boolean(bar.querySelector(selector)?.getClientRects().length);
     return {
-      home: Boolean(name?.getClientRects().length),
+      home: visible('a.wordmark[href="/"] .wordmark-name'),
+      status: visible("[data-status]"),
+      skills: visible('[data-open-skills="skills"]'),
+      add: visible("[data-open-add]"),
       rowSpread: Math.max(...tops) - Math.min(...tops),
       shortest: Math.min(...shown.map((r) => r.height)),
       overflow: document.documentElement.scrollWidth - window.innerWidth,
@@ -333,14 +346,8 @@ async function signUpJourney(context, account) {
     return `"${await page.locator("[data-first-title]").textContent()}"`;
   });
   await check("app bar keeps the home link on one row", async () => {
-    const bar = await appBarLayout(page);
-    expect(bar.home, "Resurface home link name is hidden");
-    expect(
-      bar.rowSpread < bar.shortest,
-      `app bar wraps: items start ${bar.rowSpread}px apart`,
-    );
-    expect(bar.overflow === 0, `page overflows by ${bar.overflow}px`);
-    return `spread=${bar.rowSpread}px overflow=0`;
+    expectBarFits(await appBarLayout(page));
+    return "spread within one row, overflow=0";
   });
   await check("sign out ends the session", async () => {
     signedOut = true;
@@ -412,6 +419,15 @@ async function importJourney(page) {
     },
   );
   if (!generated) return;
+  await check("app bar fits with Skills and Add visible", async () => {
+    await page
+      .locator('[data-open-skills="skills"]')
+      .waitFor({ state: "visible", timeout: 30_000 });
+    const bar = await appBarLayout(page);
+    expectBarFits(bar);
+    expect(bar.skills && bar.add, `skills=${bar.skills} add=${bar.add}`);
+    return `status=${bar.status} spread=${bar.rowSpread}px overflow=0`;
+  });
   await check("user keeps the skill and can install SKILL.md", async () => {
     await page.reload();
     await page.locator('[data-open-skills="skills"]').click();

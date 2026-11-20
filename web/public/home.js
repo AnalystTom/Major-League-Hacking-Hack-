@@ -169,7 +169,7 @@ function clearError() {
 let leaving = false;
 let xConnection = null;
 function startFollowing() {
-  if (leaving) return;
+  if (leaving || follower) return;
   follower = followImports({
     onUnits: (u) => { units = u; },
     onItems: (i) => { items = i; render(units, items); reveal(); clearError(); },

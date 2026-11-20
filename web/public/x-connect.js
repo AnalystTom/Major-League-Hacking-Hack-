@@ -20,10 +20,9 @@ export function connectX(root, { onImported, onReady, onError } = {}) {
     <button class="linkish" type="button" data-x-disconnect hidden>Disconnect X</button>`;
   const $ = sel => root.querySelector(sel);
   const note = $('[data-x-note]'), start = $('[data-x-start]'), retry = $('[data-x-retry]'), disconnect = $('[data-x-disconnect]'), refresh = $('[data-x-refresh]');
-  let importing = false, stopped = false, disconnecting = false;
-  const halted = () => stopped || disconnecting;
+  let importing = false, stopped = false;
   async function importPages(startRefresh = false) {
-    if (importing || halted()) return;
+    if (importing || stopped) return;
     importing = true; retry.hidden = true; start.hidden = true; refresh.hidden = true;
     note.textContent = 'Extracting your X bookmarks…';
     try {
@@ -31,16 +30,16 @@ export function connectX(root, { onImported, onReady, onError } = {}) {
       do {
         result = await api('/api/x/bookmarks', { method: 'POST', body: startRefresh ? { refresh: true } : {} });
         startRefresh = false;
-        if (halted()) return;
+        if (stopped) return;
         note.textContent = result.read === 0 ? 'No bookmarks were found. Save a bookmark on X or paste links instead.' : `Read ${result.read} bookmark${result.read === 1 ? '' : 's'}. ${PROCESSOR[result.processor] ?? ''}`;
         onImported?.(result);
       } while (!result.complete);
       if (result.capped) note.textContent += ' Saved the newest 50 bookmarks. Future refreshes check for new bookmarks.';
     } catch (err) {
-      if (!halted()) { note.textContent = err.message; retry.hidden = false; if (err.status === 409) { start.hidden = false; start.textContent = 'Reconnect X'; } onError?.(err); }
+      if (!stopped) { note.textContent = err.message; retry.hidden = false; if (err.status === 409) { start.hidden = false; start.textContent = 'Reconnect X'; } onError?.(err); }
     } finally {
       importing = false;
-      if (!halted()) refresh.hidden = !retry.hidden;
+      if (!stopped) refresh.hidden = !retry.hidden;
     }
   }
   async function check() {
@@ -63,12 +62,13 @@ export function connectX(root, { onImported, onReady, onError } = {}) {
   retry.addEventListener('click', () => importPages());
   refresh.addEventListener('click', () => importPages(true));
   disconnect.addEventListener('click', async () => {
-    disconnecting = true; refresh.hidden = true; disconnect.disabled = true;
+    const previous = stopped;
+    stopped = true; refresh.hidden = true; disconnect.disabled = true;
     try {
       await api('/api/x/disconnect', { method: 'POST', body: {} });
       note.textContent = 'X disconnected. Your previously imported skills and links are still here.';
       disconnect.hidden = true; retry.hidden = true; start.hidden = false; start.textContent = 'Reconnect X';
-    } catch (err) { note.textContent = err.message; disconnecting = false; }
+    } catch (err) { note.textContent = err.message; stopped = previous; }
     finally { disconnect.disabled = false; }
   });
   return {
