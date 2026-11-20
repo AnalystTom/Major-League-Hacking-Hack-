@@ -368,7 +368,7 @@ non-zero on any failure.
 | `SMOKE_BASE_URL` | Target origin, for example `http://127.0.0.1:28757` for the local fixture app |
 | `SMOKE_GATE_USER`, `SMOKE_GATE_PASSWORD` | In-app gate credentials, sent only to the target origin, so the journey can run while that gate is on |
 | `SMOKE_ACCESS_CLIENT_ID`, `SMOKE_ACCESS_CLIENT_SECRET` | Cloudflare Access service token, sent only to the target origin |
-| `SMOKE_DEVICE` | Playwright device profile for the browser journey, for example `Pixel 7` or `iPhone 13`. Default: desktop 1280×900 |
+| `SMOKE_DEVICE` | Playwright device profile for the browser journey, for example `Pixel 7` or `iPhone 13`, or a viewport such as `360x740`. Default: desktop 1280×900 |
 | `SMOKE_LOAD_X_CONSENT=1` | Also loads X's authorize page and screenshots it. It reads nothing from X |
 | `SMOKE_IMPORT_URL` | **Paid.** Pastes this public link and requires `processor=requested`, then waits for a ready skill (`SMOKE_IMPORT_TIMEOUT_MS`, default 10 minutes). It keeps the skill (`generateVideos: false`) and checks SKILL.md and Download. It never requests a video |
 

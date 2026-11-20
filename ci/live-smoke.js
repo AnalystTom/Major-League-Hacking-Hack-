@@ -27,9 +27,17 @@ const evidence = resolve(
 const importLink = env.SMOKE_IMPORT_URL;
 const importTimeout = Number(env.SMOKE_IMPORT_TIMEOUT_MS ?? 600_000);
 const loadXConsent = env.SMOKE_LOAD_X_CONSENT === "1";
-const device = env.SMOKE_DEVICE
-  ? devices[env.SMOKE_DEVICE]
-  : { viewport: { width: 1280, height: 900 } };
+const viewportSize = /^(\d+)x(\d+)$/.exec(env.SMOKE_DEVICE ?? "");
+const device = viewportSize
+  ? {
+      viewport: {
+        width: Number(viewportSize[1]),
+        height: Number(viewportSize[2]),
+      },
+    }
+  : env.SMOKE_DEVICE
+    ? devices[env.SMOKE_DEVICE]
+    : { viewport: { width: 1280, height: 900 } };
 if (!device) throw new Error(`Unknown SMOKE_DEVICE "${env.SMOKE_DEVICE}"`);
 
 const operatorHeaders =
