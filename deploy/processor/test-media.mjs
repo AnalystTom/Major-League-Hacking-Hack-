@@ -69,3 +69,12 @@ test('processor R2 bridge deletes a stored key and reports a failed delete', asy
   assert.equal((await media(del('videos/x/1/fail.mp4'), env)).status, 500);
   assert.equal((await media(del('videos/x/1/a.mp4'), {})).status, 503);
 });
+
+test('processor R2 bridge logs a failed put and a failed delete once each and answers 500', async (t) => {
+  const logged = t.mock.method(console, 'error', () => {});
+  const failing = { async put() { throw new Error('R2 offline'); }, async delete() { throw new Error('R2 offline'); } };
+  const del = new Request(`http://processor/internal/media?key=${encodeURIComponent('videos/x/1/a.mp4')}`, { method: 'DELETE' });
+  assert.equal((await media(put('videos/x/1/a.mp4'), { MEDIA: failing })).status, 500);
+  assert.equal((await media(del, { MEDIA: failing })).status, 500);
+  assert.deepEqual(logged.mock.calls.map((call) => call.arguments), [['R2 put failed', 'R2 offline'], ['R2 delete failed', 'R2 offline']]);
+});

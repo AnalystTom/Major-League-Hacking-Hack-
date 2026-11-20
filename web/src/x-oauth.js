@@ -100,14 +100,20 @@ async function callback(request, env, sql, user) {
     }
     const token = await tokenResponse.json();
     if (typeof token.access_token !== 'string' || token.access_token.length > 8000 || !Number.isFinite(token.expires_in) || token.expires_in <= 0 ||
-        !SCOPES.split(' ').every(s => String(token.scope ?? '').split(' ').includes(s))) return xFailure(user, 'failed', [clear]);
+        !SCOPES.split(' ').every(s => String(token.scope ?? '').split(' ').includes(s))) {
+      logFailure('x sign-in callback failed', 'unexpected token response shape');
+      return xFailure(user, 'failed', [clear]);
+    }
     const identityResponse = await provider(env, '/2/users/me', { headers: { authorization: `Bearer ${token.access_token}` } });
     if (!identityResponse.ok) {
       logFailure('x identity lookup failed', `HTTP ${identityResponse.status}`);
       return xFailure(user, 'failed', [clear]);
     }
     const { data } = await identityResponse.json();
-    if (!/^\d{1,19}$/.test(data?.id) || !/^[A-Za-z0-9_]{1,15}$/.test(data?.username)) return xFailure(user, 'failed', [clear]);
+    if (!/^\d{1,19}$/.test(data?.id) || !/^[A-Za-z0-9_]{1,15}$/.test(data?.username)) {
+      logFailure('x sign-in callback failed', 'unexpected identity response shape');
+      return xFailure(user, 'failed', [clear]);
+    }
     const [linked] = await sql`SELECT user_id FROM x_connections WHERE x_user_id=${data.id}`;
     if (user && linked && linked.user_id !== user.id) return xFailure(user, 'conflict', [clear]);
     let userId = user?.id ?? linked?.user_id;

@@ -436,3 +436,25 @@ test('a non-2xx X revocation logs its HTTP status once per token and never the p
     assert.ok(!JSON.stringify(logged.mock.calls).includes('fixture-body-secret'));
   } finally {t.db.close();}
 });
+
+test('a 200 X token answer without the granted scopes logs one fixed reason and never the token',async(c)=>{
+  const t=setup();try {
+    const logged=c.mock.method(console,'error',()=>{});
+    const original=t.env.X_PROVIDER.fetch;
+    t.env.X_PROVIDER.fetch=async(input,options)=>new URL(input).pathname.endsWith('/token')?Response.json({access_token:'fixture-shape-token',expires_in:7200,scope:'tweet.read'}):original(input,options);
+    assert.equal((await t.finish(await t.begin())).headers.get('location'),'/start?x=failed');
+    assert.deepEqual(logged.mock.calls.map(call=>call.arguments),[['x sign-in callback failed','unexpected token response shape']]);
+    assert.ok(!JSON.stringify(logged.mock.calls).includes('fixture-shape-token'));
+  } finally {t.db.close();}
+});
+
+test('a 200 X identity answer with an invalid id logs one fixed reason and never the username',async(c)=>{
+  const t=setup();try {
+    const logged=c.mock.method(console,'error',()=>{});
+    const original=t.env.X_PROVIDER.fetch;
+    t.env.X_PROVIDER.fetch=async(input,options)=>new URL(input).pathname==='/2/users/me'?Response.json({data:{id:'not-a-number',username:'fixture_shape_user'}}):original(input,options);
+    assert.equal((await t.finish(await t.begin())).headers.get('location'),'/start?x=failed');
+    assert.deepEqual(logged.mock.calls.map(call=>call.arguments),[['x sign-in callback failed','unexpected identity response shape']]);
+    assert.ok(!JSON.stringify(logged.mock.calls).includes('fixture_shape_user'));
+  } finally {t.db.close();}
+});

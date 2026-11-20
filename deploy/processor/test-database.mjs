@@ -55,3 +55,11 @@ test('processor D1 bridge reports an unconfigured binding and a failed batch', a
   const DB = { prepare() { return { bind() { return {}; } }; }, async batch() { throw new Error('offline'); } };
   assert.equal((await database(request({ statements: [{ sql: ALLOWED, params: ['u', 1, 'r'] }] }), { DB })).status, 500);
 });
+
+test('processor D1 bridge logs a failed batch once and answers 500', async (t) => {
+  const logged = t.mock.method(console, 'error', () => {});
+  const DB = { prepare() { return { bind() { return {}; } }; }, async batch() { throw new Error('D1_ERROR: database is locked'); } };
+  const response = await database(request({ statements: [{ sql: ALLOWED, params: ['unit', 1, 'reason'] }] }), { DB });
+  assert.equal(response.status, 500);
+  assert.deepEqual(logged.mock.calls.map((call) => call.arguments), [['D1 batch failed', 'D1_ERROR: database is locked']]);
+});
