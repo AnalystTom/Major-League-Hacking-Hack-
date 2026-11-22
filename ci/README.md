@@ -92,6 +92,7 @@ Do not approve a fork PR's run before reading its diff, including any change und
 
 The browser journey uses the existing explicitly synthetic X provider and processor
 in `web/test/fixtures/x`. It checks new-user X consent/PKCE wiring, moving scan,
+the "Writing your skill" stage (never "Rendering the short" without a video request),
 two ready skills, deselection, persistence after reload, default videos off,
 explicit video request and no private skills in the public feed. The real-route
 unit/API tests in `web/test/x-oauth.test.js` separately protect the 50-bookmark
