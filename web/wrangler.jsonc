@@ -37,7 +37,7 @@
     "X_CALLBACK_URL": "https://resurface.thomasmann2001.workers.dev/api/auth/x/callback",
     "X_DAILY_READ_REQUEST_LIMIT": "60",
     "X_USER_DAILY_READ_REQUEST_LIMIT": "55",
-    "X_READS_ENABLED": "false"
+    "X_READS_ENABLED": "true"
   },
   "observability": { "enabled": true }
 }
