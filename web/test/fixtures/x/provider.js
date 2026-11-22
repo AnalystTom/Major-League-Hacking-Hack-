@@ -1,4 +1,3 @@
-// Test-only provider and processor. Never bind this service in production.
 import first from './bookmarks.json';
 import second from './bookmarks-page-2.json';
 import { SKILL_PROMPT_REVISION } from '../../../src/skill-policy.js';
@@ -12,10 +11,15 @@ async function process(env,ids) {
   await wait(5000);
   for (const id of ids) await env.DB.prepare("UPDATE ingested_units SET status='ready',transcript='{}',extraction_method='x-embed:tweet-result:v2' WHERE id=?").bind(id).run();
   await wait(5000);
+  const artifacts=[];
   for (const id of ids) {
     const unit=await env.DB.prepare('SELECT source_url FROM ingested_units WHERE id=?').bind(id).first();
     const artifact=await env.DB.prepare("INSERT INTO artifacts(name,source_url,source_ids,processed_text,ingestion_status) VALUES('Fixture: verify an agent change',?,?,'Fixture processor output for local QA only.','ready') RETURNING id").bind(unit.source_url,JSON.stringify([id])).first();
-    const markdown=`---\nname: fixture-verification\ndescription: "Local fixture: verify a stated goal."\n---\n\n1. State the goal.\n2. Run the relevant checks.\n\n## Sources\n\n- ${unit.source_url}\n`;
+    artifacts.push({id:artifact.id,source_url:unit.source_url});
+  }
+  await wait(8000);
+  for (const artifact of artifacts) {
+    const markdown=`---\nname: fixture-verification\ndescription: "Local fixture: verify a stated goal."\n---\n\n1. State the goal.\n2. Run the relevant checks.\n\n## Sources\n\n- ${artifact.source_url}\n`;
     await env.DB.prepare("INSERT INTO skill_results(artifact_id,artifact_version,status,skill_markdown,review_feedback) VALUES(?,1,'ready',?,?)").bind(artifact.id,markdown,JSON.stringify({prompt_revision:SKILL_PROMPT_REVISION})).run();
   }
 }

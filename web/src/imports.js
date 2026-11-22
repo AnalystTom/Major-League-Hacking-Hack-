@@ -1,16 +1,12 @@
-// Proceed: pasted YouTube and X post links become ingested units in D1, and their progress is read back
-// from the units, artifacts and video results the processor writes. Nothing here invents progress.
-
 import { skillStatus } from "./skill-policy.js";
 import { dedupeContent, sourceKey } from "./content.js";
 import { isSubstackHost, parseSubstackLink } from "./substack.js";
 import { isXLink, parseXLink } from "./xpost.js";
 import { parseYouTubeLink } from "./youtube.js";
 
-// Per source type: a video costs a long Gemini read; X posts use text-reading endpoints.
 export const MAX_YOUTUBE_LINKS = 20;
 export const MAX_X_LINKS = 100;
-export const MAX_SUBSTACK_LINKS = 20; // a post is one Nimble read plus a long digest input
+export const MAX_SUBSTACK_LINKS = 20;
 export const MAX_LINKS = MAX_YOUTUBE_LINKS + MAX_X_LINKS + MAX_SUBSTACK_LINKS;
 export const MAX_LINK_LENGTH = 2048;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -24,7 +20,6 @@ function hostOf(line) {
   }
 }
 
-/** Validates a Proceed submission: { links: string[] | string, company?: honeypot }. Invalid lines ride along in value.invalid. */
 export function parseImport(body) {
   if (!body || typeof body !== "object") return { ok: false, status: 400, error: "Send a JSON body with a links field." };
   if (typeof body.company === "string" && body.company.trim() !== "") return { ok: false, status: 202, error: "ignored" };
@@ -43,7 +38,6 @@ export function parseImport(body) {
     if (parsed.ok) links.push(parsed.value);
     else invalid.push({ link: line.trim(), error: parsed.error });
   }
-  // Valid lines still import; each invalid one comes back with its reason. Only an all-invalid batch is an error.
   if (invalid.length && !links.length) return { ok: false, status: 400, error: "None of those links can be imported.", invalid };
 
   const seen = new Set();
@@ -58,7 +52,6 @@ export function parseImport(body) {
   return { ok: true, value: { links: unique, invalid } };
 }
 
-/** Comma-separated unit ids from a query string, or null when any id is malformed. */
 export function parseUnitIds(value) {
   const ids = (value ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   if (ids.length === 0 || ids.length > MAX_LINKS || !ids.every((id) => UUID.test(id))) return null;
@@ -124,20 +117,15 @@ export async function createUnits(sql, links, { userId = null } = {}) {
   return units;
 }
 
-/** The ids of everything a user has imported, newest first. */
 export async function userUnitIds(sql, userId) {
   const rows = await sql`
     SELECT unit_id FROM user_imports WHERE user_id = ${userId} ORDER BY created_at DESC`;
   return rows.map((r) => r.unit_id);
 }
 
-/**
- * Each unit with the artifacts it fed, their newest video result, and any exclusion reasons. Digests are
- * shared, but an artifact only counts when it's built entirely from videos in `visible` (all of the user's
- * imports), the same rule as the feed and skills, so a link's stage matches what the user can actually open.
- */
-export async function readUnits(sql, ids, visible = ids) {
+export async function readUnits(sql, viewer, ids) {
   if (ids.length === 0) return [];
+  const visible = await userUnitIds(sql, viewer);
   const rows = await sql`
     SELECT u.id, u.source_url, u.start_seconds, u.title, u.content_type, u.status, u.error, u.deferred_until,
       COALESCE(json_extract(iif(json_valid(u.transcript),u.transcript,'{}'),'$.preview_only'),0)=1 AS preview_only,
@@ -146,7 +134,8 @@ export async function readUnits(sql, ids, visible = ids) {
       (SELECT json_group_array(json(item)) FROM (
         SELECT json_object('id', a.id, 'version', a.version, 'name', a.name,
           'ingestion_status', a.ingestion_status, 'error', a.error,
-          'skill', json((SELECT json_object('status',s.status,'review_feedback',s.review_feedback) FROM skill_results s WHERE s.artifact_id=a.id AND s.artifact_version=a.version ORDER BY s.created_at DESC LIMIT 1)),
+          'video_requested', EXISTS(SELECT 1 FROM user_video_requests r WHERE r.user_id=${viewer} AND r.artifact_id=a.id AND r.artifact_version=a.version),
+          'skill', json((SELECT json_object('status',s.status,'review_feedback',s.review_feedback,'attempts',s.attempts) FROM skill_results s WHERE s.artifact_id=a.id AND s.artifact_version=a.version ORDER BY s.created_at DESC LIMIT 1)),
           'video', json((SELECT json_object('status', v.status, 'error', v.error, 'attempts', v.attempts, 'review_feedback', v.review_feedback)
             FROM video_results v WHERE v.artifact_id = a.id AND v.artifact_version = a.version
             ORDER BY v.created_at DESC, v.id DESC LIMIT 1))) AS item
@@ -159,7 +148,6 @@ export async function readUnits(sql, ids, visible = ids) {
   return dedupeContent(rows).map((row) => describeUnit(row));
 }
 
-/** The processor's MAX_OUTPUT_ATTEMPTS (server/src/outputs/store.ts): a failed skill or short with attempts left is retried. */
 export const MAX_OUTPUT_ATTEMPTS = 3;
 export const willRetry = (r) => r?.status === "failed" && Number.isInteger(r.attempts) && r.attempts < MAX_OUTPUT_ATTEMPTS;
 
@@ -181,6 +169,29 @@ export function plainReason(error, stage) {
 }
 
 const hasReadySkill = (artifact) => artifact.ingestion_status === "ready" && skillStatus(artifact.skill?.status, artifact.skill?.review_feedback) === "ready";
+
+const shortPassedReview = (video) => {
+  let judgment;
+  try { judgment = JSON.parse(video?.review_feedback ?? "null"); } catch {}
+  return video?.status === "ready" && judgment?.judge === "short-judge-v1" && judgment.passed === true && judgment.captions_burned === true;
+};
+
+function skillStage(a, at) {
+  if (shortPassedReview(a.video)) return at("ready", true);
+  if (hasReadySkill(a)) return at("skill_ready", true);
+  if (a.skill?.status === "failed" && !willRetry(a.skill)) return at("failed", true, PLAIN_FAILURE.failed);
+  return at("writing_skill", false);
+}
+
+function requestedVideoStage(a, at) {
+  const v = a.video;
+  const unfinished = !v || v.status === "pending" || v.status === "running";
+  if (hasReadySkill(a) && unfinished) return at("skill_ready", true);
+  if (unfinished) return at("rendering", false);
+  if (willRetry(v)) return at("render_retrying", false, v.error ?? null);
+  if (v.status === "failed") return at("render_failed", true, v.error ?? null);
+  return shortPassedReview(v) ? at("ready", true) : at("reviewing", false);
+}
 
 export function describeUnit(row, now = new Date()) {
   const base = {
@@ -209,18 +220,10 @@ export function describeUnit(row, now = new Date()) {
   }
 
   const stages = artifacts.map((a) => {
-    const v = a.video;
     if (a.ingestion_status === "failed") return at("failed", true, a.error ?? null);
     if (a.ingestion_status !== "ready") return at("digesting", false);
-    if (hasReadySkill(a) && (!v || v.status === "pending" || v.status === "running")) return at("skill_ready", true);
-    if (!v || v.status === "pending" || v.status === "running") return at("rendering", false);
-    if (willRetry(v)) return at("render_retrying", false, v.error ?? null);
-    if (v.status === "failed") return at("render_failed", true, v.error ?? null);
-    let judgment;
-    try { judgment = JSON.parse(v.review_feedback ?? "null"); } catch {}
-    if (judgment?.judge !== "short-judge-v1" || !judgment.passed || !judgment.captions_burned) return at("reviewing", false);
-    return at("ready", true);
+    return a.video_requested ? requestedVideoStage(a, at) : skillStage(a, at);
   });
-  const rank = ["failed", "render_failed", "digesting", "render_retrying", "rendering", "reviewing", "skill_ready", "ready"];
+  const rank = ["failed", "render_failed", "digesting", "writing_skill", "render_retrying", "rendering", "reviewing", "skill_ready", "ready"];
   return stages.reduce((best, s) => (rank.indexOf(s.stage) > rank.indexOf(best.stage) ? s : best));
 }

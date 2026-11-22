@@ -94,7 +94,7 @@ test('readUnits flags exactly the units whose transcript is marked preview_only'
     const add=async(n,transcript,method)=>(await sql`INSERT INTO ingested_units(submitted_url,source_url,content_type,status,transcript,extraction_method)
       VALUES(${`https://x.com/i/status/${n}`},${`https://x.com/i/status/${n}`},'x_post','ready',${JSON.stringify(transcript)},${method}) RETURNING id`)[0].id;
     const ids=[await add(1,{overview:'X Article by A.',preview_only:true},'x-embed:tweet-result:v2'),await add(2,{overview:'X post by A.'},'x-embed:tweet-result:v2'),await add(3,{overview:'X Article by A.',preview_only:true},'twitterapi.io:tweets:v2'),await add(4,{overview:'X Article by A.'},'twitterapi.io:tweets:v2')];
-    assert.deepEqual((await readUnits(sql,ids)).map((u)=>u.preview_only),[true,false,true,false]);
+    assert.deepEqual((await readUnits(sql,null,ids)).map((u)=>u.preview_only),[true,false,true,false]);
   }finally{sqlite.close();}
 });
 
@@ -122,11 +122,13 @@ test('D1 JSON output reads preserve source order, real errors, private digests a
     const skill=(await readSkills(sql,[u1.id,u2.id]))[0];
     assert.deepEqual(skill.action_items,[]);
     assert.deepEqual(skill.videos.map(v=>v.id),sources);
-    const units=await readUnits(sql,[u2.id,u1.id]);
+    const units=await readUnits(sql,user.id,[u2.id,u1.id]);
     assert.deepEqual(units.map(u=>u.id),sources);
     await sql`UPDATE ingested_units SET status='ready',transcript='{}'`;
-    assert.equal((await readUnits(sql,[u1.id],[u1.id]))[0].stage,'digesting');
-    assert.equal((await readUnits(sql,[u1.id],sources))[0].stage,'ready');
+    await sql`INSERT INTO user_imports(user_id,unit_id) VALUES(${user.id},${u1.id})`;
+    assert.equal((await readUnits(sql,user.id,[u1.id]))[0].stage,'digesting');
+    await sql`INSERT INTO user_imports(user_id,unit_id) VALUES(${user.id},${u2.id})`;
+    assert.equal((await readUnits(sql,user.id,[u1.id]))[0].stage,'ready');
     assert.equal((await createHandoff(sql,{},user,[u1.id],[s.id])).status,400);
     const brief=await createHandoff(sql,{},user,sources,[s.id]);
     assert.equal(brief.brief.status,'pending');
@@ -140,6 +142,30 @@ test('D1 JSON output reads preserve source order, real errors, private digests a
     await sql`UPDATE agent_briefs SET status='failed',error='provider error' WHERE id=${brief.brief.id}`;
     assert.equal((await readHandoff(sql,user)).error,'provider error');
     assert.equal((await createHandoff(sql,{},user,sources,[s.id])).brief.status,'pending');
+  }finally{sqlite.close();}
+});
+
+test('a shared link shows each account its own video request: only the requester sees the short rendering or failing',async()=>{
+  const {sqlite,sql}=database();
+  try {
+    const [watcher]=await sql`INSERT INTO users(email,password_hash) VALUES('watcher@example.com','hash') RETURNING id`;
+    const [requester]=await sql`INSERT INTO users(email,password_hash) VALUES('requester@example.com','hash') RETURNING id`;
+    const [unit]=await sql`INSERT INTO ingested_units(submitted_url,source_url,title,status,transcript) VALUES('https://youtu.be/jNQXAC9IVRw','https://www.youtube.com/watch?v=jNQXAC9IVRw','Me at the zoo','ready','{}') RETURNING id`;
+    for (const u of [watcher,requester]) await sql`INSERT INTO user_imports(user_id,unit_id) VALUES(${u.id},${unit.id})`;
+    const [a]=await sql`INSERT INTO artifacts(name,source_url,source_ids,processed_text,ingestion_status)
+      VALUES('Zoo','https://www.youtube.com/watch?v=jNQXAC9IVRw',${JSON.stringify([unit.id])},'text','ready') RETURNING id`;
+    await sql`INSERT INTO user_video_requests(user_id,artifact_id,artifact_version) VALUES(${requester.id},${a.id},1)`;
+    const seen=async(user)=>{const [u]=await readUnits(sql,user.id,[unit.id]);return [u.stage,u.settled,u.error];};
+
+    assert.deepEqual(await seen(watcher),['writing_skill',false,null]);
+    assert.deepEqual(await seen(requester),['rendering',false,null]);
+
+    await sql`INSERT INTO skill_results(artifact_id,artifact_version,status,skill_markdown,review_feedback)
+      VALUES(${a.id},1,'ready','---\nname: zoo\ndescription: "Zoo"\n---\nbody',${JSON.stringify({prompt_revision:SKILL_PROMPT_REVISION})})`;
+    await sql`INSERT INTO video_results(artifact_id,artifact_version,status,attempts,error) VALUES(${a.id},1,'failed',3,'ffmpeg exit 1')`;
+
+    assert.deepEqual(await seen(watcher),['skill_ready',true,null]);
+    assert.deepEqual(await seen(requester),['render_failed',true,"The short couldn't be finished."]);
   }finally{sqlite.close();}
 });
 
@@ -268,7 +294,7 @@ test('exact canonical source sets keep segments and combined lessons, with match
       assert.equal(skills.length,3);
       for (const item of feed) assert.ok(skills.some(s=>s.artifact.id===item.id && s.artifact.version===item.version && s.status==='ready'));
     }
-    assert.equal((await readUnits(sql,units)).length,3,'only identical URL and start pairs collapse in progress');
+    assert.equal((await readUnits(sql,null,units)).length,3,'only identical URL and start pairs collapse in progress');
   } finally {sqlite.close();}
 });
 

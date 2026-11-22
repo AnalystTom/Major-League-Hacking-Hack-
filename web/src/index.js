@@ -90,7 +90,7 @@ async function startImport(request, env, sql, user) {
   if (capped) return capped;
   const units = await createUnits(sql, parsed.value.links, { userId: user.id });
   const processor = await requestProcessing(env, units.filter((u) => u.linked).map((u) => u.id));
-  return json({ units: await readUnits(sql, units.map((u) => u.id), await userUnitIds(sql, user.id)), processor, invalid: parsed.value.invalid }, 201);
+  return json({ units: await readUnits(sql, user.id, units.map((u) => u.id)), processor, invalid: parsed.value.invalid }, 201);
 }
 
 async function api(request, env, url, sql) {
@@ -135,7 +135,7 @@ async function api(request, env, url, sql) {
   if (pathname === "/api/imports") {
     if (method === "POST") return startImport(request, env, sql, user);
     if (method === "GET") {
-      return json({ units: await readUnits(sql, await userUnitIds(sql, user.id)) });
+      return json({ units: await readUnits(sql, user.id, await userUnitIds(sql, user.id)) });
     }
   }
 

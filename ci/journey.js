@@ -16,6 +16,17 @@ test("stubbed X onboarding, scan, pick skills, persistence and explicit video op
       contentType: "image/png",
     });
   };
+  await page.addInitScript(() => {
+    window.seenStages = new Set();
+    new MutationObserver(() => {
+      for (const stage of document.querySelectorAll(".unit-stage"))
+        window.seenStages.add(stage.textContent);
+    }).observe(document, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+    });
+  });
   await page.goto("/start");
   await page.getByRole("link", { name: "Continue with X" }).click();
   await expect(
@@ -35,6 +46,15 @@ test("stubbed X onboarding, scan, pick skills, persistence and explicit video op
   expect(scanBox.width).toBeGreaterThan(700);
   expect(scanBox.height).toBeLessThan(650);
   await capture("scan");
+  const writing = page
+    .locator("[data-first-units] li")
+    .filter({ hasText: "Writing your skill" })
+    .first();
+  await expect(writing).toBeVisible();
+  await expect(writing.locator('.unit-scan [data-current="true"]')).toHaveText(
+    "Digest",
+  );
+  await capture("writing-skill");
   await expect(page.locator('[data-count="skills"]')).toHaveText("2");
   await expect(page.locator("[data-first-title]")).toHaveText(
     "Your skills are ready",
@@ -43,6 +63,9 @@ test("stubbed X onboarding, scan, pick skills, persistence and explicit video op
     "Processing started",
   );
   await capture("ready");
+  expect(await page.evaluate(() => [...window.seenStages])).not.toContain(
+    "Rendering the short",
+  );
   await page.locator('[data-open-skills="skills"]').click();
   const keeps = page.getByRole("checkbox", { name: /^Keep / });
   await expect(keeps).toHaveCount(2);
