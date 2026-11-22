@@ -1,37 +1,94 @@
 # CI operations
 
-Every job runs on GitHub-hosted `ubuntu-latest` runners, including the no-checkout `CI required` aggregate. No deployments, paid
-provider calls, credentials or production databases are used. Node 22 is pinned
-by major version to match the application. Jobs install locked dependencies with
-`npm ci` on a fresh runner. `setup-node` remote caching is off: its post-step save
-stalled for 9 minutes and hit the job timeout. Third-party actions are pinned to full
-commit SHAs.
+Every job runs on the local self-hosted runner `resurface`, selected with
+`[self-hosted, Linux, X64, resurface]`, including the no-checkout `CI required`
+aggregate. No job uses a GitHub-hosted runner, so the account's Actions minutes
+budget never blocks CI. No job uploads artifacts or uses the Actions cache, so the
+account's storage quota is never touched; results stay on the runner. No
+deployments, paid provider calls, credentials or production databases are used.
+Node 22 is installed by `setup-node` and pinned by major version to match the
+application. Jobs install locked dependencies with `npm ci`, which reuses the host's
+npm cache. `setup-node` remote caching is off. Third-party actions are pinned to
+full commit SHAs. `.github/actionlint.yaml` declares the `resurface` label.
 
-No self-hosted runner is used. Nothing in this workflow registers, removes or administers
-a runner, and no repository setting is changed by it.
+## Local runner
+
+The runner lives in `~/actions-runners/resurface` on the CI host and runs as the
+user systemd unit `gh-runner-resurface.service` inside `ci-runners.slice`, like the
+host's other runners. It is in the repository's `Default` runner group and has the
+labels `self-hosted`, `Linux`, `X64` and `resurface`. The unit sets
+`PATH=~/.local/share/mise/shims:~/.local/bin:/usr/local/bin:/usr/bin:/bin`, and the
+runner's `.path` file holds the same value.
+
+Host prerequisites, checked by the jobs rather than installed with `sudo`:
+
+| Need                | Where it comes from                                                                                             |
+| ------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Node 22             | `setup-node`, into the runner tool cache                                                                        |
+| Playwright Chromium | `npx playwright install chromium` into `$RUNNER_TOOL_CACHE/ms-playwright`, reused across runs                   |
+| ffmpeg, ffprobe     | host packages in `/usr/bin` (nightly/manual render step fails if missing)                                       |
+| Chromium            | `/usr/bin/chromium` or `/usr/bin/google-chrome-stable` (nightly/manual render step fails if missing)            |
+| Render font         | `RENDER_FONT=/usr/share/fonts/liberation/LiberationSans-Bold.ttf` (nightly/manual render step fails if missing) |
+
+Check the runner:
+
+```sh
+systemctl --user status gh-runner-resurface.service
+gh api repos/AnalystTom/Major-League-Hacking-Hack-/actions/runners --jq '.runners[] | {name, status, labels: [.labels[].name]}'
+```
+
+Re-register it if it disappears from the runners API. Never print the token.
+
+```sh
+systemctl --user stop gh-runner-resurface.service
+cd ~/actions-runners/resurface
+./config.sh remove --token "$(gh api -X POST repos/AnalystTom/Major-League-Hacking-Hack-/actions/runners/remove-token --jq .token)"
+./config.sh --unattended --url https://github.com/AnalystTom/Major-League-Hacking-Hack- \
+  --token "$(gh api -X POST repos/AnalystTom/Major-League-Hacking-Hack-/actions/runners/registration-token --jq .token)" \
+  --name resurface --labels resurface --runnergroup Default --work _work
+printf '%s' "$HOME/.local/share/mise/shims:$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin" > .path
+systemctl --user start gh-runner-resurface.service
+```
+
+If `config.sh remove` fails because GitHub already dropped the runner, delete
+`.runner`, `.credentials` and `.credentials_rsaparams` in that directory and
+register again. For a fresh host, unpack the official Linux x64 runner archive into
+`~/actions-runners/resurface`, register as above, then install the unit from
+`~/.config/systemd/user/gh-runner-resurface.service` with a
+`gh-runner-resurface.service.d/20-slice.conf` drop-in that sets
+`Slice=ci-runners.slice`, and run `systemctl --user enable --now gh-runner-resurface.service`.
 
 ## Fork pull requests
 
-Fork PRs are not run in CI. `Change scope`, `Fast checks` and `Journey` each carry a
-same-repository guard and are skipped for fork PRs. `CI required` checks out nothing and
-fails for a fork PR with a message that a maintainer must review the change and re-run CI
-from a same-repo branch, so it never passes silently.
+The repository is public and the runner is a private machine, so code from a fork
+PR must never run on it without a maintainer looking first. Two layers enforce that:
 
-The guards live in the workflow file, which a pull request can edit, so they are a policy
-gate rather than a security boundary.
+1. The repository setting **Require approval for all external contributors**
+   (`approval_policy: all_external_contributors`) holds every fork PR's workflow run
+   until a maintainer approves it. This is the security boundary, because a fork PR
+   runs the workflow file from the fork. Check it with
+   `gh api repos/AnalystTom/Major-League-Hacking-Hack-/actions/permissions/fork-pr-contributor-approval`.
+2. `Change scope`, `Fast checks` and `Journey` each carry a same-repository guard
+   (`github.event.pull_request.head.repo.full_name == github.repository`) and are
+   skipped for fork PRs. `CI required` checks out nothing and fails for a fork PR
+   with a message that a maintainer must review the change and re-run CI from a
+   same-repo branch, so it never passes silently.
+
+Do not approve a fork PR's run before reading its diff, including any change under
+`.github/`. The workflow uses no `pull_request_target` trigger and no secrets.
 
 ## Check contract
 
-| Job / step                 | Protects                                                                                                                                                                                                                                        |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Change scope               | Docs-only changes avoid installs and suites; unknown paths run checks; schedules/manual dispatch always validate                                                                                                                                |
-| Fast checks / format       | Prettier checks CI tooling, workflow and root package metadata; legacy product formatting is not retrofitted                                                                                                                                    |
-| Fast checks / lint         | JavaScript parsing and correctness rules across web source, browser modules, tests, processor and CI tooling; server TypeScript uses its strict compiler                                                                                        |
-| Fast checks / typecheck    | Strict server TypeScript contracts                                                                                                                                                                                                              |
-| Fast checks / tests        | Server unit tests (four render integration files in the heavy job), full web and processor suites, including actual Worker asset routing through the login gate                                                                                 |
-| Fast checks / server build | Emitted server build, independently of no-emit typechecking                                                                                                                                                                                     |
-| CI required                | Always reports success/failure, including docs-only skips; fails if scope or fast validation fails or is cancelled                                                                                                                              |
-| Journey and worker builds  | Nightly/manual apt install of ffmpeg and fonts-dejavu-core, then full server suite including ffmpeg renders; server build and web/processor Wrangler dry-run bundles, then isolated headless browser journey; serialized across repository runs |
+| Job / step                 | Protects                                                                                                                                                                                                                                                     |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Change scope               | Docs-only changes avoid installs and suites; unknown paths run checks; schedules/manual dispatch always validate                                                                                                                                             |
+| Fast checks / format       | Prettier checks CI tooling, workflow and root package metadata; legacy product formatting is not retrofitted                                                                                                                                                 |
+| Fast checks / lint         | JavaScript parsing and correctness rules across web source, browser modules, tests, processor and CI tooling; server TypeScript uses its strict compiler                                                                                                     |
+| Fast checks / typecheck    | Strict server TypeScript contracts                                                                                                                                                                                                                           |
+| Fast checks / tests        | Server unit tests (four render integration files in the heavy job), full web and processor suites, including actual Worker asset routing through the login gate                                                                                              |
+| Fast checks / server build | Emitted server build, independently of no-emit typechecking                                                                                                                                                                                                  |
+| CI required                | Always reports success/failure, including docs-only skips; fails if scope or fast validation fails or is cancelled                                                                                                                                           |
+| Journey and worker builds  | Nightly/manual check for host ffmpeg, ffprobe, Chromium and render font, then full server suite including ffmpeg renders; server build and web/processor Wrangler dry-run bundles, then isolated headless browser journey; serialized across repository runs |
 
 The browser journey uses the existing explicitly synthetic X provider and processor
 in `web/test/fixtures/x`. It checks new-user X consent/PKCE wiring, moving scan,
@@ -63,10 +120,13 @@ fixture ports 28757/28759 must be free; an existing listener is never reused.
 
 ## UI evidence review
 
-The journey attaches labelled synthetic-fixture screenshots of the scan, skill
-picker, kept source-linked skill and video request to `test-results/`; failures
-also retain a screenshot, trace and video. The artifact is retained seven days.
-For a UI change, download and open every screenshot, check desktop/mobile and
+The journey writes labelled synthetic-fixture screenshots of the scan, skill
+picker, kept source-linked skill and video request to `CI_EVIDENCE_DIR`; failures
+also retain a screenshot, trace and video. On the runner that directory is
+`~/actions-runners/resurface/_work/Major-League-Hacking-Hack-/evidence/journey-<run id>-<attempt>`,
+and the job summary prints the exact path and file list. Directories older than
+seven days are removed at the start of the next journey. Nothing is uploaded to
+GitHub. For a UI change, open every screenshot on the runner host, check desktop/mobile and
 keyboard behavior appropriate to the change, and add `## UI quality check` to the
 PR description with findings and evidence links. Screenshots are a human review
 aid, not a pixel-diff pass. This CI-only change does not alter product UI.
@@ -93,7 +153,7 @@ npm run lint
 npm run typecheck
 npm test
 npm run build
-npx playwright install --with-deps chromium
+npx playwright install chromium
 npm run test:journey
 ```
 
