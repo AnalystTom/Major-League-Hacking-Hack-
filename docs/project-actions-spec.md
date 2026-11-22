@@ -251,7 +251,7 @@ Signed-out requests to session routes get `401`. Rate limits: sign-up, sign-in a
 
 **Duplicate records.** Historical rows remain stored. Import lists collapse only identical URL/start identities; artifact lists collapse only identical canonical source sets, including start times. Overlapping sets such as `[A]` and `[A, B]` remain distinct. Artifact creation reuses a ready digest with the same contributing unit-ID set and removes duplicate sets within a batch (`server/src/ingest/store.ts`).
 
-**Unit shape.** `{ id, source_url, start_seconds, title, content_type, stage, settled, error, skill_ready }`. Personal progress, feed and skills follow [Who sees what](proceed-and-media.md#who-sees-what). `stage` collapses the unit's records into one state. `settled` means nothing more happens without a person. When a unit feeds several artifacts, the one furthest along is reported. `skill_ready` is true when any of the unit's artifacts has a ready skill, whatever its video's stage; the first screen's title (`firstScreenCopy` in `web/public/units.js`) counts it.
+**Unit shape.** `{ id, source_url, start_seconds, title, content_type, stage, settled, error, skill_ready }`. Personal progress, feed and skills follow [Who sees what](proceed-and-media.md#who-sees-what). `stage` collapses the unit's records into one state for the viewing account. `settled` means nothing more happens without a person. When a unit feeds several artifacts, the one furthest along is reported. `skill_ready` is true when any of the unit's artifacts has a ready skill, whatever its video's stage; the first screen's title (`firstScreenCopy` in `web/public/units.js`) counts it.
 
 `error` is a user-facing reason: plain stored failures pass through, while long or technical provider/tool failures become a short sentence for the failed stage (`plainReason` in `web/src/imports.js`). Quality-judge rejections never expose the judge's reasons: they show the stage sentence, while the internal receipt is retained. Stored exclusion reasons pass through unchanged. Original failures remain in the database and processor diagnostics; a missing reason stays unknown.
 
@@ -262,13 +262,18 @@ Signed-out requests to session routes get `401`. Rate limits: sign-up, sign-in a
 | `queued` | unit `pending` | no |
 | `limited` | unit `pending`, or `ready` with no digest yet, with `deferred_until` in the future (the processing limit is used up; `error` says when it starts) | yes |
 | `fetching` | unit `running` | no |
-| `failed` | unit `failed`, or an artifact with `ingestion_status = failed` (carries `error`) | yes |
+| `failed` | unit `failed`, or an artifact with `ingestion_status = failed` (carries `error`), or, for an account that did not request a video, a skill failed with no attempts left | yes |
 | `not_selected` | unit `ready`, no artifacts, one or more `artifact_exclusions` (reasons joined into `error`) | yes |
 | `digesting` | unit `ready` with no artifacts or exclusions yet, or an artifact not yet `ready` | no |
-| `rendering` | artifact ready; no video result, or it is `pending`/`running` | no |
-| `render_failed` | video result `failed` (carries `error`) | yes |
-| `reviewing` | video `ready` but lacking the current passing judge/burned-caption receipt; withheld pending rerender | no |
+| `writing_skill` | artifact ready, this account did not request a video, and its skill is not ready (or failed with attempts left) | no |
+| `skill_ready` | artifact ready with a ready skill, and this account's requested video (if any) has not finished | yes |
+| `rendering` | artifact ready, this account requested a video, no ready skill yet, and the video result is missing or `pending`/`running` | no |
+| `render_retrying` | this account requested a video; its video failed with attempts left (carries `error`) | no |
+| `render_failed` | this account requested a video; its video result `failed` with no attempts left (carries `error`) | yes |
+| `reviewing` | this account requested a video; video `ready` but lacking the current passing judge/burned-caption receipt; withheld pending rerender | no |
 | `ready` | artifact and video ready with the current passing judge/burned-caption receipt | yes |
+
+Only the account that requested a video sees `rendering`, `render_retrying`, `render_failed` or `reviewing`. Other viewers of a shared unit see `writing_skill`, `skill_ready` or `failed` in their place, and `ready` once a passing short exists.
 
 **Media references.** TigerData stores `r2:<key>` (resolved to `/media/<key>`) or an `https://` URL. Keys must match `videos|captions|posters/` followed by `[A-Za-z0-9._-]` path segments, with no `..`. The processor also stores narration under `audio/`, which isn't served. Anything else is treated as unplayable, and its item is left out of the feed. The bucket stays private; no storage credentials reach the browser.
 

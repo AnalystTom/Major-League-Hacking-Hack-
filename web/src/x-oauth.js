@@ -234,7 +234,7 @@ async function importBookmarks(request, env, sql, user) {
       initial_complete=${complete ? 1 : row.initial_complete},head_id=${complete ? null : head},last_seen_id=${complete ? (head ?? row.last_seen_id) : row.last_seen_id}
       WHERE user_id=${user.id} AND lease_token=${lease}`;
     const processor = await requestProcessing(env, units.filter(u => u.linked).map(u => u.id));
-    return json({ complete, read: count, imported: fresh.length, capped, processor, units: await readUnits(sql, units.map(u => u.id), await userUnitIds(sql, user.id)) });
+    return json({ complete, read: count, imported: fresh.length, capped, processor, units: await readUnits(sql, user.id, units.map(u => u.id)) });
   } catch (error) {
     logFailure('x bookmark import failed', error);
     const message = 'X bookmarks could not be imported. Your saved links are safe; try again later.';

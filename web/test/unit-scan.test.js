@@ -6,7 +6,7 @@ test("the scan follows backend stages without estimating completion", () => {
   assert.deepEqual(unitScanState({ stage: "queued", settled: false }), {
     label: "Queued", phase: 0, moving: false,
   });
-  for (const [stage, phase] of [["fetching", 0], ["digesting", 1], ["rendering", 2], ["reviewing", 2], ["render_retrying", 2]]) {
+  for (const [stage, phase] of [["fetching", 0], ["digesting", 1], ["writing_skill", 1], ["rendering", 2], ["reviewing", 2], ["render_retrying", 2]]) {
     const state = unitScanState({ stage, settled: false });
     assert.equal(state.phase, phase);
     assert.equal(state.moving, true);
@@ -17,6 +17,9 @@ test("the scan follows backend stages without estimating completion", () => {
     assert.equal(unitScanState({ stage, settled: true }).moving, false);
     assert.equal(unitScanState({ stage, settled: true }).phase, null);
   }
+  assert.deepEqual(unitScanState({ stage: "writing_skill", settled: false }), {
+    label: "Writing your skill", phase: 1, moving: true,
+  });
   assert.deepEqual(unitScanState({ stage: "unknown_provider_state", settled: false }), {
     label: "Waiting for a status update", phase: null, moving: false,
   });

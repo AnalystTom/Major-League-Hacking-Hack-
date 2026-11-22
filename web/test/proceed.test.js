@@ -81,7 +81,7 @@ test("describeUnit never shows a raw provider error", () => {
   const receipt = { judge: "short-judge-v1", passed: false, captions_burned: true, scores: { grounding: 4, clarity: 4, usefulness: 4, visuals: 4, subtitles: 2 }, reasons: ["Subtitles overlap the lesson title.", "The final caption is clipped. ".repeat(8)] };
   const rejected = `Quality judge rejected: ${JSON.stringify(receipt)}`;
   const skill = { status: "ready", review_feedback: JSON.stringify({ prompt_revision: SKILL_PROMPT_REVISION }) };
-  const judged = (attempts) => describeUnit({ ...unit, status: "ready", artifacts: [{ ingestion_status: "ready", skill, video: { status: "failed", error: rejected, attempts } }] });
+  const judged = (attempts) => describeUnit({ ...unit, status: "ready", artifacts: [{ ingestion_status: "ready", video_requested: true, skill, video: { status: "failed", error: rejected, attempts } }] });
   assert.deepEqual(
     [judged(1).stage, judged(1).error, judged(1).skill_ready],
     ["render_retrying", "The short hit a snag and is being tried again.", true],
@@ -95,7 +95,7 @@ test("describeUnit never shows a raw provider error", () => {
 
 test("describeUnit reports the furthest real stage", () => {
   const unit = (over) => ({ id: ID, source_url: "u", status: "ready", artifacts: [], exclusions: [], ...over });
-  const art = (over) => ({ ingestion_status: "ready", video: null, ...over });
+  const art = (over) => ({ ingestion_status: "ready", video_requested: true, video: null, ...over });
 
   assert.equal(describeUnit(unit({ status: "pending" })).stage, "queued");
   assert.equal(describeUnit(unit({ status: "running" })).stage, "fetching");
@@ -309,6 +309,27 @@ test("parseImport caps Substack posts at 20 independently of videos and X posts"
   const yt = Array.from({ length: 20 }, (_, i) => `https://www.youtube.com/watch?v=${String(i).padStart(11, "a")}`);
   assert.equal(parseImport({ links: [...yt, ...posts(20)] }).ok, true);
   assert.match(parseImport({ links: posts(21) }).error, /at most 20 Substack/);
+});
+
+test("a viewer who never asked for a video sees the skill being written, then ready, never another user's short failing", () => {
+  const skill = (status) => ({ status, review_feedback: JSON.stringify({ prompt_revision: SKILL_PROMPT_REVISION }), attempts: 1 });
+  const passed = JSON.stringify({ judge: "short-judge-v1", passed: true, captions_burned: true });
+  const describe = (video_requested, a) => describeUnit({ id: ID, source_url: "u", status: "ready", exclusions: [], artifacts: [{ ingestion_status: "ready", video_requested, video: null, ...a }] });
+  const seen = (video_requested, a) => { const d = describe(video_requested, a); return [d.stage, d.settled, d.error]; };
+
+  assert.deepEqual(seen(false, {}), ["writing_skill", false, null]);
+  for (const status of ["pending", "running"]) assert.deepEqual(seen(false, { skill: skill(status) }), ["writing_skill", false, null]);
+  assert.deepEqual(seen(false, { skill: { ...skill("failed"), attempts: 1 } }), ["writing_skill", false, null]);
+  assert.deepEqual(seen(false, { skill: { ...skill("failed"), attempts: 3 } }), ["failed", true, "Resurface couldn't turn this into a skill."]);
+  for (const video of [{ status: "pending" }, { status: "running" }, { status: "failed", error: "ffmpeg exit 1", attempts: 1 }, { status: "failed", error: "ffmpeg exit 1", attempts: 3 }, { status: "ready" }]) {
+    assert.deepEqual(seen(false, { skill: skill("ready"), video }), ["skill_ready", true, null], JSON.stringify(video));
+    assert.deepEqual(seen(false, { video }).slice(0, 2), ["writing_skill", false], JSON.stringify(video));
+  }
+  assert.deepEqual(seen(false, { skill: skill("ready"), video: { status: "ready", review_feedback: passed } }), ["ready", true, null]);
+
+  assert.deepEqual(seen(true, {}), ["rendering", false, null]);
+  assert.deepEqual(seen(true, { skill: skill("ready"), video: { status: "failed", error: "ffmpeg exit 1", attempts: 3 } }), ["render_failed", true, "The short couldn't be finished."]);
+  assert.deepEqual(seen(true, { skill: skill("ready"), video: { status: "failed", error: "ffmpeg exit 1", attempts: 1 } }), ["render_retrying", false, "The short hit a snag and is being tried again."]);
 });
 
 test('a current skill with no video settles the scan at skill ready while shorts are off',()=>{

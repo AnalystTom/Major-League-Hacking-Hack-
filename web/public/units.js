@@ -10,6 +10,7 @@ export const STAGE = {
   limited: "Limit reached",
   fetching: "Reading the source",
   digesting: "Picking out what's useful",
+  writing_skill: "Writing your skill",
   rendering: "Rendering the short",
   reviewing: "Checking short quality",
   ready: "Ready to watch",
@@ -58,10 +59,10 @@ export function firstScreenCopy(units) {
 const OPENABLE = /^https:\/\/(?:www\.youtube\.com\/watch\?v=[\w-]{11}|x\.com\/i\/status\/\d{1,19}|[a-z0-9-]+\.substack\.com\/p\/[\w-]+)$/;
 
 const PHASE = {
-  queued: 0, fetching: 0, digesting: 1,
+  queued: 0, fetching: 0, digesting: 1, writing_skill: 1,
   rendering: 2, reviewing: 2, render_retrying: 2, video_requested: 2,
 };
-const MOVING = new Set(["fetching", "digesting", "rendering", "reviewing", "render_retrying"]);
+const MOVING = new Set(["fetching", "digesting", "writing_skill", "rendering", "reviewing", "render_retrying"]);
 
 export function unitScanState(unit) {
   return {
