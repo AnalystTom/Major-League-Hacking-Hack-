@@ -71,17 +71,15 @@ keyboard behavior appropriate to the change, and add `## UI quality check` to th
 PR description with findings and evidence links. Screenshots are a human review
 aid, not a pixel-diff pass. This CI-only change does not alter product UI.
 
-## Branch protection (owner approval required)
+## Branch protection
 
-Settings are unchanged. Exact required check context: **CI required**.
-After the workflow has reported that context, the owner
-can approve this one-line command:
+`main` requires the **CI required** check and requires branches to be up to date before merging. `enforce_admins` is off, so repository admins can still bypass it. It was applied on 2026-11-22 with this command:
 
 ```sh
 gh-axi api PUT repos/AnalystTom/Major-League-Hacking-Hack-/branches/main/protection --input - <<< '{"required_status_checks":{"strict":true,"contexts":["CI required"]},"enforce_admins":false,"required_pull_request_reviews":null,"restrictions":null}'
 ```
 
-This enables the named check and requires the branch to be up to date. It is a proposal for the currently unprotected main, not a command CI runs.
+Read the current settings with `gh api repos/AnalystTom/Major-League-Hacking-Hack-/branches/main/protection`.
 
 ## Local reproduction
 

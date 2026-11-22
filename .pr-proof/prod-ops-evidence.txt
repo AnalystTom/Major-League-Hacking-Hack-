@@ -1,0 +1,30 @@
+# gh api repos/AnalystTom/Major-League-Hacking-Hack-/branches/main/protection (before)
+{"message":"Branch not protected","status":"404"}
+# after
+{
+  "required_status_checks": {
+    "url": "https://api.github.com/repos/AnalystTom/Major-League-Hacking-Hack-/branches/main/protection/required_status_checks",
+    "strict": true,
+    "contexts": [
+      "CI required"
+    ],
+    "contexts_url": "https://api.github.com/repos/AnalystTom/Major-League-Hacking-Hack-/branches/main/protection/required_status_checks/contexts",
+    "checks": [
+      {
+        "context": "CI required",
+        "app_id": 15368
+      }
+    ]
+  },
+  "enforce_admins": {
+    "url": "https://api.github.com/repos/AnalystTom/Major-League-Hacking-Hack-/branches/main/protection/enforce_admins",
+    "enabled": false
+  },
+  "required_pull_request_reviews": null,
+  "restrictions": null
+}
+# curl https://resurface-api.thomasmann2001.workers.dev/health (before)
+200 {"ok":true,"busy":0}
+# after (subdomain disabled 2026-11-22T10:19:11Z)
+try1 404 error code: 1042 
+web worker /: 302
