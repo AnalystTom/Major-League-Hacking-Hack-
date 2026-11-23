@@ -18,7 +18,15 @@ Status: final. Option A "Tidy Current" is the pick for Resurface. Values are rea
 | Danger | `#b8322b` / `#ff8a75` |
 | Night surface (app, sheets, video) | `#221f1b` / `#0e0d0b` |
 | Night raised surface | `#312c26` / `#2a2722` |
-| Text on night / secondary on night | `#f6f6ef` / `#b7b2a6` (light), `#f2f0e8` / `#a9a498` (dark) |
+| Text on night | `#f6f6ef` / `#f2f0e8` |
+| Secondary text on night | `#b7b2a6` / `#a9a498` |
+| Error text on night | `#f39a91` / `#f39a91` |
+| Shadow | `0 1px 0 rgba(31,29,26,.06), 0 18px 40px -24px rgba(31,29,26,.45)` / `0 1px 0 rgba(0,0,0,.3), 0 18px 40px -20px rgba(0,0,0,.8)` |
+| Illustration violet | `#b9a4f5` / `#b9a4f5` |
+| Illustration signal | `#4cc38f` / `#4cc38f` |
+| Illustration amber | `#f2b84b` / `#f2b84b` |
+| Illustration sky | `#7fb2ff` / `#7fb2ff` |
+| Illustration coral | `#f08079` / `#f08079` |
 | Heading, button font | Funnel Display (700 to 800) |
 | Body font | Funnel Sans (400 to 700) |
 | Mono font | Martian Mono (400, 600) |
@@ -86,7 +94,7 @@ Target scale (applies only when a rule is next edited, never as a sweep): 12, 14
 
 - Gutter: `--gutter: clamp(16px, 4vw, 48px)`. Max content width `--max: 1200px`. `--inline` centres content to that width.
 - Spacing steps (target): 4, 8, 12, 16, 24, 32, 48, 64, 96. Legacy gaps (6, 10, 14, 18, 20, 22, 28) stay until their rule is touched.
-- Radius scale: `--r-sm` 8px (code wells, chips), `--r-md` 12px (buttons, inputs, list rows), `--r-lg` 16px (cards, results), `--r-pill` 999px (counts, journey pills). Legacy radii 10, 14, 18, 20, 22, 24, 26 stay in the shipping CSS until a page is redesigned; new work uses only the four tokens.
+- Radius scale: `--r-sm` 8px (code wells, chips), `--r-md` 12px (buttons, inputs, list rows), `--r-lg` 16px (cards, results), `--r-pill` 999px (counts, journey pills). Legacy radii 2, 6, 10, 14, 18, 20, 22, 24, 26 stay in the shipping CSS until a page is redesigned; new work uses only the four tokens.
 - Shadow: `--shadow` for video, onboard card, reel, status panel. Primary button: inset `0 -3px 0 rgba(0,0,0,.16)` press edge plus a coloured lift on hover.
 
 ## Layout and breakpoints

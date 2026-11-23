@@ -424,6 +424,18 @@ for (const viewport of [
   });
 }
 
+test("the privacy page background follows the system light or dark setting", async ({
+  page,
+}) => {
+  const backgroundFor = async (colorScheme) => {
+    await page.emulateMedia({ colorScheme });
+    await page.goto("/privacy", { waitUntil: "load" });
+    return page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  };
+  expect(await backgroundFor("dark")).toBe("rgb(23, 22, 19)");
+  expect(await backgroundFor("light")).toBe("rgb(246, 246, 239)");
+});
+
 test("an unknown address shows the not-found page", async ({ page }) => {
   const response = await page.goto("/no-such-page");
   expect(response.status()).toBe(404);
