@@ -2,7 +2,7 @@
 
 Status: final. Option A "Tidy Current" is the pick for Resurface. Values are read from the shipping code. The spec changes no page except the privacy and terms pages, which now follow the system dark setting. The legacy alternate palettes, the palette picker and the off-scale radii remain as follow-ups.
 
-**Figma kit:** Simple Design System (Figma Community kit, added to the "Product design systems" file, https://www.figma.com/design/GJF5f61UdzavA1qZPQWdZM, page "Resurface"). Use its Button, Input, Textarea, Card, Badge, Dialog, Sheet, Select, Progress and List components and its colour, text and radius variables, with these overrides.
+**Figma kit:** kit = Simple Design System (Figma Community kit); target = page "Resurface" in the "Product design systems" Figma file (https://www.figma.com/design/GJF5f61UdzavA1qZPQWdZM), to be built from this spec. The page does not exist yet. Use its Button, Input, Textarea, Card, Badge, Dialog, Sheet, Select, Progress and List components and its colour, text and radius variables, with these overrides.
 
 | Simple Design System variable | Resurface override (light / dark) |
 |---|---|
