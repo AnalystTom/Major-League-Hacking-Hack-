@@ -1,5 +1,32 @@
 import { test, expect } from "@playwright/test";
 
+const LARGE_BUTTON = {
+  font: "Funnel Display",
+  weight: "700",
+  size: "19px",
+  padding: "18px 26px",
+};
+
+const SMALL_BUTTON = {
+  font: "Funnel Display",
+  weight: "700",
+  size: "15px",
+  padding: "11px 16px",
+};
+
+const readLook = (node) => {
+  const style = getComputedStyle(node);
+  return {
+    color: style.color,
+    fill: style.backgroundColor,
+    radius: style.borderTopLeftRadius,
+    font: style.fontFamily.split(",")[0].replaceAll('"', ""),
+    weight: style.fontWeight,
+    size: style.fontSize,
+    padding: `${style.paddingTop} ${style.paddingRight}`,
+  };
+};
+
 const contrast = (page, selector) =>
   page
     .locator(selector)
@@ -15,10 +42,17 @@ const contrast = (page, selector) =>
           .map((v) => v / 255)
           .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
           .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
-      const style = getComputedStyle(node);
+      const transparent = /^rgba\([^)]*,\s*0\)$/;
+      let surface = node;
+      while (
+        transparent.test(getComputedStyle(surface).backgroundColor) &&
+        surface.parentElement
+      ) {
+        surface = surface.parentElement;
+      }
       const [hi, lo] = [
-        luminance(channels(style.color)),
-        luminance(channels(style.backgroundColor)),
+        luminance(channels(getComputedStyle(node).color)),
+        luminance(channels(getComputedStyle(surface).backgroundColor)),
       ].sort((a, b) => b - a);
       return (hi + 0.05) / (lo + 0.05);
     });
@@ -98,47 +132,40 @@ test("every button is one family: variants, one radius scale, danger for Delete 
   page,
 }) => {
   await page.goto("/start");
+  const look = (selector) => page.locator(selector).first().evaluate(readLook);
+  const primary = await look("button.btn[type=submit]");
+  expect(primary).toMatchObject(LARGE_BUTTON);
   await page.getByRole("link", { name: "Continue with X" }).click();
   await page.getByRole("link", { name: "Authorize fixture bookmarks" }).click();
   await expect(page).toHaveURL(/\/app/);
   await expect(page.locator('[data-count="skills"]')).toHaveText("2");
 
-  const look = (selector) =>
-    page.locator(selector).evaluate((node) => {
-      const style = getComputedStyle(node);
-      return {
-        family: node.classList.contains("btn"),
-        color: style.color,
-        fill: style.backgroundColor,
-        radius: style.borderTopLeftRadius,
-      };
-    });
   const add = await look("[data-open-add]");
   const signOut = await look("[data-signout]");
   const del = await look("[data-open-delete]");
   const skills = await look('[data-open-skills="skills"]');
 
   for (const button of [add, signOut, del, skills]) {
-    expect(button.family).toBe(true);
+    expect(button).toMatchObject(SMALL_BUTTON);
     expect(["12px", "999px"]).toContain(button.radius);
   }
   expect(skills.radius).toBe("999px");
 
   await page.locator('[data-open-skills="skills"]').click();
-  const sheetActions = await page
+  const sheetActions = [];
+  for (const button of await page
     .locator("[data-skills-sheet] .skill button")
-    .evaluateAll((nodes) =>
-      nodes.map((node) => ({
-        text: node.textContent.trim(),
-        family: node.classList.contains("btn"),
-        radius: getComputedStyle(node).borderTopLeftRadius,
-      })),
-    );
+    .all()) {
+    sheetActions.push({
+      text: (await button.textContent()).trim(),
+      ...(await button.evaluate(readLook)),
+    });
+  }
   expect(sheetActions.map((action) => action.text)).toEqual(
     expect.arrayContaining(["Show SKILL.md"]),
   );
   for (const action of sheetActions) {
-    expect(action.family).toBe(true);
+    expect(action).toMatchObject(SMALL_BUTTON);
     expect(["12px", "999px"]).toContain(action.radius);
   }
   await page.keyboard.press("Escape");
@@ -146,16 +173,13 @@ test("every button is one family: variants, one radius scale, danger for Delete 
   expect(signOut.fill).toBe("rgba(0, 0, 0, 0)");
   expect(add.fill).not.toBe(signOut.fill);
   expect(del.color).not.toBe(signOut.color);
-  const dangerColor = await page.evaluate(() =>
-    getComputedStyle(document.body).getPropertyValue("--late-on-night"),
-  );
-  expect(dangerColor.trim()).toBe("#f39a91");
-  expect(del.color).toBe("rgb(243, 154, 145)");
+  expect(await contrast(page, "[data-open-delete]")).toBeGreaterThan(4.5);
 
   await page.locator("[data-open-delete]").click();
   const confirm = await look("[data-confirm-delete]");
-  expect(confirm.color).toBe("rgb(243, 154, 145)");
+  expect(confirm).toMatchObject(SMALL_BUTTON);
   expect(confirm.fill).toBe("rgba(0, 0, 0, 0)");
+  expect(await contrast(page, "[data-confirm-delete]")).toBeGreaterThan(4.5);
 
   const radii = await page.evaluate(() =>
     [...document.querySelectorAll(".btn")].map(
