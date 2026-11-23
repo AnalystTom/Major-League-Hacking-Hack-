@@ -1,17 +1,11 @@
-// Turns a pasted Substack post link into the canonical post URL an ingested unit stores.
-// Only public *.substack.com posts are recognized (custom domains can't be told apart from other sites).
-// Kept free of Worker APIs so it can be unit tested with node --test.
-
 const RESERVED = new Set(["www", "open", "on", "api", "support", "substack", "cdn", "email"]);
 const PUB = /^[a-z0-9][a-z0-9-]*$/;
 const SLUG = /^[\w-]+$/;
 
-export const SUBSTACK_SUPPORTED = false;
 export const SUBSTACK_UNSUPPORTED_MESSAGE = "Substack links are not supported yet.";
 
 export const isSubstackHost = (host) => host === "substack.com" || host.endsWith(".substack.com");
 
-/** Returns { ok, value: { submitted_url, source_url, start_seconds, content_type } } or { ok: false, error }. */
 export function parseSubstackLink(input) {
   const submitted = typeof input === "string" ? input.trim() : "";
   let url;

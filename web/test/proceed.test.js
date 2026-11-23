@@ -1,8 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseXLink } from "../src/xpost.js";
-import { UNSUPPORTED_LINK, parseYouTubeLink } from "../src/youtube.js";
-import { SUBSTACK_SUPPORTED, SUBSTACK_UNSUPPORTED_MESSAGE } from "../src/substack.js";
+import { parseYouTubeLink } from "../src/youtube.js";
 import { describeUnit, parseImport, parseUnitIds } from "../src/imports.js";
 import { SKILL_PROMPT_REVISION } from "../src/skill-policy.js";
 import { isMediaKey, parseRange, resolveMediaRef } from "../src/media.js";
@@ -46,7 +45,7 @@ test("parseImport validates, reports every bad line, and de-duplicates", () => {
   assert.deepEqual(mixed.value.invalid.map((i) => i.link), ["https://vimeo.com/1", "https://a.substack.com/"]);
   assert.ok(mixed.value.invalid.every((i) => i.error));
   const customDomain = parseImport({ links: ["https://youtu.be/VQy50fuxI34", "https://newsletter.pragmaticengineer.com/p/how-anthropic-built-artifacts"] });
-  assert.equal(customDomain.value.invalid[0].error, UNSUPPORTED_LINK);
+  assert.equal(customDomain.value.invalid[0].error, "Only YouTube videos and X posts are supported for now.");
   assert.deepEqual(parseImport({ links: ["https://youtu.be/VQy50fuxI34"] }).value.invalid, []);
   const bad = parseImport({ links: ["https://vimeo.com/1", "https://vimeo.com/2"] });
   assert.equal(bad.status, 400);
@@ -292,35 +291,15 @@ test("canonicalises Substack post links and rejects non-posts", async () => {
   }
 });
 
-test("parseImport accepts YouTube and Substack together and de-duplicates posts", { skip: !SUBSTACK_SUPPORTED }, () => {
-  const r = parseImport({ links: "https://youtu.be/VQy50fuxI34\nhttps://a.substack.com/p/x?r=1\nhttps://a.substack.com/p/x#c" });
-  assert.equal(r.ok, true);
-  assert.deepEqual(r.value.links.map((l) => [l.content_type ?? "youtube_video", l.source_url]), [
-    ["youtube_video", "https://www.youtube.com/watch?v=VQy50fuxI34"],
-    ["substack_post", "https://a.substack.com/p/x"],
-  ]);
-  const bad = parseImport({ links: ["https://a.substack.com/", "https://vimeo.com/1"] });
-  assert.equal(bad.ok, false);
-  assert.equal(bad.invalid.length, 2);
-  assert.equal(parseImport({ links: ["https://a.substack.com/", "https://youtu.be/VQy50fuxI34"] }).value.invalid.length, 1);
-});
-
-test("pasted Substack links are rejected up front with the unsupported message while the switch is off", { skip: SUBSTACK_SUPPORTED }, () => {
+test("pasted Substack links are refused up front with the unsupported message", () => {
   const all = parseImport({ links: "https://a.substack.com/p/x\nhttps://open.substack.com/pub/a/p/x" });
   assert.equal(all.ok, false);
-  assert.deepEqual(all.invalid.map((i) => i.error), [SUBSTACK_UNSUPPORTED_MESSAGE, SUBSTACK_UNSUPPORTED_MESSAGE]);
+  assert.deepEqual(all.invalid.map((i) => i.error), ["Substack links are not supported yet.", "Substack links are not supported yet."]);
   const mixed = parseImport({ links: ["https://youtu.be/VQy50fuxI34", "https://a.substack.com/p/x"] });
   assert.equal(mixed.ok, true);
-  assert.deepEqual(mixed.value.links.map((l) => l.content_type ?? "youtube_video"), ["youtube_video"]);
-  assert.deepEqual(mixed.value.invalid, [{ link: "https://a.substack.com/p/x", error: SUBSTACK_UNSUPPORTED_MESSAGE }]);
-  assert.match(parseImport({ links: [] }).error, /YouTube or X post link/);
-});
-
-test("parseImport caps Substack posts at 20 independently of videos and X posts", { skip: !SUBSTACK_SUPPORTED }, () => {
-  const posts = (n) => Array.from({ length: n }, (_, i) => `https://pub.substack.com/p/post-${i}`);
-  const yt = Array.from({ length: 20 }, (_, i) => `https://www.youtube.com/watch?v=${String(i).padStart(11, "a")}`);
-  assert.equal(parseImport({ links: [...yt, ...posts(20)] }).ok, true);
-  assert.match(parseImport({ links: posts(21) }).error, /at most 20 Substack/);
+  assert.deepEqual(mixed.value.links.map((l) => l.source_url), ["https://www.youtube.com/watch?v=VQy50fuxI34"]);
+  assert.deepEqual(mixed.value.invalid, [{ link: "https://a.substack.com/p/x", error: "Substack links are not supported yet." }]);
+  assert.equal(parseImport({ links: [] }).error, "Paste at least one YouTube or X post link.");
 });
 
 test("a viewer who never asked for a video sees the skill being written, then ready, never another user's short failing", () => {

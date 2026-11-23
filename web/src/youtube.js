@@ -1,8 +1,4 @@
-import { SUBSTACK_SUPPORTED } from "./substack.js";
-
-export const UNSUPPORTED_LINK = SUBSTACK_SUPPORTED
-  ? "Only YouTube videos, X posts and Substack posts on a substack.com address are supported for now."
-  : "Only YouTube videos and X posts are supported for now.";
+export const UNSUPPORTED_LINK = "Only YouTube videos and X posts are supported for now.";
 
 const ID = /^[A-Za-z0-9_-]{11}$/;
 const HOSTS = new Set(["youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"]);
