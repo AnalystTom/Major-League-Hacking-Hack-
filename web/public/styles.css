@@ -52,8 +52,8 @@ button { font: inherit; color: inherit; }
 .btn-small { font-size: .9375rem; padding: 11px 16px; }
 .btn-pill { border-radius: var(--r-pill); }
 .btn-secondary, .btn-ghost, .btn-danger { box-shadow: inset 0 0 0 2px var(--btn-edge); }
-.btn-secondary:hover, .btn-ghost:hover, .btn-danger:hover { transform: none; box-shadow: inset 0 0 0 2px var(--btn-edge-hover); background: var(--btn-fill-hover); color: var(--btn-fg-hover); }
-.btn-secondary:active, .btn-ghost:active, .btn-danger:active { box-shadow: inset 0 0 0 2px var(--btn-edge-hover); }
+.btn-secondary:hover:not(:disabled), .btn-ghost:hover:not(:disabled), .btn-danger:hover:not(:disabled) { transform: none; box-shadow: inset 0 0 0 2px var(--btn-edge-hover); background: var(--btn-fill-hover); color: var(--btn-fg-hover); }
+.btn-secondary:active:not(:disabled), .btn-ghost:active:not(:disabled), .btn-danger:active:not(:disabled) { box-shadow: inset 0 0 0 2px var(--btn-edge-hover); }
 .btn-secondary { --btn-fg: var(--ink); --btn-fill: transparent; --btn-edge: var(--ink); --btn-edge-hover: var(--ink); --btn-fill-hover: var(--ink); --btn-fg-hover: var(--bg); }
 .btn-ghost { --btn-fg: var(--ink); --btn-fill: transparent; --btn-edge: var(--rule); --btn-edge-hover: var(--ink); }
 .btn-danger { --btn-fg: var(--btn-danger, var(--late)); --btn-fill: transparent; --btn-edge: var(--btn-danger, var(--late)); --btn-edge-hover: var(--btn-danger, var(--late)); --btn-fill-hover: color-mix(in srgb, var(--btn-danger, var(--late)) 14%, transparent); }
@@ -284,7 +284,6 @@ button { font: inherit; color: inherit; }
 .feed-counter { font-family: var(--display); font-weight: 700; font-size: 1.0625rem; font-variant-numeric: tabular-nums; min-width: 4ch; }
 .feed-why { color: var(--ink-soft); font-size: 1.125rem; min-height: 3.4em; }
 
-.feed-actions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 10px; width: min(100%, 500px); }
 
 .feed-status { min-height: 1.4em; font-size: .9375rem; font-weight: 600; color: var(--accent-ink); }
 

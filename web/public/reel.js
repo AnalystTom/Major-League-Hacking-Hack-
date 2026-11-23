@@ -77,7 +77,7 @@ export function createReel(root) {
     const progress = el("i");
     const failed = el("div", { class: "reel-failed", hidden: true },
       el("p", { text: "This clip couldn't play." }),
-      el("button", { type: "button", class: "btn btn-small btn-ghost btn-pill", text: "Try again", onclick: () => { failed.hidden = true; video.load(); if (Number(slide.dataset.index) === active) play(video); } })
+      el("button", { type: "button", class: "btn btn-small btn-ghost", text: "Try again", onclick: () => { failed.hidden = true; video.load(); if (Number(slide.dataset.index) === active) play(video); } })
     );
     video.addEventListener("error", () => (failed.hidden = false));
     video.addEventListener("timeupdate", () => {
@@ -95,7 +95,7 @@ export function createReel(root) {
       ))
     );
 
-    const soundBtn = el("button", { type: "button", class: "btn btn-small btn-ghost btn-pill", "data-sound": true, "aria-pressed": String(soundOn), text: soundOn ? "Sound on" : "Tap for sound" });
+    const soundBtn = el("button", { type: "button", class: "btn btn-small btn-ghost", "data-sound": true, "aria-pressed": String(soundOn), text: soundOn ? "Sound on" : "Tap for sound" });
     const slide = el("article", { class: "reel-item", "data-index": String(index), "aria-label": item.name },
       el("div", { class: "reel-stage" },
         el("div", { class: "reel-picture" },
@@ -108,9 +108,9 @@ export function createReel(root) {
         sheet,
         el("div", { class: "reel-actions" },
           soundBtn,
-          el("button", { type: "button", class: "btn btn-small btn-ghost btn-pill", "aria-expanded": "false", text: "View sources",
+          el("button", { type: "button", class: "btn btn-small btn-ghost", "aria-expanded": "false", text: "View sources",
             onclick: (e) => { sheet.hidden = !sheet.hidden; e.currentTarget.setAttribute("aria-expanded", String(!sheet.hidden)); } }),
-          el("button", { type: "button", class: "btn btn-small btn-ghost btn-pill", text: "Skip", onclick: () => go(1) })
+          el("button", { type: "button", class: "btn btn-small btn-ghost", text: "Skip", onclick: () => go(1) })
         )
       )
     );
@@ -130,7 +130,7 @@ export function createReel(root) {
     if (item.skill?.status !== "ready") link?.remove();
     else if (!link) {
       const actions = slide.querySelector(".reel-actions");
-      actions.insertBefore(el("a", { class: "btn btn-small btn-ghost btn-pill reel-skill", href: `#${skillAnchor(item.id, item.version)}`, text: "View skill" }), actions.lastElementChild);
+      actions.insertBefore(el("a", { class: "btn btn-small btn-ghost reel-skill", href: `#${skillAnchor(item.id, item.version)}`, text: "View skill" }), actions.lastElementChild);
     }
   }
 
