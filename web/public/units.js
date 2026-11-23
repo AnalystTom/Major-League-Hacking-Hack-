@@ -39,7 +39,7 @@ export function settledNote(note, units) {
 export function firstScreenCopy(units) {
   if (units.length === 0) return {
     title: "Paste your first links",
-    lede: "Each YouTube video, X post or Substack post becomes a skill your coding agent can read, from the part worth keeping.",
+    lede: "Each YouTube video or X post becomes a skill your coding agent can read, from the part worth keeping.",
   };
   if (units.some((u) => !u.settled)) return {
     title: "Reading your links",

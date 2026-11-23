@@ -111,7 +111,7 @@ form.addEventListener("submit", async (e) => {
   const button = form.querySelector("button");
   const links = String(new FormData(form).get("links") || "").split(/\s+/).filter(Boolean);
   if (!links.length) {
-    status.textContent = "Paste at least one YouTube, X post or Substack link.";
+    status.textContent = "Paste at least one YouTube or X post link.";
     status.dataset.tone = "error";
     return;
   }

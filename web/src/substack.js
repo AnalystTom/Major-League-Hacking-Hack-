@@ -6,6 +6,9 @@ const RESERVED = new Set(["www", "open", "on", "api", "support", "substack", "cd
 const PUB = /^[a-z0-9][a-z0-9-]*$/;
 const SLUG = /^[\w-]+$/;
 
+export const SUBSTACK_SUPPORTED = false;
+export const SUBSTACK_UNSUPPORTED_MESSAGE = "Substack links are not supported yet.";
+
 export const isSubstackHost = (host) => host === "substack.com" || host.endsWith(".substack.com");
 
 /** Returns { ok, value: { submitted_url, source_url, start_seconds, content_type } } or { ok: false, error }. */

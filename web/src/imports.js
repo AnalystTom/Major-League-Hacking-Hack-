@@ -1,6 +1,6 @@
 import { skillStatus } from "./skill-policy.js";
 import { dedupeContent, sourceKey } from "./content.js";
-import { isSubstackHost, parseSubstackLink } from "./substack.js";
+import { SUBSTACK_SUPPORTED, SUBSTACK_UNSUPPORTED_MESSAGE, isSubstackHost, parseSubstackLink } from "./substack.js";
 import { isXLink, parseXLink } from "./xpost.js";
 import { parseYouTubeLink } from "./youtube.js";
 
@@ -20,6 +20,9 @@ function hostOf(line) {
   }
 }
 
+const parseSubstack = (line) => (SUBSTACK_SUPPORTED ? parseSubstackLink(line) : { ok: false, error: SUBSTACK_UNSUPPORTED_MESSAGE });
+const PASTE_KINDS = SUBSTACK_SUPPORTED ? "YouTube, X post or Substack" : "YouTube or X post";
+
 export function parseImport(body) {
   if (!body || typeof body !== "object") return { ok: false, status: 400, error: "Send a JSON body with a links field." };
   if (typeof body.company === "string" && body.company.trim() !== "") return { ok: false, status: 202, error: "ignored" };
@@ -27,14 +30,14 @@ export function parseImport(body) {
   const raw = Array.isArray(body.links) ? body.links : typeof body.links === "string" ? body.links.split(/\s+/) : [];
   if (raw.length > MAX_LINKS * 4) return { ok: false, status: 400, error: `Paste at most ${MAX_LINKS} links at a time.` };
   const lines = raw.filter((l) => typeof l === "string" && l.trim() !== "");
-  if (lines.length === 0) return { ok: false, status: 400, error: "Paste at least one YouTube, X post or Substack link." };
-  if (lines.length > MAX_LINKS) return { ok: false, status: 400, error: `Paste at most ${MAX_YOUTUBE_LINKS} YouTube videos, ${MAX_X_LINKS} X posts and ${MAX_SUBSTACK_LINKS} Substack posts at a time.` };
+  if (lines.length === 0) return { ok: false, status: 400, error: `Paste at least one ${PASTE_KINDS} link.` };
+  if (lines.length > MAX_LINKS) return { ok: false, status: 400, error: SUBSTACK_SUPPORTED ? `Paste at most ${MAX_YOUTUBE_LINKS} YouTube videos, ${MAX_X_LINKS} X posts and ${MAX_SUBSTACK_LINKS} Substack posts at a time.` : `Paste at most ${MAX_YOUTUBE_LINKS} YouTube videos and ${MAX_X_LINKS} X posts at a time.` };
   if (lines.some((l) => l.length > MAX_LINK_LENGTH)) return { ok: false, status: 400, error: "One of those links is too long." };
 
   const links = [];
   const invalid = [];
   for (const line of lines) {
-    const parsed = isXLink(line) ? parseXLink(line) : isSubstackHost(hostOf(line)) ? parseSubstackLink(line) : parseYouTubeLink(line);
+    const parsed = isXLink(line) ? parseXLink(line) : isSubstackHost(hostOf(line)) ? parseSubstack(line) : parseYouTubeLink(line);
     if (parsed.ok) links.push(parsed.value);
     else invalid.push({ link: line.trim(), error: parsed.error });
   }

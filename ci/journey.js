@@ -371,7 +371,7 @@ test("an unsupported link's error wraps inside the card on a phone", async ({
     );
   await page.locator('[data-add] button[type="submit"]').click();
   const status = page.locator("[data-add] .form-status");
-  await expect(status).toContainText("substack.com address");
+  await expect(status).toContainText("Only YouTube videos and X posts are supported");
   const card = await page.locator("[data-first]").boundingBox();
   const message = await status.boundingBox();
   expect(message.x + message.width).toBeLessThanOrEqual(card.x + card.width);
@@ -379,6 +379,40 @@ test("an unsupported link's error wraps inside the card on a phone", async ({
     await status.evaluate((node) => node.scrollWidth <= node.clientWidth),
   ).toBe(true);
 });
+
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 390, height: 844 },
+]) {
+  test(`a pasted Substack link is refused up front and the hint no longer names Substack at ${viewport.width}`, async ({
+    page,
+  }, info) => {
+    await page.route("**/api/x", (route) =>
+      route.fulfill({ json: { available: false, connected: false } }),
+    );
+    const response = await page.request.post("/api/auth/signup", {
+      data: {
+        email: `substack-${viewport.width}-${Date.now()}@example.test`,
+        password: "isolated-fixture-password",
+      },
+    });
+    expect(response.ok()).toBe(true);
+    await page.setViewportSize(viewport);
+    await page.goto("/app");
+    await expect(page.locator("body")).not.toContainText("Substack");
+    const form = page.locator("[data-add]");
+    await expect(form.locator("label")).toContainText("YouTube or X post links");
+    await form.locator("textarea").fill("https://newsletter.substack.com/p/evals-first");
+    await form.locator('button[type="submit"]').click();
+    const status = form.locator(".form-status");
+    await expect(status).toContainText("Substack links are not supported yet");
+    await expect(page.locator("body")).not.toContainText("Couldn't read this source");
+    const units = await page.request.get("/api/skills");
+    expect(units.ok()).toBe(true);
+    expect(JSON.stringify(await units.json())).not.toContain("substack.com");
+    await page.screenshot({ path: info.outputPath(`substack-${viewport.width}.png`) });
+  });
+}
 
 test("an unknown address shows the not-found page", async ({ page }) => {
   const response = await page.goto("/no-such-page");
