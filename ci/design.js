@@ -172,12 +172,22 @@ test("every button is one family: variants, one radius scale, danger for Delete 
   await expect(page.locator("[data-skills-sheet]")).not.toHaveAttribute("open");
   expect(signOut.fill).toBe("rgba(0, 0, 0, 0)");
   expect(add.fill).not.toBe(signOut.fill);
-  expect(del.color).not.toBe(signOut.color);
+  const dangerText = await page.evaluate(() => {
+    const probe = document.createElement("span");
+    probe.style.color = "var(--late-on-night)";
+    document.body.append(probe);
+    const resolved = getComputedStyle(probe).color;
+    probe.remove();
+    return resolved;
+  });
+  expect(del.color).toBe(dangerText);
+  expect(del.fill).toBe("rgba(0, 0, 0, 0)");
   expect(await contrast(page, "[data-open-delete]")).toBeGreaterThan(4.5);
 
   await page.locator("[data-open-delete]").click();
   const confirm = await look("[data-confirm-delete]");
   expect(confirm).toMatchObject(SMALL_BUTTON);
+  expect(confirm.color).toBe(dangerText);
   expect(confirm.fill).toBe("rgba(0, 0, 0, 0)");
   expect(await contrast(page, "[data-confirm-delete]")).toBeGreaterThan(4.5);
 
