@@ -125,7 +125,7 @@ Used for: Sign out is ghost, Delete account (bar and confirm dialog) is danger, 
 
 **Inputs.** 2px `--rule` border, 12px radius, 12px by 14px padding, `--paper` fill, body font. Link textareas use Mono. Focus replaces the outline with an `--accent` border (known gap: the ring is removed).
 
-**Cards.** `--paper` fill, 1px `--rule` border, 12 to 16px radius, 12 to 18px padding. Skill card: status chip, source line, title, description, path well, actions. `:target` adds an accent outline.
+**Cards.** `--paper` fill, 1px `--rule` border, 16px radius (`--r-lg`), 12 to 18px padding. Skill card: status chip, source line, title, description, path well, actions. `:target` adds an accent outline.
 
 **Nav.** Sticky, `--bg` at 86% with blur. Wordmark left, links, one primary small button. App bar uses night colours.
 
