@@ -197,4 +197,7 @@ test("every button is one family: variants, one radius scale, danger for Delete 
     ),
   );
   for (const radius of radii) expect(["12px", "999px"]).toContain(radius);
+
+  await page.locator("[data-confirm-delete]").click();
+  await page.waitForURL((url) => url.pathname === "/");
 });
