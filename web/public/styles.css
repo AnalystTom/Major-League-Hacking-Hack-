@@ -57,7 +57,6 @@ button { font: inherit; color: inherit; }
 .btn-secondary { --btn-fg: var(--ink); --btn-fill: transparent; --btn-edge: var(--ink); --btn-edge-hover: var(--ink); --btn-fill-hover: var(--ink); --btn-fg-hover: var(--bg); }
 .btn-ghost { --btn-fg: var(--ink); --btn-fill: var(--btn-ghost-fill, transparent); --btn-edge: var(--btn-ghost-edge, var(--rule)); --btn-edge-hover: var(--ink); }
 .btn-danger { --btn-fg: var(--btn-danger, var(--late)); --btn-fill: transparent; --btn-edge: var(--btn-danger, var(--late)); --btn-edge-hover: var(--btn-danger, var(--late)); --btn-fill-hover: color-mix(in srgb, var(--btn-danger, var(--late)) 14%, transparent); }
-.btn[aria-pressed="true"] { --btn-fg: var(--on-accent); --btn-fill: var(--accent); --btn-fill-hover: var(--accent); --btn-fg-hover: var(--on-accent); --btn-edge: transparent; --btn-edge-hover: transparent; }
 
 .topbar {
   position: sticky; top: 0; z-index: 20;
@@ -420,7 +419,6 @@ button { font: inherit; color: inherit; }
 .skill-path code { color: var(--ink); background: var(--bg-2); border-radius: var(--r-sm); padding: 6px 8px; overflow-wrap: anywhere; }
 .skill-md { margin: 0; max-height: 22rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--bg-2); border-radius: var(--r-md); padding: 12px; line-height: 1.55; }
 .skill-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
-.btn-line { font: inherit; font-weight: 700; font-size: .9375rem; color: var(--accent-ink); background: none; border: 0; padding: 4px 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 
 .task-block { display: grid; gap: 4px; }
 .task-label { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); }
@@ -509,6 +507,7 @@ button { font: inherit; color: inherit; }
 .app-page, .skills-sheet, .add-sheet, .reel { --btn-ghost-edge: rgba(255, 255, 255, .22); --btn-danger: var(--late-on-night); }
 .app-page .btn-ghost, .skills-sheet .btn-ghost, .add-sheet .btn-ghost, .reel .btn-ghost { --btn-fg: var(--on-night); --btn-edge-hover: var(--on-night); }
 .reel .btn-ghost { --btn-ghost-fill: rgba(255, 255, 255, .14); --btn-fg-hover: var(--on-night); --btn-fill-hover: rgba(255, 255, 255, .26); }
+.btn[aria-pressed="true"] { --btn-fg: var(--on-accent); --btn-fill: var(--accent); --btn-fill-hover: var(--accent); --btn-fg-hover: var(--on-accent); --btn-edge: transparent; --btn-edge-hover: transparent; }
 .app-bar { background: color-mix(in srgb, var(--night) 90%, transparent); border-bottom-color: rgba(255, 255, 255, .08); color: var(--on-night); }
 .app-bar .topbar-inner { gap: 10px; }
 .app-page .onboard-loading { color: var(--on-night-soft); }

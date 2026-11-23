@@ -100,7 +100,7 @@ export function createSkills({ skillsList, picker, skillsStatus, review = false,
         "aria-label": `Keep ${s.name ?? s.artifact.name}`, disabled: saving, onchange: (e) => selected.set(s.id, e.currentTarget.checked) });
       head.prepend(el("label", { class: "skill-choice" }, keep, "Keep"));
     }
-    if (review && !videoState?.artifact) head.append(el("button", { type: "button", class: "btn-line", text: "Make my video", disabled: saving,
+    if (review && !videoState?.artifact) head.append(el("button", { type: "button", class: "btn btn-small btn-secondary", text: "Make my video", disabled: saving,
       onclick: async () => {
         if (saving) return;
         saving = true;
@@ -117,7 +117,7 @@ export function createSkills({ skillsList, picker, skillsStatus, review = false,
       } }));
     const file = skillFile(s, agent);
     const md = el("pre", { class: "skill-md", hidden: true }, el("code", { text: file.content }));
-    const toggle = el("button", { type: "button", class: "btn-line", "aria-expanded": "false", text: "Show SKILL.md",
+    const toggle = el("button", { type: "button", class: "btn btn-small btn-secondary", "aria-expanded": "false", text: "Show SKILL.md",
       onclick: (e) => {
         md.hidden = !md.hidden;
         e.currentTarget.setAttribute("aria-expanded", String(!md.hidden));
@@ -133,7 +133,7 @@ export function createSkills({ skillsList, picker, skillsStatus, review = false,
         el("button", { type: "button", class: "btn btn-small", text: "Copy SKILL.md",
           onclick: async () => say(skillsStatus, await copyText(file.content),
             `Copied. ${file.save}`, "Your browser blocked copying. Use Download instead.") }),
-        el("button", { type: "button", class: "btn-line", text: "Download",
+        el("button", { type: "button", class: "btn btn-small btn-secondary", text: "Download",
           onclick: () => download(agent === "cursor" ? `${skillSlug(s)}.mdc` : "SKILL.md", file.content) }),
         toggle
       ),

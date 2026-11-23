@@ -121,7 +121,7 @@ Target scale (applies only when a rule is next edited, never as a sweep): 12, 14
 | Large (default) | `.btn` | Display 700 19px, 18px by 26px |
 | Small | `.btn .btn-small` | Display 700 15px, 11px by 16px |
 
-Used for: Sign out is ghost, Delete account (bar and confirm dialog) is danger, the Skills and catalogue buttons in the app bar are small ghost pills, reel overlay buttons are small ghost pills with a translucent fill. Journey chips (`.journey a`) and the status summary (`.status > summary`) are navigation and disclosure, not buttons, and keep their own styles. Text links that act on a page (`.btn-line`, `.linkish`) stay underlined links.
+Used for: Sign out is ghost, Delete account (bar and confirm dialog) is danger, the Skills and catalogue buttons in the app bar are small ghost pills, reel overlay buttons are small ghost pills with a translucent fill. Skill card actions (Make my video, Show SKILL.md, Download) are small secondary buttons. Journey chips (`.journey a`) and the status summary (`.status > summary`) are navigation and disclosure, not buttons, and keep their own styles. Text links (`.linkish`) stay underlined links.
 
 **Inputs.** 2px `--rule` border, 12px radius, 12px by 14px padding, `--paper` fill, body font. Link textareas use Mono. Focus replaces the outline with an `--accent` border (known gap: the ring is removed).
 
