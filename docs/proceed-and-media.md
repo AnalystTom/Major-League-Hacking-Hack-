@@ -9,7 +9,7 @@ dev. The processor's hosting is PR #5. Shorts reach production only when that's 
 1. **Sign up** at `/start`: email and password, nothing else (`users`, `sessions`; `web/migrations/0002_application.sql`).
    Signing up or in goes straight to `/app`.
 2. **Paste links** on `/app`. A new account lands on the reel's 9:16 frame with the paste box in it, focused.
-   Up to 20 YouTube videos, 100 X post links (`x.com/<user>/status/<id>`, stored with `content_type = 'x_post'`) and 20 public Substack posts (`<publication>.substack.com/p/<slug>`, stored with `content_type = 'substack_post'`) become `ingested_units`, linked to the user in `user_imports`. Source-reading providers, the optional X key and Article preview limits are documented in the [ingestion README](../server/src/ingest/README.md).
+   Up to 20 YouTube videos and 100 X post links (`x.com/<user>/status/<id>`, stored with `content_type = 'x_post'`) become `ingested_units`, linked to the user in `user_imports`. Substack links are refused at paste time. Source-reading providers, the optional X key and Article preview limits are documented in the [ingestion README](../server/src/ingest/README.md).
 3. **Watch them process.** Until the first short is ready, the frame shows "Making your shorts" with each link's
    real stage; the top-bar status chip stays hidden so the results appear only once and the paste box stays clear.
    Once a short is ready, the chip ("2 ready · 1 couldn't be made") opens the list. Failure reasons follow the

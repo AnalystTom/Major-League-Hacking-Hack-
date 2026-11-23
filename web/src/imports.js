@@ -19,7 +19,6 @@ function hostOf(line) {
   }
 }
 
-
 export function parseImport(body) {
   if (!body || typeof body !== "object") return { ok: false, status: 400, error: "Send a JSON body with a links field." };
   if (typeof body.company === "string" && body.company.trim() !== "") return { ok: false, status: 202, error: "ignored" };

@@ -42,8 +42,8 @@ Two atomic database controls bound new work across all accounts:
   check in `processing_starts`. The tighter limit wins. A running render may finish
   after a boundary; this is a start limit, not a billing-date ledger.
 
-Existing import limits remain: 5 requests per account per minute, up to 20 YouTube,
-100 X and 20 Substack links per paste. The original global processing ledger also
+Existing import limits remain: 5 requests per account per minute, up to 20 YouTube
+and 100 X links per paste. The original global processing ledger also
 uses 20/day and 400/month for extractions/digests/retries; those limits can defer
 processing earlier than the video allowance. Missing/failing import limiters refuse
 traffic. Optional X retains its separate 60 global/55 account read requests per day,

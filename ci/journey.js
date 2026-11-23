@@ -371,7 +371,9 @@ test("an unsupported link's error wraps inside the card on a phone", async ({
     );
   await page.locator('[data-add] button[type="submit"]').click();
   const status = page.locator("[data-add] .form-status");
-  await expect(status).toContainText("Only YouTube videos and X posts are supported");
+  await expect(status).toContainText(
+    "Only YouTube videos and X posts are supported",
+  );
   const card = await page.locator("[data-first]").boundingBox();
   const message = await status.boundingBox();
   expect(message.x + message.width).toBeLessThanOrEqual(card.x + card.width);
@@ -401,16 +403,24 @@ for (const viewport of [
     await page.goto("/app");
     await expect(page.locator("body")).not.toContainText("Substack");
     const form = page.locator("[data-add]");
-    await expect(form.locator("label")).toContainText("YouTube or X post links");
-    await form.locator("textarea").fill("https://newsletter.substack.com/p/evals-first");
+    await expect(form.locator("label")).toContainText(
+      "YouTube or X post links",
+    );
+    await form
+      .locator("textarea")
+      .fill("https://newsletter.substack.com/p/evals-first");
     await form.locator('button[type="submit"]').click();
     const status = form.locator(".form-status");
     await expect(status).toContainText("Substack links are not supported yet");
-    await expect(page.locator("body")).not.toContainText("Couldn't read this source");
+    await expect(page.locator("body")).not.toContainText(
+      "Couldn't read this source",
+    );
     const units = await page.request.get("/api/skills");
     expect(units.ok()).toBe(true);
     expect(JSON.stringify(await units.json())).not.toContain("substack.com");
-    await page.screenshot({ path: info.outputPath(`substack-${viewport.width}.png`) });
+    await page.screenshot({
+      path: info.outputPath(`substack-${viewport.width}.png`),
+    });
   });
 }
 
