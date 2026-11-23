@@ -95,7 +95,7 @@ export function createReel(root) {
       ))
     );
 
-    const soundBtn = el("button", { type: "button", class: "btn btn-small btn-ghost btn-pill reel-sound", "data-sound": true, "aria-pressed": String(soundOn), text: soundOn ? "Sound on" : "Tap for sound" });
+    const soundBtn = el("button", { type: "button", class: "btn btn-small btn-ghost btn-pill", "data-sound": true, "aria-pressed": String(soundOn), text: soundOn ? "Sound on" : "Tap for sound" });
     const slide = el("article", { class: "reel-item", "data-index": String(index), "aria-label": item.name },
       el("div", { class: "reel-stage" },
         el("div", { class: "reel-picture" },
