@@ -164,7 +164,7 @@ async function api(request, env, url, sql) {
   return json({ error: "Not found." }, 404);
 }
 
-const PUBLIC_PATHS = new Set(["/privacy", "/terms", "/legal.css"]);
+const PUBLIC_PATHS = new Set(["/privacy", "/terms", "/legal.css", "/tokens.css"]);
 
 async function route(request, env) {
   const url = new URL(request.url);
