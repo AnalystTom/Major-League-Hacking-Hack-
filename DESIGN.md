@@ -1,13 +1,13 @@
 # Resurface DESIGN.md (Option A, Tidy Current)
 
-Status: final. Option A "Tidy Current" is the pick for Resurface. Values are read from the shipping code. The spec changes no page except the privacy and terms pages, which now follow the system dark setting. The legacy alternate palettes, the palette picker and the off-scale radii remain as follow-ups.
+Status: final. Option A "Tidy Current" is the pick for Resurface. Values are read from the shipping code. There is one palette, one button family and one radius scale. The alternate palettes and the picker are gone, and the primary button text meets 4.5:1.
 
 **Figma kit:** kit = Simple Design System (Figma Community kit); target = page "Resurface" in the "Product design systems" Figma file (https://www.figma.com/design/GJF5f61UdzavA1qZPQWdZM), to be built from this spec. The page does not exist yet. Use its Button, Input, Textarea, Card, Badge, Dialog, Sheet, Select, Progress and List components and its colour, text and radius variables, with these overrides.
 
 | Simple Design System variable | Resurface override (light / dark) |
 |---|---|
 | Brand / primary fill | `#eb5a00` / `#ff7a1a` |
-| Text on brand | `#ffffff` / `#1a1815` |
+| Text on brand | `#16150f` / `#1a1815` |
 | Brand text (links, accent text) | `#b84600` / `#ff9447` |
 | Background / default | `#f6f6ef` / `#171613` |
 | Background / secondary | `#ededE3` / `#1f1d19` |
@@ -39,7 +39,7 @@ Resurface turns the links people saved and forgot into SKILL.md files a coding a
 
 ## Colour tokens
 
-Defined once in `web/public/tokens.css`. Light values are the default. Dark values apply under `prefers-color-scheme: dark`. Both sets are scoped to `:root[data-palette="hn"]`, the only palette any visitor gets by default.
+Defined once in `web/public/tokens.css`. Light values are the `:root` default. Dark values apply under `prefers-color-scheme: dark`. There is no other palette, no `data-palette` attribute and no picker.
 
 | Token | Light | Dark | Use |
 |---|---|---|---|
@@ -50,7 +50,7 @@ Defined once in `web/public/tokens.css`. Light values are the default. Dark valu
 | `--ink-soft` | `#5e5b53` | `#b0ab9f` | Secondary text, labels |
 | `--rule` | `#d8d6ca` | `#3a362f` | Hairlines, card and input borders |
 | `--accent` | `#eb5a00` | `#ff7a1a` | Primary button fill, focus ring, progress, count badges |
-| `--on-accent` | `#ffffff` | `#1a1815` | Text on `--accent` |
+| `--on-accent` | `#16150f` | `#1a1815` | Text on `--accent` |
 | `--accent-ink` | `#b84600` | `#ff9447` | Accent-coloured text and links |
 | `--late` | `#b8322b` | `#ff8a75` | Errors and failed state |
 | `--night` | `#221f1b` | `#0e0d0b` | App, sheets and video surfaces |
@@ -65,9 +65,9 @@ Defined once in `web/public/tokens.css`. Light values are the default. Dark valu
 | `--sh-sky` | `#7fb2ff` | `#7fb2ff` | Hero feed-card illustration only |
 | `--sh-coral` | `#f08079` | `#f08079` | Hero feed-card illustration only |
 
-Rules: component CSS uses tokens, not hex. The `--sh-*` pastels are illustration colours, not UI colours. Accent covers one primary action per view. Known gap (not changed): white on `#eb5a00` is 3.5:1, which passes only as large text; `.btn-small` at 15px is below AA. The fix to pick later is `#16150f` on orange (5.2:1).
+Rules: component CSS uses tokens, not hex. The `--sh-*` pastels are illustration colours, not UI colours. Accent covers one primary action per view.
 
-Unused palettes: `highlighter`, `cobalt` and `violet` are still reachable (`?palette=` and the `?pick` picker), so they stay in `tokens.css` unchanged. They are not part of the brand and get no Figma variables.
+Contrast of text on the primary fill (WCAG 2.x, small text needs 4.5:1): light `#16150f` on `#eb5a00` is 5.22:1 (was white at 3.5:1); dark `#1a1815` on `#ff7a1a` is 6.79:1. Danger text on night surfaces uses `--late-on-night`: `#f39a91` on `#221f1b` is 7.69:1 and on `#312c26` is 6.48:1.
 
 ## Typography
 
@@ -94,7 +94,7 @@ Target scale (applies only when a rule is next edited, never as a sweep): 12, 14
 
 - Gutter: `--gutter: clamp(16px, 4vw, 48px)`. Max content width `--max: 1200px`. `--inline` centres content to that width.
 - Spacing steps (target): 4, 8, 12, 16, 24, 32, 48, 64, 96. Legacy gaps (6, 10, 14, 18, 20, 22, 28) stay until their rule is touched.
-- Radius scale: `--r-sm` 8px (code wells, chips), `--r-md` 12px (buttons, inputs, list rows), `--r-lg` 16px (cards, results), `--r-pill` 999px (counts, journey pills). Legacy radii 2, 6, 10, 14, 18, 20, 22, 24, 26 stay in the shipping CSS until a page is redesigned; new work uses only the four tokens.
+- Radius scale: `--r-sm` 8px (code wells, chips), `--r-md` 12px (buttons, inputs, list rows), `--r-lg` 16px (cards, sheets, dialogs, video frames, results), `--r-pill` 999px (counts, pill buttons, journey pills, progress bars). Circles use 50%. No other radius is used.
 - Shadow: `--shadow` for video, onboard card, reel, status panel. Primary button: inset `0 -3px 0 rgba(0,0,0,.16)` press edge plus a coloured lift on hover.
 
 ## Layout and breakpoints
@@ -107,20 +107,29 @@ Target scale (applies only when a rule is next edited, never as a sweep): 12, 14
 
 ## Components
 
-**Buttons.** One family, today implemented as separate classes. Anatomy: label, optional leading icon, 8px gap.
-- Primary (`.btn`): `--accent` fill, `--on-accent` text, 12px radius, 18px by 26px padding, Display 700 19px, press edge. Hover: lift 2px and glow. Active: lift 0. Disabled: 55% opacity. Focus: 3px `--accent` outline, 3px offset.
-- Small (`.btn-small`): 15px text, 11px by 16px padding, 10px radius (legacy, target 12).
-- Outline (`.btn-copy`): transparent, 2px `--ink` border, 12px radius.
-- Top-bar quiet (`.btn-quiet-top`), pills (`.topbar-pill`, `.journey a`, `.status > summary`), and `.reel-btn` are the same role at different sizes; unify the base when next touched.
-- Delete account is still styled like Sign out (known gap, not changed). Target: danger variant, `--late` border and text.
+**Buttons.** One family, `.btn`, with four variants and two sizes. Anatomy: label, optional leading icon, 8px gap. All buttons are 12px radius; add `.btn-pill` for 999px. Hover lifts 2px with a glow on primary; secondary, ghost and danger change fill and edge only. Disabled: 55% opacity. Focus: 3px `--accent` outline, 3px offset. A button with `aria-pressed="true"` takes the primary look.
+
+| Variant | Class | Look |
+|---|---|---|
+| Primary | `.btn` | `--accent` fill, `--on-accent` text, press edge. One per view. |
+| Secondary | `.btn .btn-secondary` | Transparent, 2px `--ink` edge, `--ink` text. Hover fills `--ink`. |
+| Ghost | `.btn .btn-ghost` | Transparent, 2px `--rule` edge, `--ink` text. Hover edge `--ink`. On night surfaces: `--on-night` text, white 22% edge. |
+| Danger | `.btn .btn-danger` | Transparent, 2px `--late` edge and text (`--late-on-night` on night surfaces). Hover tints the fill. |
+
+| Size | Class | Type and padding |
+|---|---|---|
+| Large (default) | `.btn` | Display 700 19px, 18px by 26px |
+| Small | `.btn .btn-small` | Display 700 15px, 11px by 16px |
+
+Used for: Sign out is ghost, Delete account (bar and confirm dialog) is danger, the Skills and catalogue buttons in the app bar are small ghost pills, reel overlay buttons are small ghost buttons with a translucent fill. Skill card actions (Make my video, Show SKILL.md, Download) are small secondary buttons. Journey chips (`.journey a`) and the status summary (`.status > summary`) are navigation and disclosure, not buttons, and keep their own styles. Text links (`.linkish`) stay underlined links.
 
 **Inputs.** 2px `--rule` border, 12px radius, 12px by 14px padding, `--paper` fill, body font. Link textareas use Mono. Focus replaces the outline with an `--accent` border (known gap: the ring is removed).
 
-**Cards.** `--paper` fill, 1px `--rule` border, 12 to 16px radius, 12 to 18px padding. Skill card: status chip, source line, title, description, path well, actions. `:target` adds an accent outline.
+**Cards.** `--paper` fill, 1px `--rule` border, 16px radius (`--r-lg`), 12 to 18px padding. Skill card: status chip, source line, title, description, path well, actions. `:target` adds an accent outline.
 
 **Nav.** Sticky, `--bg` at 86% with blur. Wordmark left, links, one primary small button. App bar uses night colours.
 
-**Modals and sheets.** `<dialog>`, `--night-2` fill, 20px radius (target 16), `::backdrop` black at 55 to 60%. Title H2, body, one primary action, one quiet dismiss.
+**Modals and sheets.** `<dialog>`, `--night-2` fill, 16px radius, `::backdrop` black at 55 to 60%. Title H2, body, one primary action, one quiet dismiss.
 
 **Lists.** Unit rows: 12px radius, 1px `--rule` border, source link, stage label right. Journey pills: 999px radius. Three-step scan bar with current step in `--accent`.
 
@@ -128,7 +137,7 @@ States for every control: default, hover, active, focus-visible, disabled, and e
 
 ## Imagery and illustration
 
-- Launch film and reel video stay as is, in a 24px frame with `--shadow`.
+- Launch film and reel video stay as is, in a 16px frame with `--shadow`.
 - Agent logos are one-colour masks (`currentColor`).
 - Hero feed cards use the `--sh-*` pastels; they are illustration, not UI.
 - No stock illustration; show the real artefact (a SKILL.md, a path, a terminal).
@@ -153,15 +162,16 @@ States for every control: default, hover, active, focus-visible, disabled, and e
 ## Do and don't
 
 - Do use tokens. Don't add hex or a fallback like `var(--paper, #faf7f2)`.
-- Do use the four radius tokens in new work. Don't add 10, 14, 18, 20 or 24.
+- Do use the four radius tokens. Don't add any other radius.
 - Do keep one primary action per view. Don't place two orange buttons side by side.
 - Do keep the 3px accent focus ring. Don't remove an outline without a replacement of equal contrast.
 - Do show real data and explicit loading, empty and error states. Don't fabricate values.
-- Don't ship new palettes or a picker to users.
+- Don't ship alternate palettes or a picker to users. Don't add a second button style; use a variant.
+- Do make Delete account and any other destructive action `.btn-danger`.
 
 ## Where tokens live in code and how to use them
 
-- `web/public/tokens.css` is the single token file: fonts, easing, gutter, radius scale, the `hn` palette (light and dark), and the legacy alternate palettes. Every page loads it before `styles.css` (`index.html`, `app.html`, `start.html`, `available.html`, `404.html`, `launch-v7-transcript.html`) and `legal.css` imports it.
+- `web/public/tokens.css` is the single token file: fonts, easing, gutter, radius scale, and the one palette (light and dark). Every page loads it before `styles.css` (`index.html`, `app.html`, `start.html`, `available.html`, `404.html`, `launch-v7-transcript.html`) and `legal.css` imports it.
 - In CSS write `var(--token)`. New colours, sizes and radii go into `tokens.css` first.
 - The skills sheet and app page remap `--bg`, `--ink` and friends to the night tokens locally to stay dark; new tokens must be remapped there too.
 - Figma variable names map 1:1: `--accent` is "Brand / primary fill", and so on per the table at the top.
