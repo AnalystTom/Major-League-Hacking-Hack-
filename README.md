@@ -2,7 +2,7 @@
 
 **You saved it. Your agent never saw it.**
 
-Resurface turns the X, YouTube, and Substack links you never got to into source-linked `SKILL.md` files for your coding agent.
+Resurface turns the X and YouTube links you never got to into source-linked `SKILL.md` files for your coding agent.
 
 Live site: <https://resurface.thomasmann2001.workers.dev/>
 
@@ -10,7 +10,7 @@ Built at AI Engineer NYC 2026.
 
 ## What it does
 
-- Takes saved content from YouTube, X, and Substack.
+- Takes saved content from YouTube and X.
 - Accepts pasted individual links after email/password sign-in and turns each into a skill for your coding agent.
 - Sends skills to Claude Code, Codex, Cursor, and Hermes.
 
@@ -25,11 +25,11 @@ Built at AI Engineer NYC 2026.
 
 ## Supported sources
 
-Individual pasted X, YouTube, and Substack links. Automatic Watch Later import and Google sign-in are not live yet. X sign-in with bookmark import is built but stays off until the operator enables it; see [X sign-in and bookmark import](docs/x-bookmarks.md).
+Individual pasted X and YouTube links. Automatic Watch Later import and Google sign-in are not live yet. X sign-in with bookmark import is built but stays off until the operator enables it; see [X sign-in and bookmark import](docs/x-bookmarks.md).
 
 ## How it works
 
-1. **Paste what you've saved**: add individual X, YouTube, or Substack links.
+1. **Paste what you've saved**: add individual X or YouTube links.
 2. **Get a skill for each one**: copy or download it for your agent.
 3. **Check it against today's docs**: Resurface verifies content against current sources before installing.
 4. **Install it where your agent looks**: skills, rules, and `AGENTS.md` sections are added to your repo as a reviewable diff.

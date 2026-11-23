@@ -4,7 +4,7 @@ Drafts only. Nothing has been posted or deployed by this change. This branch now
 
 ## Claims as of 8 November 2026
 
-The current product accepts pasted individual X, YouTube and Substack links after email/password signup or sign-in. It produces source-linked SKILL.md files for coding agents, with copy/download support. The live audit verified anonymous gates and public empty states, but did not verify a successful authenticated generation end to end. Recheck that journey before publishing launch claims.
+The current product accepts pasted individual X and YouTube links after email/password signup or sign-in. It produces source-linked SKILL.md files for coding agents, with copy/download support. The live audit verified anonymous gates and public empty states, but did not verify a successful authenticated generation end to end. Recheck that journey before publishing launch claims.
 
 New video generation is paused (`SHORTS=off`). The v7 film includes previously produced video examples; accompany it with that disclosure. Do not promise new narrated clips, automatic bookmark/watch-later import, X/Google sign-in, skill retention selection or video opt-in until those features are deployed and verified. No launch date or availability of those features is implied here.
 
@@ -12,7 +12,7 @@ New video generation is paused (`SHORTS=off`). The v7 film includes previously p
 
 You saved the link. Give the idea to your coding agent.
 
-Resurface turns pasted X, YouTube and Substack links into source-linked SKILL.md files for Claude Code, Codex, Cursor and Hermes.
+Resurface turns pasted X and YouTube links into source-linked SKILL.md files for Claude Code, Codex, Cursor and Hermes.
 
 https://resurface.thomasmann2001.workers.dev/
 
@@ -26,7 +26,7 @@ Paste individual links after signing in: https://resurface.thomasmann2001.worker
 
 I built Resurface for the posts and videos I saved but never returned to.
 
-Sign in, paste individual X, YouTube or Substack links, and turn their ideas into source-linked SKILL.md files. Copy or download the skills for Claude Code, Codex, Cursor or Hermes. Review generated skills before using them.
+Sign in, paste individual X or YouTube links, and turn their ideas into source-linked SKILL.md files. Copy or download the skills for Claude Code, Codex, Cursor or Hermes. Review generated skills before using them.
 
 The attached v7 film includes earlier short-video examples. New video generation is currently paused. Collection import and social sign-in are not part of this release.
 

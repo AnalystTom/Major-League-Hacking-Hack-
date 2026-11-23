@@ -1,6 +1,6 @@
 # One-time Resurface X setup — captain-operated
 
-The Resurface X app exists. Its OAuth 2.0 client ID is `VnhpUllybnRqVFBmeXZoR0xnbks6MTpjaQ`, committed in `web/wrangler.jsonc`. No production secret change, deployment or real X read has been performed yet. X remains optional alongside pasted X/YouTube/Substack links and the existing email sign-in. This branch does not add YouTube OAuth/watch-later import.
+The Resurface X app exists. Its OAuth 2.0 client ID is `VnhpUllybnRqVFBmeXZoR0xnbks6MTpjaQ`, committed in `web/wrangler.jsonc`. No production secret change, deployment or real X read has been performed yet. X remains optional alongside pasted X/YouTube links and the existing email sign-in. This branch does not add YouTube OAuth/watch-later import.
 
 ## 1. Sign in and create the app
 
