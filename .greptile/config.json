@@ -1,0 +1,70 @@
+{
+  "strictness": 2,
+  "commentTypes": [
+    "logic",
+    "syntax",
+    "style"
+  ],
+  "triggerOnDrafts": true,
+  "autoReview": [
+    "open",
+    "push"
+  ],
+  "statusCheck": true,
+  "fixWithAI": true,
+  "includeConfidenceScore": true,
+  "includeIssuesTable": true,
+  "hideFooter": true,
+  "ignorePatterns": ".pr-proof/**\nfloorplan/**\n.github/pr-proof/**\n*.png\n*.webm",
+  "instructions": "Review for correctness first. Then check the repo rules in rules.md. Say what is wrong and what to change in one or two sentences per finding. Do not restate the diff.",
+  "rules": [
+    {
+      "id": "no-use-effect",
+      "rule": "Do not add useEffect or useLayoutEffect in product code. Derive values in render, handle changes in event handlers, or use the framework primitive.",
+      "scope": [
+        "**/*.ts",
+        "**/*.tsx"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "no-explanatory-comments",
+      "rule": "Do not add comments that explain what code does or why. Rename, extract or add a type instead. Allowed: license headers, shebangs, and tool directives.",
+      "scope": [
+        "**/*.ts",
+        "**/*.tsx",
+        "**/*.js",
+        "**/*.mjs"
+      ],
+      "severity": "medium"
+    },
+    {
+      "id": "e2e-for-behavior",
+      "rule": "A change to user-visible behavior needs an end-to-end journey in the same PR that fails without the change. A unit test alone does not count.",
+      "scope": [
+        "src/**",
+        "app/**",
+        "tests/**"
+      ],
+      "severity": "high"
+    },
+    {
+      "id": "no-mocking-own-modules",
+      "rule": "Tests must not mock this repo's own modules. Mock only third-party or paid services.",
+      "scope": [
+        "**/*.test.*",
+        "**/*.spec.*"
+      ],
+      "severity": "medium"
+    },
+    {
+      "id": "one-paved-road",
+      "rule": "Do not add a second way to do something the codebase already does one way. Remove duplicate state and unused layers.",
+      "scope": [
+        "**/*.ts",
+        "**/*.tsx"
+      ],
+      "severity": "medium"
+    }
+  ]
+}
