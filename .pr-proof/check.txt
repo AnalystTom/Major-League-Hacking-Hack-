@@ -1,0 +1,1 @@
+ok: 4 files, no useEffect added, no explanatory comments added, e2e or integration coverage present
