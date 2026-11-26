@@ -14,8 +14,13 @@ test("a user keeps a skill and sees its SKILL.md with the source link", async ({
     timeout: 90_000,
   });
   await agent.act(
-    "open the Skills list, keep only the first skill, press Keep selected, then press Show SKILL.md on the kept skill",
+    "open the Skills list, keep only the first skill, then press Keep selected",
   );
+  await agent.act("on the kept skill, press Copy SKILL.md");
+  await expect(browser.locator("[data-skills-status]")).toContainText("Copied");
+  const copied = await browser.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toContain("https://x.com/i/status/");
+  await agent.act("on the kept skill, press Show SKILL.md");
   await expect(browser.locator(".skill-md:visible")).toContainText(
     "https://x.com/i/status/",
   );

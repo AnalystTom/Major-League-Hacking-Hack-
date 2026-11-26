@@ -1,6 +1,6 @@
 {
   "schemaVersion": "trace-1",
-  "createdAt": "2026-11-26T23:28:53.949Z",
+  "createdAt": "2026-11-26T23:40:33.670Z",
   "payload": {
     "actions": [
       {
@@ -33,15 +33,6 @@
           "name": "Keep selected",
           "within": "Skills"
         }
-      },
-      {
-        "name": "tap",
-        "summary": "tap button \"Show SKILL.md\" in \"from “Fixture: verify an agent change”\"",
-        "target": {
-          "role": "button",
-          "name": "Show SKILL.md",
-          "within": "from “Fixture: verify an agent change”"
-        }
       }
     ],
     "executor": {
@@ -51,12 +42,12 @@
     "recordedFor": {
       "testId": "e2e/keep-and-install.e2e.ts::a%20user%20keeps%20a%20skill%20and%20sees%20its%20SKILL.md%20with%20the%20source%20link",
       "targetId": "web",
-      "instructionDigest": "6fa92a7e8a7d75746720fbaae8908052e3f70e789490a9d98e35a4c18bf99355",
+      "instructionDigest": "7861ae31c523114f193eaae1ee65d77299025f4995b5efde1e62e3de1aa5eca0",
       "paramsDigest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
       "callIndex": 0,
       "agent": "default"
     },
-    "summary": "Opened Skills, unchecked the second skill, pressed Keep selected (\"Selected skills kept.\" with one skill left), then Show SKILL.md. The SKILL.md content for fixture-verification now displays.",
+    "summary": "Opened Skills, unchecked the second skill, pressed Keep selected. Status shows \"Selected skills kept.\" and only one skill (fixture-verification) remains in the list.",
     "startPath": "/app?import=x",
     "endPath": "/app?import=x",
     "endAnchors": [
@@ -124,7 +115,7 @@
         "name": "Your skills"
       }
     ],
-    "endWaitMs": 13873,
+    "endWaitMs": 12694,
     "keyedBy": {
       "cacheSchema": "trace-1",
       "policyVersion": "conservative/6",
