@@ -142,9 +142,14 @@ the live site. `e2e.config.ts` fixes the 1440x1000 viewport and `retries: 0`.
 
 CI only replays. The `journey` job runs `CI=1 npm run test:e2e` after
 `test:journey`. That script is the single definition of the replay (`e2e run
---strict-cache` with telemetry off), so CI and local runs share it. The job makes no model call, holds no model key, and
-fails with `REPLAY_STALE` when a recording no longer matches the page. Recordings live
-in `.e2e/cache/` and are committed. `@e2e-dev/web` brings its own Playwright (1.65.1),
+--strict-cache` with telemetry off), so CI and local runs share it.
+
+The guard is in `e2e.config.ts`. When `CI` is set, the default agent uses a
+`noModelCalls` executor instead of `claudeCode`, so no Claude adapter is loaded and
+no model is called, even on a runner whose host has a Claude login. A step with no
+matching recording then fails with `MODEL_UNAVAILABLE`. A recording that exists but
+no longer matches the page fails with `REPLAY_STALE`. Recordings live in
+`.e2e/cache/` and are committed. `@e2e-dev/web` brings its own Playwright (1.65.1),
 so the job also runs `npx e2e-web install chromium` into the same job-local browser
 cache.
 
