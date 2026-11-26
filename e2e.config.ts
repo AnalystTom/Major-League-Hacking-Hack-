@@ -1,12 +1,27 @@
-import type { E2EConfig } from "e2e";
+import type { E2EConfig, StepExecutor } from "e2e";
 import { web } from "@e2e-dev/web";
 import { claudeCode } from "@e2e-dev/acp";
+
+const noModelCalls: StepExecutor = {
+  name: "no-model-calls",
+  async runStep(ctx) {
+    return {
+      status: "blocked",
+      errorCode: "MODEL_UNAVAILABLE",
+      summary: `No recording replays step "${ctx.step.instruction}", and CI makes no model call.`,
+    };
+  },
+};
 
 export default {
   tests: "e2e/**/*.e2e.ts",
   retries: 0,
   workers: 1,
-  agents: { default: { executor: claudeCode({ model: "sonnet" }) } },
+  agents: {
+    default: {
+      executor: process.env.CI ? noModelCalls : claudeCode({ model: "sonnet" }),
+    },
+  },
   targets: [
     {
       engine: web({ viewport: { width: 1440, height: 1000 } }),
