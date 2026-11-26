@@ -132,6 +132,34 @@ keyboard behavior appropriate to the change, and add `## UI quality check` to th
 PR description with findings and evidence links. Screenshots are a human review
 aid, not a pixel-diff pass. This CI-only change does not alter product UI.
 
+## e2e recorded journeys
+
+`e2e/*.e2e.ts` holds two agentic journeys beside the Playwright ones, driven by
+[e2e](https://github.com/e2e-inc/e2e): sign-up with the synthetic X fixture to two
+ready skills, and keeping a skill to see its SKILL.md with the source link. They
+use the same `node ci/fixture-server.js` launcher on the same ports and never touch
+the live site. `e2e.config.ts` fixes the 1440x1000 viewport and `retries: 0`.
+
+CI only replays. The `journey` job runs `CI=1 E2E_TELEMETRY_DISABLED=1 npx e2e run
+--strict-cache` after `test:journey`: it makes no model call, holds no model key, and
+fails with `REPLAY_STALE` when a recording no longer matches the page. Recordings live
+in `.e2e/cache/` and are committed. `@e2e-dev/web` brings its own Playwright (1.65.1),
+so the job also runs `npx e2e-web install chromium` into the same job-local browser
+cache.
+
+Record or repair locally with Claude Code, never in CI:
+
+```sh
+npm run record:e2e
+npm run test:e2e
+```
+
+`record:e2e` runs the steps through `@e2e-dev/acp` on your own Claude Code login and
+writes `.e2e/cache/`. Commit the changed entries. Renaming a test or rewording an
+`agent.act` instruction is a cache miss. End every test with a locator assertion so
+a recording is written, and do not use `agent.assert`, `agent.waitFor` or
+`agent.extract` in these tests: they call the model on every run.
+
 ## Branch protection
 
 `main` requires the **CI required** check and requires branches to be up to date before merging. `enforce_admins` is off, so repository admins can still bypass it. It was applied on 2026-11-22 with this command:
