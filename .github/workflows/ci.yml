@@ -121,7 +121,7 @@ jobs:
       - run: npm run build
       - run: npm run test:journey
       - name: Replay recorded e2e journeys (no model, no key, telemetry off)
-        run: CI=1 E2E_TELEMETRY_DISABLED=1 npx e2e run --strict-cache
+        run: CI=1 npm run test:e2e
       - name: Report where the UI evidence is kept on the runner
         if: always()
         run: |

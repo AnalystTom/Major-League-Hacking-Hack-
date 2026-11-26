@@ -140,8 +140,9 @@ ready skills, and keeping a skill to see its SKILL.md with the source link. They
 use the same `node ci/fixture-server.js` launcher on the same ports and never touch
 the live site. `e2e.config.ts` fixes the 1440x1000 viewport and `retries: 0`.
 
-CI only replays. The `journey` job runs `CI=1 E2E_TELEMETRY_DISABLED=1 npx e2e run
---strict-cache` after `test:journey`: it makes no model call, holds no model key, and
+CI only replays. The `journey` job runs `CI=1 npm run test:e2e` after
+`test:journey`. That script is the single definition of the replay (`e2e run
+--strict-cache` with telemetry off), so CI and local runs share it. The job makes no model call, holds no model key, and
 fails with `REPLAY_STALE` when a recording no longer matches the page. Recordings live
 in `.e2e/cache/` and are committed. `@e2e-dev/web` brings its own Playwright (1.65.1),
 so the job also runs `npx e2e-web install chromium` into the same job-local browser
