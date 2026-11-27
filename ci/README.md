@@ -26,6 +26,7 @@ Host prerequisites, checked by the jobs rather than installed with `sudo`:
 | ------------------- | --------------------------------------------------------------------------------------------------------------- |
 | Node 22             | `setup-node`, into the runner tool cache                                                                        |
 | Playwright Chromium | `npx playwright install chromium` into `$RUNNER_TOOL_CACHE/ms-playwright`, reused across runs                   |
+| e2e Chromium        | `npx e2e-web install chromium` into the same browser cache, for the recorded e2e replay                         |
 | ffmpeg, ffprobe     | host packages in `/usr/bin` (nightly/manual render step fails if missing)                                       |
 | Chromium            | `/usr/bin/chromium` or `/usr/bin/google-chrome-stable` (nightly/manual render step fails if missing)            |
 | Render font         | `RENDER_FONT=/usr/share/fonts/liberation/LiberationSans-Bold.ttf` (nightly/manual render step fails if missing) |
@@ -79,16 +80,16 @@ Do not approve a fork PR's run before reading its diff, including any change und
 
 ## Check contract
 
-| Job / step                 | Protects                                                                                                                                                                                                                                                     |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Change scope               | Docs-only changes avoid installs and suites; unknown paths run checks; schedules/manual dispatch always validate                                                                                                                                             |
-| Fast checks / format       | Prettier checks CI tooling, workflow and root package metadata; legacy product formatting is not retrofitted                                                                                                                                                 |
-| Fast checks / lint         | JavaScript parsing and correctness rules across web source, browser modules, tests, processor and CI tooling; server TypeScript uses its strict compiler                                                                                                     |
-| Fast checks / typecheck    | Strict server TypeScript contracts                                                                                                                                                                                                                           |
-| Fast checks / tests        | Server unit tests (four render integration files in the heavy job), full web and processor suites, including actual Worker asset routing through the login gate                                                                                              |
-| Fast checks / server build | Emitted server build, independently of no-emit typechecking                                                                                                                                                                                                  |
-| CI required                | Always reports success/failure, including docs-only skips; fails if scope or fast validation fails or is cancelled                                                                                                                                           |
-| Journey and worker builds  | Nightly/manual check for host ffmpeg, ffprobe, Chromium and render font, then full server suite including ffmpeg renders; server build and web/processor Wrangler dry-run bundles, then isolated headless browser journey; serialized across repository runs |
+| Job / step                 | Protects                                                                                                                                                                                                                                                                                 |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Change scope               | Docs-only changes avoid installs and suites; unknown paths run checks; schedules/manual dispatch always validate                                                                                                                                                                         |
+| Fast checks / format       | Prettier checks CI tooling, workflow and root package metadata; legacy product formatting is not retrofitted                                                                                                                                                                             |
+| Fast checks / lint         | JavaScript parsing and correctness rules across web source, browser modules, tests, processor and CI tooling; server TypeScript uses its strict compiler                                                                                                                                 |
+| Fast checks / typecheck    | Strict server TypeScript contracts                                                                                                                                                                                                                                                       |
+| Fast checks / tests        | Server unit tests (four render integration files in the heavy job), full web and processor suites, including actual Worker asset routing through the login gate                                                                                                                          |
+| Fast checks / server build | Emitted server build, independently of no-emit typechecking                                                                                                                                                                                                                              |
+| CI required                | Always reports success/failure, including docs-only skips; fails if scope or fast validation fails or is cancelled                                                                                                                                                                       |
+| Journey and worker builds  | Nightly/manual check for host ffmpeg, ffprobe, Chromium and render font, then full server suite including ffmpeg renders; server build and web/processor Wrangler dry-run bundles, then isolated headless browser journey and the recorded e2e replay; serialized across repository runs |
 
 The browser journey uses the existing explicitly synthetic X provider and processor
 in `web/test/fixtures/x`. It checks new-user X consent/PKCE wiring, moving scan,
@@ -190,6 +191,8 @@ npm test
 npm run build
 npx playwright install chromium
 npm run test:journey
+npx e2e-web install chromium
+CI=1 npm run test:e2e
 ```
 
 Evidence can be kept outside the checkout with `CI_EVIDENCE_DIR=/absolute/path`.
