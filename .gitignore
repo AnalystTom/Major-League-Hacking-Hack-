@@ -230,3 +230,6 @@ server/dist/
 # Headless CI evidence
 test-results/
 playwright-report/
+
+.e2e/*
+!.e2e/cache/

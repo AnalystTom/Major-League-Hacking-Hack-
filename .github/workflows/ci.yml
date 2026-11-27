@@ -103,7 +103,7 @@ jobs:
           echo "CI_EVIDENCE_DIR=$RUNNER_WORKSPACE/evidence/journey-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
           mkdir -p "$RUNNER_WORKSPACE/evidence"
           find "$RUNNER_WORKSPACE/evidence" -mindepth 1 -maxdepth 1 -mtime +7 -exec rm -rf {} +
-      - run: npx playwright install chromium
+      - run: npx playwright install chromium && npx e2e-web install chromium
       - name: Require render tools (never silently skip integration tests)
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: |
@@ -120,6 +120,8 @@ jobs:
           RENDER_FONT: /usr/share/fonts/liberation/LiberationSans-Bold.ttf
       - run: npm run build
       - run: npm run test:journey
+      - name: Replay recorded e2e journeys (no model, no key, telemetry off)
+        run: CI=1 npm run test:e2e
       - name: Report where the UI evidence is kept on the runner
         if: always()
         run: |

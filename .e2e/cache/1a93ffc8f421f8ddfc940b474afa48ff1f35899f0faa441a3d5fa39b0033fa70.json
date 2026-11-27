@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "trace-1",
+  "createdAt": "2026-11-26T23:40:33.674Z",
+  "payload": {
+    "actions": [
+      {
+        "name": "tap",
+        "summary": "tap button \"Show SKILL.md\" in \"from “Fixture: verify an agent change”\"",
+        "target": {
+          "role": "button",
+          "name": "Show SKILL.md",
+          "within": "from “Fixture: verify an agent change”"
+        }
+      }
+    ],
+    "executor": {
+      "name": "claude-code",
+      "version": "1"
+    },
+    "recordedFor": {
+      "testId": "e2e/keep-and-install.e2e.ts::a%20user%20keeps%20a%20skill%20and%20sees%20its%20SKILL.md%20with%20the%20source%20link",
+      "targetId": "web",
+      "instructionDigest": "21e90958922061a29745762833750a4dcdd1b1a5eb5e3195ce0473128084fef7",
+      "paramsDigest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "callIndex": 0,
+      "agent": "default"
+    },
+    "summary": "Pressed Show SKILL.md. The button now reads \"Hide SKILL.md\" (expanded) and the SKILL.md content is displayed.",
+    "startPath": "/app?import=x",
+    "endPath": "/app?import=x",
+    "endAnchors": [
+      {
+        "role": "button",
+        "name": "Hide SKILL.md",
+        "states": [
+          "expanded"
+        ]
+      },
+      {
+        "text": "--- name: fixture-verification description: \"Local fixture: verify a stated goal.\" --- 1. State the goal. 2. Run the relevant checks. ## Sources - https://x.com/i/status/1346889436626259969"
+      },
+      {
+        "role": "listitem",
+        "name": "Keep fixture-verification Keep from “Fixture: verify an agent change” fixture-verification Local fixture: verify a stated goal. Make my video Claude Code reads it from .claude/skills/fixture-verification/SKILL.md Copy SKILL.md Download Hide SKILL.md --- na"
+      }
+    ],
+    "goneAnchors": [
+      {
+        "role": "status",
+        "name": "Copied. Save it as .claude/skills/fixture-verification/SKILL.md in your repo."
+      },
+      {
+        "role": "button",
+        "name": "Show SKILL.md"
+      },
+      {
+        "role": "listitem",
+        "name": "Keep fixture-verification Keep from “Fixture: verify an agent change” fixture-verification Local fixture: verify a stated goal. Make my video Claude Code reads it from .claude/skills/fixture-verification/SKILL.md Copy SKILL.md Download Show SKILL.md"
+      }
+    ],
+    "endWaitMs": 12566,
+    "keyedBy": {
+      "cacheSchema": "trace-1",
+      "policyVersion": "conservative/6",
+      "project": "5cc11c1cec1e3ad33b6aa2b0308442592877edc0d539af5313388f57bf25d8ac",
+      "platform": "web",
+      "engineName": "web",
+      "engineSpiVersion": 1,
+      "appIdentity": "a48cea9501a3ad97eef427d0caa1281c9297f3c7a560c508f0bd4ac96ab62df1",
+      "agentContextDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  }
+}

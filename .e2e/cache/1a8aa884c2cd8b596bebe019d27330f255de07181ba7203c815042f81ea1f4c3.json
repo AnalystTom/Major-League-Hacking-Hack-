@@ -1,0 +1,113 @@
+{
+  "schemaVersion": "trace-1",
+  "createdAt": "2026-11-26T23:28:53.946Z",
+  "payload": {
+    "actions": [
+      {
+        "name": "tap",
+        "summary": "tap link \"Continue with X\" in \"Bring your bookmarks back\"",
+        "target": {
+          "role": "link",
+          "name": "Continue with X",
+          "within": "Bring your bookmarks back"
+        }
+      },
+      {
+        "name": "tap",
+        "summary": "tap link \"Authorize fixture bookmarks\"",
+        "target": {
+          "role": "link",
+          "name": "Authorize fixture bookmarks"
+        }
+      }
+    ],
+    "executor": {
+      "name": "claude-code",
+      "version": "1"
+    },
+    "recordedFor": {
+      "testId": "e2e/keep-and-install.e2e.ts::a%20user%20keeps%20a%20skill%20and%20sees%20its%20SKILL.md%20with%20the%20source%20link",
+      "targetId": "web",
+      "instructionDigest": "f13630fe18eaeef3917536549a03e1acd0fbfc2ca69133e13c4fee8f8a1a9f38",
+      "paramsDigest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "callIndex": 0,
+      "agent": "default"
+    },
+    "summary": "Tapped Continue with X, then Authorize fixture bookmarks. Landed on /app?import=x showing \"Connected as @fixture_user. Read 3 bookmarks.\" and 2 skills ready.",
+    "startPath": "/start",
+    "endPath": "/app?import=x",
+    "endAnchors": [
+      {
+        "role": "status",
+        "name": "Connected as @fixture_user. Read 3 bookmarks."
+      },
+      {
+        "role": "status",
+        "name": "Skill ready"
+      },
+      {
+        "text": "Resurface"
+      },
+      {
+        "text": "Skills"
+      },
+      {
+        "text": "Add links"
+      },
+      {
+        "text": "Sign out"
+      },
+      {
+        "text": "Delete account"
+      },
+      {
+        "role": "heading",
+        "name": "Your skills"
+      }
+    ],
+    "goneAnchors": [
+      {
+        "role": "status",
+        "name": "Sign in to import your newest 50 X bookmarks."
+      },
+      {
+        "role": "link",
+        "name": "Resurface home",
+        "text": "Resurface"
+      },
+      {
+        "role": "heading",
+        "name": "Bring your bookmarks back"
+      },
+      {
+        "text": "Sign in with X to turn your saved posts into skills for your coding agent."
+      },
+      {
+        "role": "link",
+        "name": "Continue with X"
+      },
+      {
+        "text": "Use email and paste links"
+      },
+      {
+        "role": "document",
+        "name": "Get started · Resurface"
+      },
+      {
+        "role": "region",
+        "name": "Bring your bookmarks back"
+      }
+    ],
+    "endWaitMs": 13514,
+    "keyedBy": {
+      "cacheSchema": "trace-1",
+      "policyVersion": "conservative/6",
+      "project": "5cc11c1cec1e3ad33b6aa2b0308442592877edc0d539af5313388f57bf25d8ac",
+      "platform": "web",
+      "engineName": "web",
+      "engineSpiVersion": 1,
+      "appIdentity": "a48cea9501a3ad97eef427d0caa1281c9297f3c7a560c508f0bd4ac96ab62df1",
+      "agentContextDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  }
+}
